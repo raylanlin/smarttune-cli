@@ -113,7 +113,8 @@
 - [ ] HTML Report 适配新结果类型 (`smarttune/output/html_report.py`)
 - [ ] filter_transfer.py 中 `derive_filters_from_params()` 的 ArduPilot 参数名硬编码需泛化
 - [ ] 旧 `_legacy_formatter.py` 中的可视化 (matplotlib plot) 代码迁入新输出层
-- [ ] arx_model.py / wmm.py docstring 中的残留 ap_tune 引用清理
+- [x] arx_model.py / wmm.py docstring 中的残留 ap_tune 引用清理（2026-05-03 完成）
+- [x] html_report.py 工具名 ap-tune → SmartTune CLI（2026-05-03 完成）
 - [ ] CI/CD 设置 (GitHub Actions: lint + test + build)
 - [ ] PyPI 发布配置
 

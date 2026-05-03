@@ -1,5 +1,5 @@
 """
-ap_tune/fft_analyzer.py — FFT 频谱分析模块
+smarttune/fft_analyzer.py — FFT 频谱分析模块
 
 分析 IMU 振动数据，识别振动源，给出 ArduPilot 陷波滤波器参数建议。
 """

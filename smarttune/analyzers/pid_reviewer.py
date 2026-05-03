@@ -6,7 +6,7 @@ PID 阶跃响应分析引擎 — 平台无关。
 消费 FlightData，输出 PIDAnalysisResult（含 ParamRef 参数引用）。
 所有平台特有的参数名翻译由输出层通过 PlatformAdapter.map_param_to_platform() 完成。
 
-核心算法（阶跃检测、指标计算、诊断规则）直接迁移自 ap_tune.pid_reviewer，
+核心算法（阶跃检测、指标计算、诊断规则）继承自 v1 ArduPilot-only 版，重构为多平台架构。
 变更点仅为输入/输出接口。
 """
 
@@ -126,7 +126,7 @@ _DEFAULT_BOUNDS = {
 
 
 # ---------------------------------------------------------------------------
-# 辅助函数（从 ap_tune.pid_reviewer 原样迁移）
+# 辅助函数（继承自 v1 ArduPilot-only 版）
 # ---------------------------------------------------------------------------
 
 def detect_steps(
