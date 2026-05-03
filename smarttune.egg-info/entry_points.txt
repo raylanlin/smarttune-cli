@@ -1,2 +1,0 @@
-[console_scripts]
-stune = smarttune.cli:main

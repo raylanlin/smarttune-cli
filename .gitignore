@@ -35,3 +35,4 @@ output/
 
 # PyPI
 *.whl
+*.egg-info/
