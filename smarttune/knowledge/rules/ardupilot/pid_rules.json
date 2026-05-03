@@ -1,0 +1,301 @@
+{
+  "schema_version": "1.0",
+  "source": "knowledge/pid_knowledge_base.md",
+  "ardupilot_version_min": "4.0",
+  "description": "ArduPilot Rate PID 调参知识库 — CLI 工具用阈值与规则",
+
+  "axis": ["roll", "pitch", "yaw"],
+
+  "thresholds": {
+    "rise_time_ms": {
+      "roll": {"ideal": [80, 120], "acceptable": [60, 180], "unit": "ms"},
+      "pitch": {"ideal": [80, 120], "acceptable": [60, 180], "unit": "ms"},
+      "yaw": {"ideal": [100, 200], "acceptable": [80, 300], "unit": "ms"}
+    },
+    "overshoot_percent": {
+      "ideal": [0, 10],
+      "acceptable": [0, 15],
+      "marginal": [15, 25],
+      "critical": [25, 100],
+      "unit": "%"
+    },
+    "settling_time_ms": {
+      "ideal": [200, 400],
+      "acceptable": [150, 600],
+      "marginal": [600, 1000],
+      "critical": [1000],
+      "unit": "ms"
+    },
+    "oscillation_count": {
+      "ideal": [0, 1],
+      "acceptable": [1, 2],
+      "marginal": [2, 3],
+      "critical": [3],
+      "note": "大于1次振荡即应关注"
+    },
+    "error_integral": {
+      "ideal": "< 0.05",
+      "acceptable": "< 0.10",
+      "marginal": "< 0.20",
+      "critical": ">= 0.20"
+    },
+    "noise_band": {
+      "description": "PID输出在稳态附近的噪声带宽",
+      "acceptable": "< 2% of max output",
+      "marginal": "2-5%",
+      "critical": "> 5%"
+    }
+  },
+
+  "assessment_levels": {
+    "EXCELLENT": {
+      "conditions": [
+        "overshoot <= 10%",
+        "settling_time <= 400ms",
+        "oscillation_count <= 1"
+      ]
+    },
+    "GOOD": {
+      "conditions": [
+        "overshoot <= 15%",
+        "settling_time <= 600ms",
+        "oscillation_count <= 2"
+      ]
+    },
+    "ACCEPTABLE": {
+      "conditions": [
+        "overshoot <= 25%",
+        "settling_time <= 1000ms",
+        "oscillation_count <= 3"
+      ]
+    },
+    "MARGINAL": {
+      "conditions": [
+        "overshoot <= 35%",
+        "settling_time <= 1500ms"
+      ],
+      "recommendation": "建议调参"
+    },
+    "POOR": {
+      "conditions": [
+        "overshoot > 35%",
+        "settling_time > 1500ms",
+        "oscillation_count > 3"
+      ],
+      "recommendation": "必须调参"
+    }
+  },
+
+  "tuning_rules": {
+    "P_too_high_symptoms": [
+      "超调 > 20%",
+      "振荡次数 >= 3",
+      "指令接入时有尖锐嗡鸣声",
+      "姿态响应过快但过冲明显"
+    ],
+    "P_too_low_symptoms": [
+      "上升时间 > 200ms",
+      "响应迟缓，手感偏肉",
+      "外扰恢复慢",
+      "姿态追踪误差大"
+    ],
+    "I_too_high_symptoms": [
+      "积分饱和导致姿态超调",
+      "电机发热增加",
+      "外扰后恢复过头",
+      "长时间定高漂移"
+    ],
+    "I_too_low_symptoms": [
+      "稳态误差无法消除",
+      "长时间飞行出现系统性偏航/姿态偏移",
+      "GPS 引导模式下位置漂移"
+    ],
+    "D_too_high_symptoms": [
+      "高频噪声放大，电机发出吱吱声",
+      "振荡频率升高但幅度小",
+      "指令接入时输出抖振",
+      "陀螺仪噪声被过度放大"
+    ],
+    "D_too_low_symptoms": [
+      "快速指令时过冲增大",
+      "相位裕度不足",
+      "外扰抑制能力弱"
+    ],
+    "default_pid_ranges": {
+      "ATC_RAT_RLL_P": {"min": 0.05, "max": 0.25, "typical": 0.12, "unit": "gain"},
+      "ATC_RAT_RLL_I": {"min": 0.01, "max": 0.1, "typical": 0.04, "unit": "gain"},
+      "ATC_RAT_RLL_D": {"min": 0.005, "max": 0.05, "typical": 0.015, "unit": "gain"},
+      "ATC_RAT_RLL_IMAX": {"min": 0.1, "max": 1.0, "typical": 0.4, "unit": "differential"},
+      "ATC_RAT_PIT_P": {"min": 0.05, "max": 0.25, "typical": 0.12, "unit": "gain"},
+      "ATC_RAT_PIT_I": {"min": 0.01, "max": 0.1, "typical": 0.04, "unit": "gain"},
+      "ATC_RAT_PIT_D": {"min": 0.005, "max": 0.05, "typical": 0.015, "unit": "gain"},
+      "ATC_RAT_PIT_IMAX": {"min": 0.1, "max": 1.0, "typical": 0.4, "unit": "differential"},
+      "ATC_RAT_YAW_P": {"min": 0.1, "max": 0.8, "typical": 0.30, "unit": "gain"},
+      "ATC_RAT_YAW_I": {"min": 0.01, "max": 0.2, "typical": 0.02, "unit": "gain"},
+      "ATC_RAT_YAW_D": {"min": 0.0, "max": 0.05, "typical": 0.0, "unit": "gain"},
+      "ATC_RAT_YAW_IMAX": {"min": 0.1, "max": 1.0, "typical": 0.4, "unit": "differential"}
+    }
+  },
+
+  "experience_rules": {
+    "step_response_classification": {
+      "指令_step_response": {
+        "测量方法": "阶跃输入（遥控器快速打杆）后观察姿态角响应",
+        "评估指标": ["上升时间", "超调量", "稳态时间", "振荡次数"]
+      },
+      "外扰_recovery": {
+        "测量方法": "高速平飞中突然松杆，观察自稳恢复过程",
+        "评估指标": ["恢复时间", "最大偏差", "振荡次数"]
+      }
+    },
+    "symptom_to_param": {
+      "过冲大": {"primary_action": "降低 P", "secondary_action": "适当降低 D"},
+      "响应慢": {"primary_action": "提高 P", "secondary_action": "检查 D 是否过大"},
+      "稳态误差": {"primary_action": "提高 I", "secondary_action": "提高 IMAX"},
+      "积分饱和超调": {"primary_action": "降低 I 或 IMAX", "secondary_action": "降低 P"},
+      "高频抖振": {"primary_action": "降低 D", "secondary_action": "检查陀螺噪声，考虑加滤波器"},
+      "外扰恢复慢": {"primary_action": "提高 P", "secondary_action": "适当提高 I"}
+    },
+    "gyro_filter_impact": {
+      "描述": "INS_GYRO_FILTER 影响 PID 可用增益上限",
+      "cutoff_freq_increase_effect": "相位延迟减少，可提高 PID 增益",
+      "cutoff_freq_decrease_effect": "相位延迟增大，PID 响应变慢",
+      "rule_of_thumb": "滤波器 cutoff 每提高 20Hz，可略微提高 D 增益 5-10%"
+    },
+    "notch_filter_impact": {
+      "描述": "陷波滤波器去除电机噪声后，可释放 PID 增益空间",
+      "action": "启用陷波后若振动降低，重新评估 PID 响应，可适当提高增益"
+    },
+    "tuning_sequence": {
+      "1_initialize": "使用初始 P/I/D（ATC_RAT_*_P=0.12, I=0.04, D=0.015）",
+      "2_gyro_filter": "先设 GYRO_FILTER 和陷波，确保振动在 GOOD 范围",
+      "3_P_tuning": "调节 P 使响应速度满足需求，关注超调和振荡",
+      "4_D_tuning": "调节 D 抑制过冲和噪声，放大到刚好不抖振为止",
+      "5_I_tuning": "调节 I 消除稳态误差，IMAX 限制积分饱和幅度",
+      "6_verify": "验证外扰恢复、全姿态范围表现"
+    }
+  },
+
+  "diagnostic_tree": {
+    "description": "PID 诊断决策树 — 输入 step response metrics",
+    "steps": [
+      {
+        "id": 1,
+        "check": "overshoot_percent > 25",
+        "result_true": {
+          "diagnosis": "POOR - 过冲严重",
+          "primary_param": "P",
+          "action": "降低 P 10-20%",
+          "secondary_check": "oscillation_count > 3?",
+          "if_oscillation": "同时降低 D 10%"
+        },
+        "result_false": {
+          "next": 2
+        }
+      },
+      {
+        "id": 2,
+        "check": "rise_time_ms > 200",
+        "result_true": {
+          "diagnosis": "MARGINAL - 响应偏慢",
+          "primary_param": "P",
+          "action": "提高 P 10-20%",
+          "check": "P已在上限?",
+          "if_at_limit": "检查陀螺滤波器 cutoff 是否过低，陷波是否正常"
+        },
+        "result_false": {
+          "next": 3
+        }
+      },
+      {
+        "id": 3,
+        "check": "oscillation_count >= 3",
+        "result_true": {
+          "diagnosis": "POOR - 多频振荡",
+          "primary_params": ["P", "D"],
+          "action": "降低 P 15%，检查 D 是否过高"
+        },
+        "result_false": {
+          "next": 4
+        }
+      },
+      {
+        "id": 4,
+        "check": "settling_time_ms > 1000",
+        "result_true": {
+          "diagnosis": "MARGINAL - 收敛慢",
+          "check": "overshoot > 15%?",
+          "if_overshoot": "降低 P/I",
+          "if_no_overshoot": "提高 P，I 适当增加"
+        },
+        "result_false": {
+          "next": 5
+        }
+      },
+      {
+        "id": 5,
+        "check": "error_integral > 0.20",
+        "result_true": {
+          "diagnosis": "ACCEPTABLE - 存在稳态误差",
+          "primary_param": "I",
+          "action": "提高 I 10-20%，提高 IMAX 适当"
+        },
+        "result_false": {
+          "next": 6
+        }
+      },
+      {
+        "id": 6,
+        "check": "noise_band > 5%",
+        "result_true": {
+          "diagnosis": "MARGINAL - 噪声过大",
+          "primary_param": "D",
+          "action": "降低 D 10-20%，检查 GYRO_FILTER 和陷波",
+          "check": "GYRO_FILTER > 80?",
+          "if_high": "降低 GYRO_FILTER 1档"
+        },
+        "result_false": {
+          "diagnosis": "GOOD/EXCELLENT",
+          "recommendation": "当前 PID 参数合适，无需调整"
+        }
+      }
+    ]
+  },
+
+  "param_change_rules": {
+    "step_size": {
+      "P": {"increment": 0.01, "max_change_per_step": 0.02, "description": "P 增益调整步进"},
+      "I": {"increment": 0.005, "max_change_per_step": 0.02, "description": "I 增益调整步进"},
+      "D": {"increment": 0.002, "max_change_per_step": 0.005, "description": "D 增益调整步进"},
+      "IMAX": {"increment": 0.05, "max_change_per_step": 0.1, "description": "积分限幅调整步进"}
+    },
+    "safety_limits": {
+      "P_change_per_session": "不超过 ±30%",
+      "D_change_per_session": "不超过 ±30%",
+      "I_change_per_session": "不超过 ±50%"
+    }
+  },
+
+  "output_schema": {
+    "axis": "string (roll|pitch|yaw|all)",
+    "metrics": {
+      "rise_time_ms": "float",
+      "overshoot_percent": "float",
+      "settling_time_ms": "float",
+      "oscillation_count": "int",
+      "error_integral": "float",
+      "noise_band_percent": "float"
+    },
+    "assessment": "string (EXCELLENT|GOOD|ACCEPTABLE|MARGINAL|POOR)",
+    "recommendations": [
+      {
+        "param": "string",
+        "current": "float",
+        "recommended": "float",
+        "action": "string (increase|decrease)",
+        "reason": "string",
+        "confidence": "string (high|medium|low)"
+      }
+    ]
+  }
+}

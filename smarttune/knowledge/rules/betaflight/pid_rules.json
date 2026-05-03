@@ -1,0 +1,213 @@
+{
+  "schema_version": "1.0",
+  "source": "betaflight-tuning-handbook-4.x",
+  "betaflight_version_min": "4.2",
+  "description": "Betaflight Rate PID 调参知识库 — BF 4.x 特有的 PID 体系",
+
+  "axis": ["roll", "pitch", "yaw"],
+
+  "thresholds": {
+    "rise_time_ms": {
+      "roll":  {"ideal": [40, 80],  "acceptable": [30, 120],  "unit": "ms"},
+      "pitch": {"ideal": [40, 80],  "acceptable": [30, 120],  "unit": "ms"},
+      "yaw":   {"ideal": [60, 150], "acceptable": [50, 200],  "unit": "ms"}
+    },
+    "overshoot_percent": {
+      "ideal": [0, 8],
+      "acceptable": [0, 12],
+      "marginal": [12, 20],
+      "critical": [20, 100],
+      "unit": "%",
+      "_note": "BF FPV 飞机比 AP 更强调锐利响应，允许范围更窄"
+    },
+    "settling_time_ms": {
+      "ideal": [100, 250],
+      "acceptable": [80, 400],
+      "marginal": [400, 700],
+      "critical": [700],
+      "unit": "ms"
+    },
+    "oscillation_count": {
+      "ideal": [0, 1],
+      "acceptable": [1, 2],
+      "marginal": [2, 3],
+      "critical": [3]
+    }
+  },
+
+  "assessment_levels": {
+    "EXCELLENT": {
+      "conditions": ["overshoot <= 8%", "settling_time <= 250ms", "oscillation_count <= 1"]
+    },
+    "GOOD": {
+      "conditions": ["overshoot <= 12%", "settling_time <= 400ms", "oscillation_count <= 2"]
+    },
+    "ACCEPTABLE": {
+      "conditions": ["overshoot <= 20%", "settling_time <= 700ms", "oscillation_count <= 3"]
+    },
+    "MARGINAL": {
+      "conditions": ["overshoot <= 30%", "settling_time <= 1000ms"],
+      "recommendation": "建议调参"
+    },
+    "POOR": {
+      "conditions": ["overshoot > 30%", "settling_time > 1000ms", "oscillation_count > 3"],
+      "recommendation": "必须调参"
+    }
+  },
+
+  "tuning_rules": {
+    "P_too_high_symptoms": [
+      "超调 > 15%", "快速打杆时可见振荡", "高油门时高频抖振加重", "FPV 镜头抖动"
+    ],
+    "P_too_low_symptoms": [
+      "手感松软，缺乏锁定感", "打杆后响应延迟", "快速翻滚/急转时跟不上", "风中飘"
+    ],
+    "I_too_high_symptoms": [
+      "松杆后机体继续偏移（积分饱和）", "姿态反弹超过目标", "长时间悬停时慢速摆动"
+    ],
+    "I_too_low_symptoms": [
+      "悬停时持续向某侧偏", "油门变化时姿态偏移", "无法消除稳态偏差"
+    ],
+    "D_too_high_symptoms": [
+      "电机发热明显", "高频 hissing 电机噪声", "轻微打杆时响应生硬"
+    ],
+    "D_too_low_symptoms": [
+      "快速翻滚后 bounce-back", "propwash oscillation", "阶跃响应后拖尾振荡"
+    ],
+    "FF_too_high_symptoms": [
+      "打杆瞬间明显过冲", "RC 指令直接穿透输出", "打杆松杆序列出现方波抖动"
+    ],
+    "FF_too_low_symptoms": [
+      "快速指令时响应靠 P 项追赶", "高速翻滚时角速率追踪滞后"
+    ],
+
+    "d_min_d_max_rules": {
+      "d_min_role": "低 setpoint 运动时的 D 增益 — 降低悬停时电机噪声",
+      "d_max_role": "高 setpoint 运动时的 D 增益 — 在快速动作时提供足够阻尼",
+      "tuning_advice": {
+        "reduce_motor_heat": "降低 d_min，保持 d_max",
+        "reduce_propwash": "提高 d_max，保持 d_min",
+        "typical_ratio": "d_min 通常为 d_max 的 50-70%"
+      }
+    },
+
+    "anti_gravity_rules": {
+      "purpose": "急加油/减油时临时提升 I 增益，防止姿态偏移",
+      "typical_range": [30, 120],
+      "default": 80,
+      "too_high_symptom": "油门变化时出现反弹/超调",
+      "too_low_symptom": "急拉油门时明显偏转"
+    },
+
+    "default_pid_ranges": {
+      "pid_roll_p":  {"min": 20, "max": 100, "typical": 45, "unit": "bf_units"},
+      "pid_roll_i":  {"min": 30, "max": 150, "typical": 80, "unit": "bf_units"},
+      "pid_roll_d":  {"min": 15, "max": 80,  "typical": 40, "unit": "bf_units"},
+      "pid_roll_f":  {"min": 50, "max": 200, "typical": 120, "unit": "bf_units"},
+      "pid_pitch_p": {"min": 20, "max": 100, "typical": 47, "unit": "bf_units"},
+      "pid_pitch_i": {"min": 30, "max": 150, "typical": 84, "unit": "bf_units"},
+      "pid_pitch_d": {"min": 15, "max": 80,  "typical": 46, "unit": "bf_units"},
+      "pid_pitch_f": {"min": 50, "max": 200, "typical": 125, "unit": "bf_units"},
+      "pid_yaw_p":   {"min": 20, "max": 100, "typical": 45, "unit": "bf_units"},
+      "pid_yaw_i":   {"min": 30, "max": 150, "typical": 80, "unit": "bf_units"},
+      "pid_yaw_d":   {"min": 0,  "max": 60,  "typical": 0,  "unit": "bf_units"},
+      "pid_yaw_f":   {"min": 50, "max": 200, "typical": 120, "unit": "bf_units"},
+      "d_min_roll":  {"min": 15, "max": 50,  "typical": 25, "unit": "bf_units"},
+      "d_min_pitch": {"min": 15, "max": 50,  "typical": 28, "unit": "bf_units"},
+      "d_min_yaw":   {"min": 0,  "max": 30,  "typical": 0,  "unit": "bf_units"}
+    }
+  },
+
+  "frame_type_presets": {
+    "5_inch_freestyle": {
+      "description": "5\" Freestyle — 标准 FPV 机型",
+      "typical_looptime": 250,
+      "response_target": {"overshoot_max": 10, "settling_time_max": 300}
+    },
+    "3_inch_cinewhoop": {
+      "description": "3\" Cinewhoop — 室内/近距低速飞行",
+      "typical_looptime": 500,
+      "response_target": {"overshoot_max": 5, "settling_time_max": 200},
+      "_tuning_note": "较低 D 和 FF 避免抖振；高 I 保持稳定悬停"
+    },
+    "7_inch_long_range": {
+      "description": "7\" Long Range — 远程巡航",
+      "typical_looptime": 250,
+      "response_target": {"overshoot_max": 15, "settling_time_max": 500},
+      "_tuning_note": "较低 P/D 减少电机负载，较高 I 维持航线精度"
+    },
+    "toothpick_ultralight": {
+      "description": "Toothpick — 极轻量机型",
+      "typical_looptime": 250,
+      "response_target": {"overshoot_max": 8, "settling_time_max": 200},
+      "_tuning_note": "惯量极低，P 和 D 比标准 5\" 低 30-50%"
+    }
+  },
+
+  "diagnostic_tree": {
+    "steps": [
+      {
+        "id": 1, "check": "overshoot_percent > 20",
+        "result_true": {"diagnosis": "POOR - 过冲严重", "action": "降低 P 10-15%, 降低 FF 10%"},
+        "result_false": {"next": 2}
+      },
+      {
+        "id": 2, "check": "rise_time_ms > 120",
+        "result_true": {"diagnosis": "响应偏慢", "action": "提高 P 10%, 或提高 FF 15%"},
+        "result_false": {"next": 3}
+      },
+      {
+        "id": 3, "check": "oscillation_count >= 3",
+        "result_true": {"diagnosis": "持续振荡", "action": "降低 P 15%, 检查滤波器延迟"},
+        "result_false": {"next": 4}
+      },
+      {
+        "id": 4, "check": "settling_time_ms > 700",
+        "result_true": {"diagnosis": "收敛慢", "action": "有过冲则降低 P/I, 无过冲则提高 P"},
+        "result_false": {"next": 5}
+      },
+      {
+        "id": 5, "check": "noise_band > 5%",
+        "result_true": {"diagnosis": "D-term 噪声", "action": "降低 d_min 15%, 检查 dterm_lowpass"},
+        "result_false": {"diagnosis": "GOOD/EXCELLENT"}
+      }
+    ]
+  },
+
+  "param_change_rules": {
+    "step_size": {
+      "P":     {"increment": 2, "max_change_per_step": 5},
+      "I":     {"increment": 5, "max_change_per_step": 10},
+      "D":     {"increment": 2, "max_change_per_step": 5},
+      "FF":    {"increment": 5, "max_change_per_step": 15},
+      "d_min": {"increment": 2, "max_change_per_step": 5}
+    },
+    "safety_limits": {
+      "P_change_per_session": "±20%",
+      "D_change_per_session": "±30%",
+      "I_change_per_session": "±30%",
+      "FF_change_per_session": "±30%"
+    }
+  },
+
+  "experience_rules": {
+    "symptom_to_param": {
+      "过冲大":         {"primary_action": "降低 P", "secondary_action": "降低 FF"},
+      "响应慢":         {"primary_action": "提高 P", "secondary_action": "提高 FF"},
+      "稳态误差":       {"primary_action": "提高 I", "secondary_action": "检查 anti_gravity"},
+      "propwash振荡":   {"primary_action": "提高 D/d_max", "secondary_action": "检查滤波器延迟"},
+      "电机发热":       {"primary_action": "降低 d_min", "secondary_action": "降低 D"},
+      "高频抖振":       {"primary_action": "降低 D", "secondary_action": "降低 dterm_lowpass_hz"},
+      "油门变化偏转":   {"primary_action": "提高 anti_gravity", "secondary_action": "提高 I"},
+      "bounce_back":    {"primary_action": "提高 D", "secondary_action": "降低 FF"}
+    },
+    "tuning_sequence": {
+      "1_滤波器优先": "先确保 gyro/dterm 滤波器合理 (RPM filter + dynamic notch)",
+      "2_P值": "从默认开始，提高 P 直到出现轻微过冲",
+      "3_D值": "提高 D 抑制过冲和 propwash，直到电机微热",
+      "4_FF值": "提高 FF 加速响应，减轻 P 的负担",
+      "5_I值": "微调 I 消除稳态误差",
+      "6_d_min": "设 d_min 为 D 的 60%，减少悬停时电机噪声"
+    }
+  }
+}

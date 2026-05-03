@@ -1,0 +1,21 @@
+{
+  "vibration_thresholds": {
+    "_description": "Cross-platform vibration thresholds based on physical limits",
+    "accel_rms_mss": {
+      "excellent": 3.0,
+      "good": 10.0,
+      "marginal": 20.0,
+      "poor": 30.0
+    },
+    "gyro_noise_floor_dps": {
+      "excellent": 0.5,
+      "good": 1.5,
+      "marginal": 3.0,
+      "poor": 5.0
+    },
+    "fft_peak": {
+      "significant_db_above_floor": 10,
+      "critical_db_above_floor": 20
+    }
+  }
+}

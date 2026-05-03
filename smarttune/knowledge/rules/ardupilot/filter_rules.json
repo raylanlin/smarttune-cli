@@ -1,0 +1,440 @@
+{
+  "schema_version": "1.0",
+  "source": "filter-tuning-kb.md",
+  "ardupilot_version_min": "4.0",
+  "description": "ArduPilot 滤波器调参知识库 — FFT 分析与陷波滤波器规则",
+
+  "data_collection": {
+    "param_requirements": {
+      "INS_ACCEL_FILTER": 10,
+      "INS_GYRO_FILTER": "default (20Hz until tuned)",
+      "LOG_BITMASK": "must include IMU Batch Sampler (0x08000)"
+    },
+    "flight_mode": ["Stabilize", "AltHold"],
+    "min_duration_seconds": 30,
+    "maneuver": "gentle hover"
+  },
+
+  "vibration_thresholds": {
+    "unit": "m/s/s RMS",
+    "levels": [
+      {
+        "level": "EXCELLENT",
+        "range": [0, 15],
+        "color_code": "green",
+        "implication": "No filter needed. Ready for aggressive PID tuning.",
+        "action": "Default filter settings sufficient. Proceed to PID tuning."
+      },
+      {
+        "level": "GOOD",
+        "range": [15, 30],
+        "color_code": "green-yellow",
+        "implication": "Acceptable. Some noise visible in logs.",
+        "action": "Enable harmonic notch (INS_HNTCH_HMC=1). Use GYRO_FILTER per prop size default."
+      },
+      {
+        "level": "MARGINAL",
+        "range": [30, 60],
+        "color_code": "yellow",
+        "implication": "May cause position/altitude hold issues. Visible vibration in flight.",
+        "action": "Mechanical inspection recommended. FFT analysis + notch filter. Lower GYRO_FILTER by 1 step."
+      },
+      {
+        "level": "SEVERE",
+        "range": [60, 100],
+        "color_code": "orange-red",
+        "implication": "Position hold unreliable. Altitude hold degraded. Possible EKF failures.",
+        "action": "Do NOT fly in auto modes until resolved. Check: prop balance, motor mounts, frame rigidity, IMU dampening."
+      },
+      {
+        "level": "CRITICAL",
+        "range": [100, 99999],
+        "color_code": "red",
+        "implication": "IMU saturation likely. EKF will fail. Possible motor/ESC damage over time.",
+        "action": "Ground the vehicle immediately. Mechanical fix mandatory before flight."
+      }
+    ]
+  },
+
+  "fft_peak_rules": {
+    "motor_noise": {
+      "frequency_formula": "motor_Hz = (pole_pairs / 2) * RPM / 60",
+      "typical_range_hz": [60, 250],
+      "characteristics": [
+        "main peak at motor fundamental frequency",
+        "harmonic peaks at 2x, 3x, sometimes 4x fundamental",
+        "peaks shift with throttle (ESC telemetry mode) or stay fixed (static mode)"
+      ],
+      "fft_signature": "sharp, narrow peak — mechanical rotor frequency"
+    },
+    "propeller_blade_pass": {
+      "frequency_formula": "BPF_Hz = (# blades) * RPM / 60",
+      "typical_range_hz": [80, 400],
+      "characteristics": [
+        "usually higher than motor fundamental",
+        "often 2nd or 3rd harmonic of motor freq",
+        "blade pass frequency = motor_freq * (blade_count / pole_pairs)"
+      ],
+      "fft_signature": "broader peak, may have multiple blade harmonics"
+    },
+    "structural_resonance": {
+      "frequency_formula": "no fixed formula — identified from flight data",
+      "typical_range_hz": [100, 500],
+      "characteristics": [
+        "frame/arm resonance, often excited by specific throttle range",
+        "can shift with battery voltage, payload",
+        "usually a single dominant peak that grows with throttle"
+      ],
+      "fft_signature": "sudden spike at specific throttle, may be intermittent"
+    },
+    "motor_bearing_wear": {
+      "frequency_formula": "BPFO = (RPM / 60) * (N/2) * (1 - (D/d) * cos(alpha))",
+      "typical_range_hz": [200, 800],
+      "characteristics": [
+        "sidebands around motor frequency",
+        "noise floor elevation across spectrum",
+        "progressively worsening over time"
+      ],
+      "fft_signature": "elevated noise floor + sidebands, not sharp peaks"
+    }
+  },
+
+  "primary_peak_identification": {
+    "step1": "Find the highest magnitude peak in FFT spectrum",
+    "step2": "Verify it is motor-related (check harmonics at 2x, 3x exist)",
+    "step3": "Confirm with throttle test: peak shifts with RPM in dynamic mode, fixed in static",
+    "step4": "If multiple peaks of similar magnitude, rank by: amplitude > sharpness > throttle correlation",
+    "decision": {
+      "highest_peak_amplitude": "Primary notch target (INS_HNTCH_FREQ)",
+      "2nd_highest_peak": "Consider 2nd harmonic notch or INS_HNTCH_OPTS bit1 tracking",
+      "noise_floor_elevated": "Structural issue — not filterable, needs mechanical fix"
+    }
+  },
+
+  "multi_peak_strategy": {
+    "2_peaks_different_sources": {
+      "example": "motor peak at 120Hz + prop blade pass at 240Hz",
+      "action": "Set INS_HNTCH_FREQ = lower freq (120Hz), enable harmonics (INS_HNTCH_HMC = 1) to cover 240Hz, 360Hz",
+      "fallback": "If harmonics insufficient, use INS_HNTC2_* for 2nd independent notch"
+    },
+    "2_peaks_same_source_different_freq": {
+      "example": "two motors at different RPM (asymmetric prop wear)",
+      "action": "Use ESC telemetry mode (INS_HNTCH_MODE = 3) for per-motor tracking, or set INS_HNTCH_FREQ = lower, INS_HNTC2_FREQ = higher"
+    },
+    "3_plus_significant_peaks": {
+      "action": "Use FFT-based tracking mode (INS_HNTCH_MODE = 4), set INS_HNTCH_OPTS bit1 to auto-track 3 largest peaks",
+      "constraint": "CPU warning — max 3 harmonics total across all notches on most boards"
+    },
+    "broad_elevated_region": {
+      "example": "200-350Hz elevated, no sharp peaks",
+      "action": "Likely structural resonance. Use static notch at center of region with wider BW (BW = FREQ/2). May need mechanical damping.",
+      "do_not": "Never use FFT-tracking mode for broadband noise — it will try to track noise instead of signal"
+    }
+  },
+
+  "notch_mode_selection": {
+    "mode_meanings": {
+      "0": "Disabled — no harmonic notch filtering",
+      "1": "Fixed frequency static notch (INS_HNTCH_FREQ is fixed, does not track RPM)",
+      "2": "Throttle-based dynamic notch (FREQ scales with throttle: FREQ = REF * sqrt(throttle/hover_throttle))",
+      "3": "ESC telemetry dynamic notch (FREQ from motor RPM telemetry, most accurate for multirotor)",
+      "4": "FFT-based tracking (uses in-flight FFT analysis to find and track noise peaks)"
+    },
+    "mode_selection_table": [
+      {"scenario": "Single static motor/prop, known RPM", "recommended_mode": 1},
+      {"scenario": "Multirotor with ESC telemetry", "recommended_mode": 3},
+      {"scenario": "Multirotor without ESC telemetry", "recommended_mode": 2},
+      {"scenario": "Complex vibration with multiple sources, good CPU margin", "recommended_mode": 4},
+      {"scenario": "Traditional helicopter with known rotor speed", "recommended_mode": 1},
+      {"scenario": "Gas helicopter with RPM sensor", "recommended_mode": 3}
+    ],
+    "mode_4_cpu_warning": "FFT tracking mode (4) can consume significant CPU. Test with HCAL enabled. On F7/H7 MCUs: OK for 1 notch + 2 harmonics. On older boards: reduce harmonics or use mode 2/3."
+  },
+
+  "notch_parameter_rules": {
+    "INS_HNTCH_FREQ": {
+      "description": "陷波中心频率 (Hz)",
+      "static_mode_formula": "FREQ = measured_primary_vibration_peak_Hz",
+      "throttle_mode_formula": "FREQ = hover_freq (at setup hover throttle), filter dynamically scales from this reference",
+      "esc_telem_mode_formula": "FREQ = below_hover_freq (telemetry provides actual RPM, filter tracks directly)",
+      "fft_tracking_mode": "Auto-set from FFT analysis, or manually override to measured peak",
+      "constraint": "Must be > 0. Never round UP — round to nearest integer below measured peak if uncertain (safer to slightly under-target than over-target)."
+    },
+    "INS_HNTCH_BW": {
+      "description": "陷波带宽 (Hz) — 滤波器在 -3dB 点的宽度",
+      "standard_formula": "BW = FREQ / 2",
+      "narrow_formula": "BW = FREQ / 4 (use when: motor noise is very sharp/spectral, CPU constrained, or many harmonics enabled)",
+      "wide_formula": "BW = FREQ * 0.8 (use when: structural resonance causes broad elevated region, or multiple close peaks)",
+      "helicopter_formula": "BW = 10 (fixed, traditional helicopters have very stable rotor freq)",
+      "harmonic_notch_rule": "When INS_HNTCH_HMC = 1, harmonics share proportional BW (each harmonic BW = fundamental_BW * harmonic_number)",
+      "practical_min_BW": 5
+    },
+    "INS_HNTCH_ATT": {
+      "description": "陷波衰减深度 (dB) — 值越大陷波越深",
+      "default_recommended": 40,
+      "range": [10, 100],
+      "practical_values": {
+        "40": "Standard — good noise reduction, minimal phase impact",
+        "60": "Aggressive — use if residual noise still high after filter",
+        "80": "Maximum — use with caution; very deep notch can cause phase distortion",
+        "20": "Conservative — use when notch is near control bandwidth (e.g. 5\" props at low RPM)"
+      },
+      "phase_impact": "ATT越高 → 相位延迟越大 → 对 PID 相位裕度影响增大",
+      "warning": "ATT > 80 can cause control issues on frames with marginal stiffness. Monitor for oscillation after filter enable."
+    },
+    "INS_HNTCH_REF": {
+      "description": "参考频率值 — 用于 throttle-based 和 FFT-based 模式的缩放基准",
+      "throttle_mode_formula": "REF = hover_throttle * SQUARE(min_freq / hover_freq)",
+      "meaning": "When throttle = hover, filter center = REF. As throttle varies, center freq scales as sqrt(throttle/hover_throttle).",
+      "fft_mode_usage": "REF = measured noise frequency at hover throttle",
+      "static_mode_usage": "REF can be left at 0 (not used)"
+    },
+    "INS_HNTCH_HMC": {
+      "description": "谐波开关 — 是否启用谐波陷波",
+      "0": "Disabled — only fundamental frequency notch",
+      "1": "Enabled — notch at fundamental + harmonics 2x, 3x (and 4x if INS_HNTC3 used)",
+      "recommendation": "Almost always set to 1 for multirotor. Motor noise has significant harmonic content.",
+      "harmonic_count": "Up to 3 harmonics auto-generated (FREQ*2, FREQ*3, FREQ*4). Each harmonic BW scales proportionally."
+    }
+  },
+
+  "gyro_filter_tuning_table": {
+    "prop_size_default_start": {
+      "below_5inch": {"initial_gyro_filter_hz": 80, "reason": "High RPM motors generate noise up to 200Hz+"},
+      "5_10inch": {"initial_gyro_filter_hz": 60, "reason": "Moderate noise, most energy below 150Hz"},
+      "10_15inch": {"initial_gyro_filter_hz": 40, "reason": "Lower RPM, noise below 100Hz typically"},
+      "above_15inch": {"initial_gyro_filter_hz": 20, "reason": "Low RPM, structural resonances dominate"}
+    },
+    "adjustment_rules": [
+      {
+        "condition": "FFT shows noise peaks well attenuated by notch, noise floor clean",
+        "action": "Increase GYRO_FILTER by 1 step (20 to 40, 40 to 60, 60 to 80)",
+        "monitor": "Motor temperature, audio for high-pitched noise, flight feel"
+      },
+      {
+        "condition": "Gyro FFT shows significant noise above 200Hz leaking through",
+        "action": "Lower GYRO_FILTER by 1 step, or add 2nd harmonic notch",
+        "do_not": "Never just keep lowering gyro filter — this introduces phase lag that limits PID performance"
+      },
+      {
+        "condition": "PID oscillates after notch filter enabled",
+        "action": "Notch not deep enough OR gyro filter too high. Raise ATT to 60 or lower gyro filter.",
+        "check": "Verify by temporarily raising gyro filter to 20Hz and retesting"
+      },
+      {
+        "condition": "Notch filter enabled but attitude estimate drifts",
+        "action": "Check INS_ACCEL_FILTER (default 10Hz). If too low, position estimate suffers. Raise to 20Hz."
+      }
+    ],
+    "minimum_gyro_filter": 10,
+    "maximum_gyro_filter": 256,
+    "PID_phase_margin_note": "每将GYRO_FILTER提高一档(~+20Hz), 相位延迟减少约3-5度, 可略微提高 PID D gain. 但收益递减, 不要过度调高GYRO_FILTER来代替陷波."
+  },
+
+  "gyro_filter_relationship": {
+    "core_principle": "Gyro lowpass filter cutoff freq up → phase delay down → 可用PID增益 up. 但同时噪声 up → 可能触发电机抖动或自激.",
+    "tradeoff": {
+      "cutoff_too_low": "相位延迟过大 → PID响应变慢 → 姿态追踪差 → 飞行手感肉",
+      "cutoff_too_high": "噪声泄漏过多 → PID对振动误响应 → 电机发热增加 → 可能姿态发散",
+      "notch_then_gyro": "陷波滤波器降低motor noise后 → 可提高GYRO_FILTER → 可用更高PID增益 → 更好的姿态控制"
+    },
+    "filter_cascade": "Gyro_raw → Harmonic_Notch(s) → Gyro_Lowpass_Filter → Rate_PID → Motor_output"
+  },
+
+  "accel_filter": {
+    "default": 10,
+    "purpose": "加速度计低通 — EKF位置估计的前置滤波",
+    "critical_note": "此滤波器直接影响 EKF 对位置的估计（EKF 在加速度计路径上）。设太低 → 位置跳变/漂移。设太高 → 振动进入EKF。",
+    "tuning": "If position hold (Loiter/POSITION) is stable, leave at 10-20. If EKF complains about innovation (large position error), try raising to 20Hz.",
+    "do_not_confuse_with_gyro": "不要与INS_GYRO_FILTER混淆 — 陀螺仪走内环(姿态控制), 加速度计走外环(位置估计), 各独立调"
+  },
+
+  "param_validation_rules": {
+    "FREQ": [
+      {"rule": "FREQ > 0", "error": "FREQ must be positive"},
+      {"rule": "FREQ < INS_GYRO_RATE/2 (Nyquist)", "error": "FREQ exceeds sampling rate/2"},
+      {"rule": "FREQ within expected range for platform", "warn_if_outside": "20-400Hz for multirotor, 20-100Hz for helicopter"}
+    ],
+    "BW": [
+      {"rule": "BW >= 5", "error": "BW too narrow may cause numerical instability"},
+      {"rule": "BW <= FREQ * 2", "warn": "BW wider than 2x FREQ is unusual"},
+      {"rule": "BW = FREQ/2 for typical motor noise", "note": "BW = FREQ/4 if sharp peaks; BW = FREQ for broad noise"}
+    ],
+    "ATT": [
+      {"rule": "10 <= ATT <= 100", "error": "ATT out of valid range"},
+      {"rule": "ATT >= 40 if vibration level is MARGINAL or above", "recommendation": "Deep notch needed for stronger attenuation"}
+    ],
+    "HMC": [
+      {"rule": "HMC=1 for multirotor with harmonic content", "recommendation": "Motor noise always has harmonics"},
+      {"rule": "HMC=0 for fixed-frequency sources without harmonics", "recommendation": "Traditional helicopters, specific structural resonance"}
+    ]
+  },
+
+  "post_filter_acceptance": {
+    "residual_vibration_check": {
+      "method": "Compare pre-filter and post-filter FFT from IMU batch sampler (post-filter log)",
+      "pass_criteria": [
+        "Primary motor peak amplitude reduced by >= 20dB",
+        "No new peaks introduced by filter (check for aliasing artifacts)",
+        "Gyro noise floor < 10dB above baseline above 50Hz"
+      ],
+      "partial_pass": [
+        "Peak reduced by 10-20dB: notch BW may be too narrow or ATT too low — increase ATT to 60",
+        "Peak reduced by < 10dB: check FREQ is correctly set to peak center, check HMC enabled for harmonics"
+      ],
+      "fail_criteria": [
+        "Peak not reduced: notch FREQ does not match peak freq — remeasure FFT",
+        "Noise floor elevated: GYRO_FILTER too high — lower by 1 step",
+        "New peaks appear: filter is unstable or BW too wide — reduce BW or ATT"
+      ]
+    },
+    "flight_test_checklist": {
+      "motor_temperature": "Not significantly hotter than pre-filter baseline (< 5C increase acceptable)",
+      "audio": "No new high-pitched noise from motors",
+      "flight_feel": "No oscillation or jitter in Stabilize. Smooth throttle response.",
+      "position_hold": "Loiter/PosHold stable for >= 30 seconds without drift correction spikes"
+    }
+  },
+
+  "diagnostic_tree": {
+    "vibration_level_branch": [
+      {
+        "condition": "VIBE.level < 15",
+        "result": "EXCELLENT",
+        "next": "Proceed to PID tuning. If FFT shows peaks, still recommend notch."
+      },
+      {
+        "condition": "15 <= VIBE.level < 30",
+        "result": "GOOD",
+        "action": "Enable harmonic notch. FFT analysis to find primary peak, set INS_HNTCH_FREQ. BW=FREQ/2, ATT=40, HMC=1. Set GYRO_FILTER per prop size."
+      },
+      {
+        "condition": "30 <= VIBE.level < 60",
+        "result": "MARGINAL",
+        "action": "Mechanical inspection + notch. Check if FFT has single clear peak: YES -> static/tracking notch; NO -> check prop balance, motor mount, frame rigidity. Lower GYRO_FILTER 1 step. Raise ATT to 60. For multi-peak: mode 4 or INS_HNTC2."
+      },
+      {
+        "condition": "VIBE.level >= 60",
+        "result": "SEVERE/CRITICAL",
+        "action": "Do NOT fly in auto modes. Mandatory mechanical fix checklist: [ ] prop balance, [ ] motor dampening, [ ] arm tightening/frame crack, [ ] IMU dampening, [ ] battery/load mounting. Re-test vibration after fix before filter tuning."
+      }
+    ],
+    "fft_peak_branch": [
+      {
+        "condition": "FFT shows single peak, within prop size frequency range",
+        "result": "Typical motor noise",
+        "action": "Mode 1 (static) or mode 2/3. FREQ=peak_freq, BW=FREQ/2, HMC=1. Check harmonics (2x, 3x) -> enable HMC."
+      },
+      {
+        "condition": "FFT shows multi-peak (2-3 similar magnitude)",
+        "result": "Mixed frequency noise or asymmetric motors",
+        "action": "With ESC telemetry: mode 3 (per-motor). Without: INS_HNTCH_FREQ=lowest_peak, INS_HNTC2_FREQ=second_peak. With 3+ peaks: mode 4 + HNTC2."
+      },
+      {
+        "condition": "FFT shows broadband elevation (no clear peak)",
+        "result": "Structural resonance",
+        "action": "Mechanical solution preferred. Temporary: static notch at region center, wider BW (BW=FREQ/2). GYRO_FILTER lowered 2 steps. Warning: wide notch affects control bandwidth."
+      }
+    ],
+    "post_filter_validation_branch": [
+      {
+        "check": "Primary peak reduced >= 20dB?",
+        "yes": "Pass. Check flight feel.",
+        "partial": "Raise ATT to 60, or slightly increase BW.",
+        "fail": "FREQ mismatch. Re-measure FFT."
+      },
+      {
+        "check": "Noise floor elevated?",
+        "yes": "GYRO_FILTER too high. Lower by 1 step.",
+        "no": "Normal."
+      },
+      {
+        "check": "Phase delay / sluggish feel?",
+        "yes": "ATT > 60 or BW too wide. Reduce.",
+        "no": "Filter pass."
+      }
+    ]
+  },
+
+  "practical_parameter_decision_table": [
+    {
+      "input_peak_freq_hz": 120,
+      "mode": 1,
+      "FREQ": 120,
+      "BW": 60,
+      "ATT": 40,
+      "HMC": 1,
+      "notes": "Motor fundamental at 120Hz, e.g. 10\" props at ~1800 ERPM"
+    },
+    {
+      "input_peak_freq_hz": 80,
+      "mode": 2,
+      "REF": 80,
+      "FREQ": 80,
+      "BW": 40,
+      "ATT": 40,
+      "HMC": 1,
+      "notes": "Common for 5-7\" props at hover"
+    },
+    {
+      "input_peak_freq_hz": 240,
+      "mode": 3,
+      "FREQ": 240,
+      "BW": 120,
+      "ATT": 40,
+      "HMC": 1,
+      "notes": "With ESC telemetry, auto-tracks actual RPM"
+    },
+    {
+      "input_peak_freq_hz": 180,
+      "mode": 4,
+      "REF": 180,
+      "FREQ": "auto (from FFT)",
+      "BW": 90,
+      "ATT": 40,
+      "HMC": 1,
+      "notes": "FFT mode finds and tracks peaks dynamically"
+    },
+    {
+      "input_peak_freq_hz": 65,
+      "mode": 1,
+      "FREQ": 65,
+      "BW": 10,
+      "ATT": 40,
+      "HMC": 0,
+      "notes": "Traditional helicopter main rotor (mechanically stable freq)"
+    }
+  ],
+
+  "fft_amplitude_threshold": {
+    "noise_peak_above_this": "30 dB above noise floor = significant noise source",
+    "acceptable_noise_floor": "20 dB above baseline",
+    "post_filter_check": "After notch enabled, primary peak should be reduced by >= 20dB"
+  },
+
+  "output_schema": {
+    "vibration_level": "string (EXCELLENT|GOOD|MARGINAL|SEVERE|CRITICAL)",
+    "vibration_value_mss": "float (m/s/s RMS)",
+    "peak_frequencies": [
+      {
+        "freq_hz": "float",
+        "magnitude_db": "float",
+        "source": "string (motor|prop_blade_pass|structural_resonance|bearing_wear)",
+        "is_harmonic": "bool"
+      }
+    ],
+    "recommendations": {
+      "INS_HNTCH_ENABLE": 1,
+      "INS_HNTCH_MODE": "int (0-4)",
+      "INS_HNTCH_FREQ": "float",
+      "INS_HNTCH_BW": "float",
+      "INS_HNTCH_ATT": "int",
+      "INS_HNTCH_REF": "float (if mode 2/3/4)",
+      "INS_HNTCH_HMC": "int (0 or 1)",
+      "INS_GYRO_FILTER": "int",
+      "INS_ACCEL_FILTER": "int"
+    },
+    "warnings": ["string"],
+    "mechanical_checks_required": ["string"]
+  }
+}

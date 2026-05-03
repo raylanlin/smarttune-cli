@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smarttune"
+version = "2.0.0-dev"
+description = "Multi-platform flight log analysis & tuning advisor CLI"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Raylan LIN", email = "raylanlin@gmail.com"}
+]
+keywords = [
+    "ardupilot", "betaflight", "px4", "tuning", "pid", "fft",
+    "drone", "flight-controller", "blackbox", "ulog",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    "matplotlib>=3.5.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+ardupilot = ["pymavlink>=2.4.0"]
+px4 = ["pyulog>=1.0.0"]
+all = ["pymavlink>=2.4.0", "pyulog>=1.0.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/raylanlin/smarttune-cli"
+Repository = "https://github.com/raylanlin/smarttune-cli"
+Issues = "https://github.com/raylanlin/smarttune-cli/issues"
+
+[project.scripts]
+stune = "smarttune.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["smarttune*"]
+
+[tool.setuptools.package-data]
+"smarttune" = ["py.typed"]
+"smarttune.knowledge" = ["rules/**/*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: integration tests",
+]
+testpaths = ["tests"]

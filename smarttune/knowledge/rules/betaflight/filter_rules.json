@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.0",
+  "source": "betaflight-filter-tuning-4.x",
+  "betaflight_version_min": "4.2",
+  "description": "Betaflight 滤波器调参知识库 — gyro_lpf/dterm_lpf/RPM filter/dynamic notch",
+
+  "filter_stack": {
+    "_description": "BF 4.x 完整滤波器链 (信号处理顺序)",
+    "gyro_chain": [
+      {"stage": 1, "name": "RPM filter", "param": "rpm_filter", "type": "per-motor notch", "purpose": "精确去除电机基频及谐波噪声"},
+      {"stage": 2, "name": "Dynamic notch", "param": "dyn_notch_*", "type": "FFT-tracked notch", "purpose": "去除残留峰值噪声"},
+      {"stage": 3, "name": "Gyro LPF1", "param": "gyro_lowpass_hz", "type": "biquad/PT1", "purpose": "低通切除高频噪声"},
+      {"stage": 4, "name": "Gyro LPF2", "param": "gyro_lowpass2_hz", "type": "biquad/PT1", "purpose": "第二级低通 (可选)"}
+    ],
+    "dterm_chain": [
+      {"stage": 1, "name": "D-term LPF1", "param": "dterm_lowpass_hz", "type": "biquad/PT1", "purpose": "D-term 主低通"},
+      {"stage": 2, "name": "D-term LPF2", "param": "dterm_lowpass2_hz", "type": "biquad/PT1", "purpose": "D-term 第二级低通 (可选)"}
+    ]
+  },
+
+  "rpm_filter_rules": {
+    "_description": "RPM Filter — BF 4.x 的核心降噪工具，需要 ESC 双向 DShot",
+    "prerequisites": [
+      "ESC 固件支持双向 DShot (BLHeli_32 / BLHeli_S with RPM telemetry / AM32)",
+      "dshot_bidir = ON",
+      "正确配置电机极对数 motor_poles (通常 14 for 5\" motors)"
+    ],
+    "parameter_defaults": {
+      "rpm_filter_harmonics": {"default": 3, "range": [1, 3], "description": "跟踪的谐波数, 3 = 基频+2次+3次"},
+      "rpm_filter_min_hz": {"default": 100, "range": [50, 200], "description": "最低跟踪频率, 低于此值不滤波"},
+      "rpm_filter_fade_range_hz": {"default": 50, "description": "在 min_hz 附近的渐变宽度"},
+      "rpm_filter_q": {"default": 500, "range": [250, 1000], "description": "陷波 Q 值, 越高越窄"}
+    },
+    "effectiveness_assessment": {
+      "excellent": "启用 RPM filter 后电机噪声峰值降低 >= 20dB",
+      "good": "峰值降低 10-20dB",
+      "marginal": "峰值降低 < 10dB — 检查 motor_poles 和 DShot 配置",
+      "failed": "无明显变化 — 双向 DShot 可能未正常工作"
+    },
+    "tuning_advice": {
+      "motor_heat_reduction": "RPM filter 降低噪声后，通常可以提高 gyro_lowpass_hz 和 dterm_lowpass_hz，释放滤波延迟",
+      "with_dynamic_notch": "RPM filter + dynamic notch 组合可以覆盖大多数噪声，gyro_lpf 可以设到 200-300Hz",
+      "without_rpm_filter": "不用 RPM filter 时，gyro_lpf 需要降低 (100-150Hz)，dynamic notch 负担更重"
+    }
+  },
+
+  "dynamic_notch_rules": {
+    "_description": "Dynamic Notch — FFT 分析实时追踪噪声峰值",
+    "parameter_defaults": {
+      "dyn_notch_count": {"default": 3, "range": [1, 5], "description": "同时追踪的峰值数"},
+      "dyn_notch_q": {"default": 300, "range": [100, 500], "description": "陷波 Q 值"},
+      "dyn_notch_min_hz": {"default": 100, "range": [60, 200], "description": "最低追踪频率"},
+      "dyn_notch_max_hz": {"default": 600, "range": [300, 1000], "description": "最高追踪频率"}
+    },
+    "tuning_advice": {
+      "with_rpm_filter": "RPM filter 已处理电机噪声, dynamic notch 只需 count=1-2 处理残留",
+      "without_rpm_filter": "需要 count=3-5 覆盖电机噪声及谐波",
+      "range_setting": "min_hz 应低于最低电机频率, max_hz 应高于最高谐波"
+    }
+  },
+
+  "gyro_lpf_rules": {
+    "_description": "Gyro 低通滤波器规则",
+    "gyro_lowpass_hz": {
+      "with_rpm_and_dyn_notch": {"recommended": [200, 300], "aggressive": [300, 400]},
+      "with_dyn_notch_only": {"recommended": [150, 200], "aggressive": [200, 250]},
+      "no_notch_filters": {"recommended": [100, 150], "aggressive": [150, 200]},
+      "_note": "数值越高，延迟越低，PID 响应越好；但噪声也越大"
+    },
+    "gyro_lowpass2_hz": {
+      "description": "第二级 gyro 低通 (可选)",
+      "recommended": "通常设为 gyro_lowpass_hz 的 1.5-2 倍，或禁用 (0)",
+      "disable_when": "RPM filter + dynamic notch 已经足够时可禁用"
+    },
+    "filter_type": {
+      "PT1": "最低延迟，但衰减较弱 (6dB/oct)",
+      "BIQUAD": "更强衰减 (12dB/oct)，但延迟更大",
+      "recommendation": "有 RPM filter 时用 PT1 够了，无 RPM filter 时考虑 BIQUAD"
+    }
+  },
+
+  "dterm_lpf_rules": {
+    "_description": "D-term 低通滤波器规则",
+    "dterm_lowpass_hz": {
+      "with_rpm_filter": {"recommended": [100, 150]},
+      "without_rpm_filter": {"recommended": [80, 120]},
+      "_note": "D-term 对噪声最敏感, 设置通常比 gyro_lpf 低"
+    },
+    "dterm_lowpass2_hz": {
+      "recommended": "通常为 dterm_lowpass_hz 的 1.5-2 倍，或禁用 (0)"
+    }
+  },
+
+  "vibration_thresholds": {
+    "_description": "BF FPV 机型振动阈值 (基于 gyro RMS deg/s)",
+    "unit": "deg/s RMS (gyro)",
+    "levels": [
+      {"level": "EXCELLENT", "range": [0, 3],   "action": "滤波器设置可激进"},
+      {"level": "GOOD",      "range": [3, 8],   "action": "标准滤波器设置"},
+      {"level": "MARGINAL",  "range": [8, 15],  "action": "检查桨平衡, 适当降低滤波器 cutoff"},
+      {"level": "POOR",      "range": [15, 30], "action": "必须检查机械问题, 降低滤波器 cutoff"},
+      {"level": "CRITICAL",  "range": [30, 999], "action": "不建议飞行, 先解决机械问题"}
+    ]
+  },
+
+  "fft_peak_rules": {
+    "motor_noise": {
+      "typical_range_hz": [80, 400],
+      "characteristics": "锐利窄峰, 随油门变化"
+    },
+    "propeller_blade_pass": {
+      "typical_range_hz": [100, 600],
+      "characteristics": "通常为电机频率的 2-3 倍 (双叶桨 ×2, 三叶桨 ×3)"
+    },
+    "frame_resonance": {
+      "typical_range_hz": [150, 500],
+      "characteristics": "特定油门区间出现的宽峰, 不随 RPM 线性变化"
+    }
+  },
+
+  "filter_tuning_sequence": {
+    "1_start": "所有滤波器保持默认",
+    "2_rpm_filter": "如有双向 DShot, 启用 RPM filter (harmonics=3)",
+    "3_dynamic_notch": "启用 dynamic notch, count=3 (有 RPM 时 count=1-2)",
+    "4_check_fft": "Blackbox FFT 查看残留噪声",
+    "5_adjust_lpf": "根据噪声水平调整 gyro_lowpass_hz / dterm_lowpass_hz",
+    "6_verify_pid": "滤波器调完后, 重新评估 PID 响应",
+    "_note": "滤波器越激进 (cutoff 越低) → 延迟越大 → PID 增益空间越小"
+  },
+
+  "diagnostic_tree": {
+    "vibration_level_branch": [
+      {
+        "condition": "gyro_rms < 3",
+        "result": "EXCELLENT",
+        "action": "可以使用激进滤波器设置, 释放 PID 增益空间"
+      },
+      {
+        "condition": "3 <= gyro_rms < 8",
+        "result": "GOOD",
+        "action": "标准 RPM + dynamic notch. 检查 FFT 峰值并微调."
+      },
+      {
+        "condition": "8 <= gyro_rms < 15",
+        "result": "MARGINAL",
+        "action": "检查机械: 桨平衡、电机轴承、机臂紧固. 降低 gyro_lpf 一档."
+      },
+      {
+        "condition": "gyro_rms >= 15",
+        "result": "POOR/CRITICAL",
+        "action": "机械问题优先修复. 不建议通过软件滤波解决. 检查: 桨损伤、电机异响、机架裂纹."
+      }
+    ]
+  }
+}

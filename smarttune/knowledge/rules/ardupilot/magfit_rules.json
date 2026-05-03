@@ -1,0 +1,468 @@
+{
+  "schema_version": "1.0",
+  "source": "files/output/magfit-knowledge-base.md",
+  "ardupilot_version_min": "4.0",
+  "description": "ArduPilot 磁力计校准知识库 — MAGFit 参数阈值与诊断规则",
+
+  "compass_parameters": {
+    "COMPASS_OFS_X": {
+      "description": "硬铁偏移 X 轴",
+      "unit": "raw",
+      "typical_range": [-200, 200],
+      "warning_threshold": 600,
+      "critical_threshold": 1000
+    },
+    "COMPASS_OFS_Y": {
+      "description": "硬铁偏移 Y 轴",
+      "unit": "raw",
+      "typical_range": [-200, 200],
+      "warning_threshold": 600,
+      "critical_threshold": 1000
+    },
+    "COMPASS_OFS_Z": {
+      "description": "硬铁偏移 Z 轴",
+      "unit": "raw",
+      "typical_range": [-200, 200],
+      "warning_threshold": 600,
+      "critical_threshold": 1000
+    },
+    "COMPASS_DIA_X": {
+      "description": "软铁对角线 X（轴敏感度差异）",
+      "unit": "dimensionless",
+      "typical_range": [0.8, 1.2],
+      "min": 0.5,
+      "max": 1.5,
+      "deviation_threshold": 0.15
+    },
+    "COMPASS_DIA_Y": {
+      "description": "软铁对角线 Y（轴敏感度差异）",
+      "unit": "dimensionless",
+      "typical_range": [0.8, 1.2],
+      "min": 0.5,
+      "max": 1.5,
+      "deviation_threshold": 0.15
+    },
+    "COMPASS_DIA_Z": {
+      "description": "软铁对角线 Z（轴敏感度差异）",
+      "unit": "dimensionless",
+      "typical_range": [0.8, 1.2],
+      "min": 0.5,
+      "max": 1.5,
+      "deviation_threshold": 0.15
+    },
+    "COMPASS_ODI_X": {
+      "description": "软铁非对角线 X（轴间耦合）",
+      "unit": "dimensionless",
+      "typical_range": [-0.3, 0.3],
+      "threshold": 0.3,
+      "critical": 0.5
+    },
+    "COMPASS_ODI_Y": {
+      "description": "软铁非对角线 Y（轴间耦合）",
+      "unit": "dimensionless",
+      "typical_range": [-0.3, 0.3],
+      "threshold": 0.3,
+      "critical": 0.5
+    },
+    "COMPASS_ODI_Z": {
+      "description": "软铁非对角线 Z（轴间耦合）",
+      "unit": "dimensionless",
+      "typical_range": [-0.3, 0.3],
+      "threshold": 0.3,
+      "critical": 0.5
+    },
+    "COMPASS_MOT_X": {
+      "description": "电机/电池干扰补偿 X 轴（电流函数）",
+      "unit": "raw",
+      "typical_range": [-50, 50],
+      "warning_threshold": 50,
+      "critical_threshold": 100
+    },
+    "COMPASS_MOT_Y": {
+      "description": "电机/电池干扰补偿 Y 轴（电流函数）",
+      "unit": "raw",
+      "typical_range": [-50, 50],
+      "warning_threshold": 50,
+      "critical_threshold": 100
+    },
+    "COMPASS_MOT_Z": {
+      "description": "电机/电池干扰补偿 Z 轴（电流函数）",
+      "unit": "raw",
+      "typical_range": [-50, 50],
+      "warning_threshold": 50,
+      "critical_threshold": 100
+    },
+    "COMPASS_SCALE": {
+      "description": "总比例因子",
+      "unit": "dimensionless",
+      "typical_range": [0.95, 1.05],
+      "min": 0.9,
+      "max": 1.1
+    }
+  },
+
+  "fitness_thresholds": {
+    "description": "fitness = 拟合后残差 RMS 值，单位 mGauss。越小越好。",
+    "fitness_formula": "sqrt( mean( (B_expected_x - B_fitted_x)^2 + (B_expected_y - B_fitted_y)^2 + (B_expected_z - B_fitted_z)^2 ) )",
+    "levels": [
+      {
+        "level": "EXCELLENT",
+        "max": 0.1,
+        "meaning": "极佳，几乎无干扰"
+      },
+      {
+        "level": "GOOD",
+        "max": 0.2,
+        "meaning": "良好，可用"
+      },
+      {
+        "level": "ACCEPTABLE",
+        "max": 0.4,
+        "meaning": "可接受"
+      },
+      {
+        "level": "MARGINAL",
+        "max": 0.6,
+        "meaning": "勉强，建议优化"
+      },
+      {
+        "level": "POOR",
+        "max": 1.0,
+        "meaning": "较差，谨慎使用"
+      },
+      {
+        "level": "BAD",
+        "min": 1.0,
+        "meaning": "很差，不建议飞行"
+      }
+    ],
+    "onboard_calibration_default": 0.5,
+    "note": "ArduPilot 飞控内置 COMPASS_CAL_FIT 默认值约为 0.5 (AP_COMPASS_CALIBRATION_FITNESS_DEFAULT)"
+  },
+
+  "interference_type_rules": {
+    "hard_iron_dominant": {
+      "symptom": "拟合前球心明显偏离原点（三轴偏移均大）",
+      "diagnosis_check": "OFS > 200",
+      "description": "永久磁铁或强磁性材料（扬声器、电机磁钢、电池触点）产生的恒定磁场叠加",
+      "geometry": "将球心从地磁场球心位置平移一段距离",
+      "recommendation": "重新布局或外置磁力计"
+    },
+    "soft_iron_dominant": {
+      "symptom": "球体明显被拉伸为椭球（各轴范围差异大）",
+      "diagnosis_check": "any DIA deviation from 1.0 > 0.15",
+      "description": "软磁性材料（铁、镍等）在地磁场中感应出的拉伸效应",
+      "geometry": "椭球在三个主轴方向上的缩放因子",
+      "recommendation": "移动电池至机体中心，改善软铁布局"
+    },
+    "soft_iron_odi_dominant": {
+      "symptom": "椭球主轴倾斜（XY 平面耦合）",
+      "diagnosis_check": "any |ODI| > 0.3",
+      "description": "软磁性材料不在机体坐标轴上时，产生轴间耦合",
+      "geometry": "椭球主轴相对机体坐标系的混合项",
+      "recommendation": "检查电池位置（常见于电池偏置）"
+    },
+    "motor_interference_dominant": {
+      "symptom": "油门变化时航向角跳变",
+      "diagnosis_check": "MOT > 50",
+      "description": "电调/电机/电池 wires 的电流通路在空间产生的磁场，随油门变化",
+      "geometry": "对不同油门下的磁力计读数做一阶线性修正",
+      "recommendation": "检查电调/电机位置，加固电机挂载，警告位移风险"
+    },
+    "ground_calibration_passes_airborne_drift": {
+      "symptom": "地面校准通过，空中航向角飘移",
+      "diagnosis_check": "MOT > 20",
+      "description": "电机干扰未被补偿",
+      "recommendation": "飞行日志 MAGFit 后补偿 MOT"
+    }
+  },
+
+  "case_studies": [
+    {
+      "case": "case_1",
+      "description": "干净安装，无干扰",
+      "OFS": [20, -30, 10],
+      "DIA": [1.00, 1.01, 0.99],
+      "ODI": [0.00, 0.00, 0.00],
+      "MOT": [1, 0, 2],
+      "fitness": 0.08,
+      "diagnosis": "EXCELLENT"
+    },
+    {
+      "case": "case_2",
+      "description": "典型硬铁干扰（扬声器磁钢）",
+      "OFS": [350, -180, 80],
+      "DIA": [1.00, 1.00, 1.00],
+      "ODI": [0.00, 0.00, 0.00],
+      "MOT": [5, 3, 2],
+      "fitness": 0.25,
+      "diagnosis": "HARD_IRON_DOMINANT",
+      "recommendation": "OFS过大，建议重新布局或外置磁力计"
+    },
+    {
+      "case": "case_3",
+      "description": "典型软铁干扰（电池偏置）",
+      "OFS": [50, -40, 20],
+      "DIA": [0.85, 1.15, 1.00],
+      "ODI": [0.25, 0.10, 0.00],
+      "MOT": [5, 10, 3],
+      "fitness": 0.35,
+      "diagnosis": "SOFT_IRON_DOMINANT",
+      "recommendation": "DIA偏差>15%，建议移动电池至机体中心"
+    },
+    {
+      "case": "case_4",
+      "description": "强电机干扰（四轴大电流电调）",
+      "OFS": [80, -60, 30],
+      "DIA": [1.00, 1.00, 1.00],
+      "ODI": [0.00, 0.00, 0.00],
+      "MOT": [120, -80, 40],
+      "fitness": 0.45,
+      "diagnosis": "MOTOR_INTERFERENCE",
+      "recommendation": "MOT过大，电机挂载需加固，警告位移风险"
+    },
+    {
+      "case": "case_5",
+      "description": "混合干扰（硬铁+软铁+电机）",
+      "OFS": [250, -150, 100],
+      "DIA": [0.80, 1.20, 0.95],
+      "ODI": [0.30, 0.15, 0.05],
+      "MOT": [60, -40, 20],
+      "fitness": 0.55,
+      "diagnosis": "MIXED",
+      "recommendation": "建议先解决硬铁(OFS>200)，再优化软铁，最后补偿电机"
+    }
+  ],
+
+  "flight_coverage": {
+    "min_samples": 500,
+    "good_samples": 1000,
+    "yaw_coverage_degrees_min": 300,
+    "yaw_coverage_degrees_good": 360,
+    "pitch_range_min_deg": 30,
+    "roll_range_min_deg": 30,
+    "altitude_change_min_m": 50,
+    "trajectory_recommendations": {
+      "multirotor": {
+        "pattern": "∞字形 or 圆形盘旋",
+        "phases": [
+          "阶段1: 平飞绕圈（覆盖 yaw 360，pitch/roll 接近 0）",
+          "阶段2: 斜向爬升/俯冲（pitch ±30）",
+          "阶段3: 横滚转弯（roll ±30，带少量 pitch）",
+          "阶段4: 垂直升降（cover Z axis）"
+        ],
+        "total_duration_minutes": "3-5",
+        "min_data_points": 1000
+      },
+      "fixedwing": {
+        "pattern": "绕圈 + 8字形",
+        "phases": [
+          "阶段1: 保持平飞绕圈 2-3 圈（yaw 360）",
+          "阶段2: 做俯冲拉起（pitch ±20）",
+          "阶段3: 侧风飞行利用副翼横滚（roll ±25）"
+        ]
+      }
+    },
+    "禁忌": [
+      "纯悬停（无姿态变化）→ 欠定，只能估硬铁偏移，无法估软铁",
+      "飞行中机体震动大 → IMU 噪声传导至 attitude 估算，磁场拟合不准",
+      "GPS 丢失区 → 位置不可信，WMM 查表失败，数据废弃"
+    ]
+  },
+
+  "calibration_options": {
+    "optimize_OFS_only": {
+      "description": "当 MOT < 20 且 ODI < 0.1 时，仅优化偏移",
+      "trigger": "fitness < 0.4 AND MOT < 50 AND max(|ODI|) < 0.1"
+    },
+    "optimize_OFS_DIA": {
+      "description": "存在软铁对角线畸变时启用",
+      "trigger": "any |DIA - 1.0| > 0.15"
+    },
+    "optimize_full_matrix": {
+      "description": "所有参数均参与拟合（OFS + DIA + ODI + MOT）",
+      "trigger": "fitness >= 0.4 OR MOT >= 50 OR max(|ODI|) >= 0.3"
+    }
+  },
+
+  "diagnostic_tree": {
+    "step1": {
+      "check": "fitness",
+      "branch": [
+        {
+          "condition": "fitness < 0.1",
+          "result": "EXCELLENT",
+          "recommendation": "参数可用，无需调整"
+        },
+        {
+          "condition": "0.1 <= fitness < 0.4",
+          "result": "GOOD/ACCEPTABLE",
+          "next": "step2a"
+        },
+        {
+          "condition": "0.4 <= fitness < 0.6",
+          "result": "MARGINAL",
+          "next": "step2b"
+        },
+        {
+          "condition": "fitness >= 0.6",
+          "result": "POOR/BAD",
+          "next": "step2c"
+        }
+      ]
+    },
+    "step2a": {
+      "description": "fitness 0.1-0.4: GOOD/ACCEPTABLE branch",
+      "checks": [
+        {
+          "check": "OFS > 600",
+          "yes": {
+            "diagnosis": "硬铁干扰",
+            "action": "警告: 硬铁干扰，需重新布局"
+          },
+          "no": {
+            "next": "check_mot"
+          }
+        },
+        {
+          "check": "MOT > 50",
+          "yes": {
+            "diagnosis": "电机干扰",
+            "action": "警告: 电机干扰，飞行中可能失效"
+          },
+          "no": {
+            "result": "参数可用",
+            "action": "建议 6 个月重校一次"
+          }
+        }
+      ]
+    },
+    "step2b": {
+      "description": "fitness 0.4-0.6: MARGINAL branch",
+      "checks": [
+        {
+          "check": "DIA deviation > 0.2 (偏离 1.0 超过 ±20%)",
+          "yes": {
+            "diagnosis": "软铁主导",
+            "action": "建议: 改善机体软铁布局，重飞"
+          },
+          "no": {
+            "next": "check_mot_marginal"
+          }
+        },
+        {
+          "check": "MOT > 50",
+          "yes": {
+            "diagnosis": "电机主导",
+            "action": "建议: 检查电调/电机位置"
+          },
+          "no": {
+            "next": "check_yaw_coverage"
+          }
+        },
+        {
+          "check": "yaw_coverage < 300 degrees",
+          "yes": {
+            "diagnosis": "轨迹不足",
+            "action": "建议: 重飞充分轨迹"
+          },
+          "no": {
+            "diagnosis": "多因素混合",
+            "action": "建议全参数优化"
+          }
+        }
+      ]
+    },
+    "step2c": {
+      "description": "fitness >= 0.6: POOR/BAD branch",
+      "checks": [
+        {
+          "check": "max(|OFS|) > 600",
+          "yes": {
+            "diagnosis": "硬铁过强",
+            "action": "建议: 拆除干扰源或外置磁力计"
+          },
+          "no": {
+            "next": "check_coverage"
+          }
+        },
+        {
+          "check": "日志覆盖不足",
+          "yes": {
+            "diagnosis": "轨迹不足",
+            "action": "建议: 重飞满足 flight_coverage 要求的轨迹"
+          },
+          "no": {
+            "diagnosis": "混合干扰严重",
+            "action_priority": [
+              "1. 拆除外置软铁干扰（电池重心偏移）",
+              "2. 将磁力计外置到 GPS mast（> 10cm）",
+              "3. 仅使用仅优化 OFS（disable soft-iron）"
+            ]
+          }
+        }
+      ]
+    }
+  },
+
+  "threshold_summary": {
+    "compass_parameters": {
+      "OFS_warning": 600,
+      "OFS_critical": 1000,
+      "DIA_min": 0.5,
+      "DIA_max": 1.5,
+      "DIA_deviation_threshold": 0.15,
+      "ODI_threshold": 0.3,
+      "ODI_critical": 0.5,
+      "MOT_warning": 50,
+      "MOT_critical": 100,
+      "SCALE_min": 0.9,
+      "SCALE_max": 1.1
+    },
+    "fitness_thresholds": {
+      "excellent": 0.1,
+      "good": 0.2,
+      "acceptable": 0.4,
+      "marginal": 0.6,
+      "poor": 1.0
+    },
+    "flight_coverage": {
+      "min_samples": 500,
+      "good_samples": 1000,
+      "yaw_coverage_degrees_min": 300,
+      "yaw_coverage_degrees_good": 360,
+      "pitch_range_min_deg": 30,
+      "roll_range_min_deg": 30
+    }
+  },
+
+  "output_schema": {
+    "fitness_mgauss": "float",
+    "assessment": "string (EXCELLENT|GOOD|ACCEPTABLE|MARGINAL|POOR|BAD)",
+    "parameters": {
+      "COMPASS_OFS_X": "float",
+      "COMPASS_OFS_Y": "float",
+      "COMPASS_OFS_Z": "float",
+      "COMPASS_DIA_X": "float",
+      "COMPASS_DIA_Y": "float",
+      "COMPASS_DIA_Z": "float",
+      "COMPASS_ODI_X": "float",
+      "COMPASS_ODI_Y": "float",
+      "COMPASS_ODI_Z": "float",
+      "COMPASS_MOT_X": "float",
+      "COMPASS_MOT_Y": "float",
+      "COMPASS_MOT_Z": "float",
+      "COMPASS_SCALE": "float"
+    },
+    "coverage": {
+      "yaw_degrees": "float",
+      "pitch_range": "float",
+      "roll_range": "float",
+      "sample_count": "int",
+      "altitude_change_m": "float"
+    },
+    "dominant_interference": "string (HARD_IRON|SOFT_IRON|SOFT_IRON_ODI|MOTOR|MIXED|NONE)",
+    "warnings": ["string"],
+    "recommendations": ["string"]
+  }
+}
