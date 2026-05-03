@@ -774,6 +774,28 @@ def decode_e_frame(reader: BBLStreamReader, header: BBLHeader) -> BBLEvent:
     return event
 
 
+def _has_corrupted_imu_values(values: Dict[str, int]) -> bool:
+    """检查解码后的帧是否包含异常的 IMU 原始值。
+
+    Betaflight accSmooth 和 gyroADC 的原始 ADC 值通常在 ±32767 范围内
+    （16-bit signed）。如果出现远大于此的值，说明解析器失去了同步
+    （使用了错误的字段定义来解码新飞行段的数据）。
+
+    Returns True 表示检测到损坏/不同步。
+    """
+    for i in range(3):
+        val = values.get(f"accSmooth[{i}]", None)
+        if val is not None and abs(val) > 32768:
+            return True
+        val = values.get(f"gyroADC[{i}]", None)
+        if val is not None and abs(val) > 65536:
+            return True
+        val = values.get(f"accData[{i}]", None)
+        if val is not None and abs(val) > 32768:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Top-level BBL parser
 # ---------------------------------------------------------------------------
@@ -831,6 +853,11 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
         prev_slow: Dict[str, int] = {}
         frame_count = 0
         max_frames = 500_000  # 安全限制
+        # Segment detection: track last loopIteration to detect time resets
+        # that indicate a new flight segment (without "H Product:" header).
+        last_loop_iter: Optional[int] = None
+        corrupt_frame_count = 0
+        max_corrupt_frames = 5  # Stop after N consecutive corrupted frames
 
         while reader.has_data() and frame_count < max_frames:
             # 检查是否遇到新段的头
@@ -849,10 +876,39 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                 if frame_marker == FRAME_TYPE_I:
                     values = decode_i_frame(reader, header, prev_values)
                     prev_values = values.copy()
+
+                    # Detect new segment: loopIteration drops significantly
+                    # (indicates parser hit a new flight segment with wrong field defs)
+                    cur_iter = values.get("loopIteration", 0)
+                    if last_loop_iter is not None and cur_iter < last_loop_iter - 10000:
+                        logger.info(
+                            "BBL: detected new segment at frame %d "
+                            "(loopIteration %d → %d), stopping segment 1",
+                            frame_count, last_loop_iter, cur_iter,
+                        )
+                        break
+                    last_loop_iter = cur_iter
+
+                    # Sanity check: if IMU fields have absurd values,
+                    # the parser lost sync (wrong field defs for this segment)
+                    if _has_corrupted_imu_values(values):
+                        corrupt_frame_count += 1
+                        if corrupt_frame_count >= max_corrupt_frames:
+                            logger.warning(
+                                "BBL: %d consecutive corrupted frames at frame %d, "
+                                "stopping segment parse",
+                                corrupt_frame_count, frame_count,
+                            )
+                            break
+                        # Skip this corrupted frame, don't add to segment
+                        continue
+                    else:
+                        corrupt_frame_count = 0  # Reset on valid frame
+
                     frame = BBLFrame(
                         frame_type='I',
                         values=values,
-                        time_us=values.get("loopIteration", 0),
+                        time_us=cur_iter,
                     )
                     segment.frames.append(frame)
                     frame_count += 1

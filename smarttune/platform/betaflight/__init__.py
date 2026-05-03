@@ -44,13 +44,22 @@ _PARAM_MAP_TO_PLATFORM = {
     "pid.yaw.d":     "pid_yaw_d",
     "pid.yaw.ff":    "pid_yaw_f",
     # Filters
-    "filter.gyro_lpf":     "gyro_lowpass_hz",
-    "filter.gyro_lpf2":    "gyro_lowpass2_hz",
-    "filter.dterm_lpf":    "dterm_lowpass_hz",
-    "filter.notch1.freq":  "gyro_notch1_hz",
-    "filter.notch1.bw":    "gyro_notch1_cutoff",
-    "filter.notch2.freq":  "gyro_notch2_hz",
-    "filter.notch2.bw":    "gyro_notch2_cutoff",
+    "filter.gyro_lpf":      "gyro_lowpass_hz",
+    "filter.gyro_lpf2":     "gyro_lowpass2_hz",
+    "filter.accel_lpf":     "acc_lpf_hz",
+    "filter.dterm_lpf":     "dterm_lowpass_hz",
+    "filter.notch1.enable": "gyro_notch_hz",
+    "filter.notch1.freq":   "gyro_notch1_hz",
+    "filter.notch1.bw":     "gyro_notch1_cutoff",
+    "filter.notch1.att":    "gyro_notch1_q",
+    "filter.notch1.mode":   "gyro_notch1_type",
+    "filter.notch1.ref":    "gyro_notch1_ref",
+    "filter.notch1.hmc":    "gyro_notch1_harmonics",
+    "filter.notch2.enable": "gyro_notch2_hz",
+    "filter.notch2.freq":   "gyro_notch2_hz",
+    "filter.notch2.bw":     "gyro_notch2_cutoff",
+    "filter.notch2.att":    "gyro_notch2_q",
+    "filter.notch2.mode":   "gyro_notch2_type",
     # Betaflight-specific
     "pid.roll.d_min":    "d_min_roll",
     "pid.pitch.d_min":   "d_min_pitch",
@@ -208,24 +217,27 @@ class BetaflightAdapter(PlatformAdapter):
                 hint="Ensure this is a .bbl/.bfl file from Betaflight.",
             )
 
-        # 解析 BBL 数据
+        # 解析 BBL 数据 — 解析所有段，拼接为连续数据
         try:
-            segments = parse_bbl(data, max_segments=segment_index + 1)
+            segments = parse_bbl(data, max_segments=10)
         except Exception as exc:
             raise ParseError(
                 message=f"BBL parse failed: {exc}",
                 hint="The log file may be corrupted or use an unsupported format version.",
             )
 
-        if not segments or segment_index >= len(segments):
+        if not segments:
             raise ParseError(
-                message=f"No valid log segment found (requested index {segment_index})",
+                message="No valid log segment found",
                 hint="The log file may be empty or corrupted.",
             )
 
-        segment = segments[segment_index]
-        header = segment.header
-        frames = segment.frames
+        # 拼接所有段的帧（多段飞行/解锁记录合并分析）
+        header = segments[0].header
+        frames = []
+        for seg in segments:
+            if seg.header.i_field_defs:
+                frames.extend(seg.frames)
 
         if len(frames) < 10:
             raise InsufficientPIDDataError(
@@ -261,18 +273,15 @@ class BetaflightAdapter(PlatformAdapter):
             else:
                 timestamps_us.append(f.values.get("loopIteration", 0))
 
-        timestamps_us = np.array(timestamps_us, dtype=np.float64)
-
-        if time_field_available:
-            timestamps_s = timestamps_us / 1_000_000.0
-        else:
-            looptime_us = params.get("looptime", 250)
-            timestamps_s = timestamps_us * looptime_us / 1_000_000.0
-
-        if len(timestamps_s) > 0:
-            timestamps_s = timestamps_s - timestamps_s[0]
-
         n_frames = len(frames)
+
+        # For multi-segment logs, the time field may have discontinuities.
+        # Use frame index with fixed dt for reliable timestamps.
+        looptime_us = params.get("looptime", 250)
+        dt_s = looptime_us / 1_000_000.0
+        timestamps_s = np.arange(n_frames, dtype=np.float64) * dt_s
+
+        timestamps_us = np.array(timestamps_us, dtype=np.float64)
 
         # ── 提取 PID 信号 ──────────────────────────
         pid_data: Dict[str, AxisPIDSignal] = {}
@@ -335,7 +344,14 @@ class BetaflightAdapter(PlatformAdapter):
             ax = np.array([f.values.get(acc_x_name, 0) for f in frames], dtype=np.float64)
             ay = np.array([f.values.get(acc_y_name, 0) for f in frames], dtype=np.float64)
             az = np.array([f.values.get(acc_z_name, 0) for f in frames], dtype=np.float64)
-            accel = np.column_stack([ax, ay, az]) * (9.80665 / 512.0)
+            # BF BBL logs accSmooth as raw ADC values.
+            # Convert to m/s² using acc_1G from header (varies by accelerometer chip).
+            acc_1g_raw = params.get("acc_1G", 256)
+            try:
+                acc_1g_raw = int(acc_1g_raw)
+            except (ValueError, TypeError):
+                acc_1g_raw = 256
+            accel = np.column_stack([ax, ay, az]) * (9.80665 / acc_1g_raw)
 
         # ── 提取电机输出 ────────────────────────────
         motor_output = None
@@ -357,16 +373,17 @@ class BetaflightAdapter(PlatformAdapter):
 
         # ── 提取飞行模式 ──────────────────────────
         mode_changes: List[ModeChange] = []
-        for event in segment.events:
-            if event.event_type == EVENT_FLIGHT_MODE:
-                flags = event.data.get("flags", 0)
-                raw_mode = get_primary_mode(flags)
-                unified = _MODE_MAP.get(raw_mode, raw_mode.lower())
-                mode_changes.append(ModeChange(
-                    timestamp_s=0.0,
-                    mode_name=unified,
-                    raw_mode=raw_mode,
-                ))
+        for seg in segments:
+            for event in seg.events:
+                if event.event_type == EVENT_FLIGHT_MODE:
+                    flags = event.data.get("flags", 0)
+                    raw_mode = get_primary_mode(flags)
+                    unified = _MODE_MAP.get(raw_mode, raw_mode.lower())
+                    mode_changes.append(ModeChange(
+                        timestamp_s=0.0,
+                        mode_name=unified,
+                        raw_mode=raw_mode,
+                    ))
 
         # ── 组装 FlightData ─────────────────────────
         duration_s = float(timestamps_s[-1]) if len(timestamps_s) > 1 else 0.0
@@ -393,7 +410,7 @@ class BetaflightAdapter(PlatformAdapter):
                 "frame_count": n_frames,
                 "i_frame_count": sum(1 for f in frames if f.frame_type == 'I'),
                 "p_frame_count": sum(1 for f in frames if f.frame_type == 'P'),
-                "event_count": len(segment.events),
+                "event_count": sum(len(s.events) for s in segments),
             },
         )
 

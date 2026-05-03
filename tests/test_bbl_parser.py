@@ -72,6 +72,7 @@ class BBLBuilder:
         self._add_header_line("minthrottle", "1070")
         self._add_header_line("maxthrottle", "2000")
         self._add_header_line("gyro_scale", "0x3f800000")  # 1.0 in float hex
+        self._add_header_line("acc_1G", "512")
         self._add_header_line("motorOutput", "1070,2000")
         self._add_header_line("pid_roll_p", "45")
         self._add_header_line("pid_roll_i", "80")

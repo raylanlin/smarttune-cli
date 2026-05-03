@@ -238,8 +238,8 @@ class FFTAnalyzer:
         # 如果有多个峰值且无谐波关系，建议进一步诊断
         if len(peaks) >= 2 and vib_level not in ("EXCELLENT", "GOOD"):
             warnings.append(
-                f"检测到 {len(peaks)} 个显著峰值，建议使用 INS_HNTCH_MODE=4 "
-                "或为每个峰值配置独立陷波（INS_HNTC2_*）。"
+                f"检测到 {len(peaks)} 个显著峰值，建议使用 notch mode=4 (FFT跟踪) "
+                "或为每个峰值配置独立陷波（notch2 / secondary filter）。"
             )
 
         return {
@@ -477,15 +477,15 @@ class FFTAnalyzer:
             # 无显著峰值
             if vib_level in ("EXCELLENT", "GOOD"):
                 return {
-                    "INS_HNTCH_ENABLE": 0,
-                    "INS_HNTCH_MODE": 0,
-                    "INS_HNTCH_FREQ": 0.0,
-                    "INS_HNTCH_BW": 0.0,
-                    "INS_HNTCH_ATT": 0,
-                    "INS_HNTCH_REF": 0.0,
-                    "INS_HNTCH_HMC": 0,
-                    "INS_GYRO_FILTER": gyro_filt,
-                    "INS_ACCEL_FILTER": accel_filt,
+                    "filter.notch1.enable": 0,
+                    "filter.notch1.mode": 0,
+                    "filter.notch1.freq": 0.0,
+                    "filter.notch1.bw": 0.0,
+                    "filter.notch1.att": 0,
+                    "filter.notch1.ref": 0.0,
+                    "filter.notch1.hmc": 0,
+                    "filter.gyro_lpf": gyro_filt,
+                    "filter.accel_lpf": accel_filt,
                 }
             # 有等级但无峰值 → 保守设置
             freq = 80.0
@@ -572,15 +572,15 @@ class FFTAnalyzer:
             gyro_filt = max(gyro_filt_min, min(gyro_filt_max, gyro_filt))
 
         return {
-            "INS_HNTCH_ENABLE": 1,
-            "INS_HNTCH_MODE": mode,
-            "INS_HNTCH_FREQ": round(freq, 1),
-            "INS_HNTCH_BW": round(bw, 1),
-            "INS_HNTCH_ATT": att,
-            "INS_HNTCH_REF": round(ref, 1),
-            "INS_HNTCH_HMC": hmc,
-            "INS_GYRO_FILTER": gyro_filt,
-            "INS_ACCEL_FILTER": accel_filt,
+            "filter.notch1.enable": 1,
+            "filter.notch1.mode": mode,
+            "filter.notch1.freq": round(freq, 1),
+            "filter.notch1.bw": round(bw, 1),
+            "filter.notch1.att": att,
+            "filter.notch1.ref": round(ref, 1),
+            "filter.notch1.hmc": hmc,
+            "filter.gyro_lpf": gyro_filt,
+            "filter.accel_lpf": accel_filt,
         }
 
     def get_spectrum_data(self) -> Dict[str, Any]:
