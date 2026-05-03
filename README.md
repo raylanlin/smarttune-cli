@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/raylanlin/smarttune-cli/main/assets/banner-hero.png" alt="SmartTune" width="100%" />
+  <img src="assets/banner-hero.png" alt="SmartTune" width="100%" />
 </p>
 
 <p align="center">
