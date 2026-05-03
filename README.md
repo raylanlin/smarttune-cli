@@ -283,7 +283,7 @@ black --check smarttune/
 
 **Raylan LIN** — [@raylanlin](https://github.com/raylanlin)
 
-SmartTune is built and maintained by the [MengChuang Technology](https://github.com/raylanlin) team.
+SmartTune is built and maintained by [Raylan LIN](https://github.com/raylanlin).
 
 ---
 
