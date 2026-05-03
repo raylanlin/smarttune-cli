@@ -9,7 +9,7 @@ If you discover a security concern (e.g., a log file crafted to cause code execu
 **Please do not open a public issue.** Send details directly to:
 
 - **GitHub Issues (private):** [Create a security advisory](https://github.com/raylanlin/smarttune-cli/security/advisories/new)
-- **Email:** raylanlin@users.noreply.github.com
+- **Email:** raylanlin@gmail.com
 
 You should receive a response within 48 hours.
 

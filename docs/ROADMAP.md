@@ -1,6 +1,6 @@
 # SmartTune CLI — Development Roadmap
 
-## 项目状态：v2.0.0-dev (多平台架构重构)
+## 项目状态：v2.0.0 (多平台架构重构)
 
 ### 已完成 ✅
 

@@ -2,7 +2,7 @@
 
 All notable changes to SmartTune CLI will be documented in this file.
 
-## [2.0.0-dev] — 2026-05-03
+## [2.0.0] — 2026-05-03
 
 ### Added
 - **Multi-platform architecture** — Unified `FlightData` intermediate representation
