@@ -395,4 +395,6 @@ Built and maintained by a pilot who trusts agents more than checklists.
 
 MIT — see [LICENSE](LICENSE) for details.
 
-`smarttune-knowledge-pro` is a separate closed-source package with a proprietary license.
+`smarttune-knowledge-pro` is a separate closed-source tuning knowledge base with proprietary tuning rules and industry experience.
+
+For commercial collaboration — custom tuning knowledge bases, fleet-level expertise integration, or enterprise tuning rule development — reach out at [raylanlin@gmail.com](mailto:raylanlin@gmail.com).
