@@ -26,7 +26,9 @@
 ---
 
 > **SmartTune is a tuning CLI built for the age of AI-assisted flight log analysis.**  
-> Every output is structured. Every command is deterministic. No TUI, no blocking prompts, no interactive workflows that break when called by an agent. It was designed from day one to be invoked by LLM agents as a tool, and consumed by humans through the same pipeline.
+> Every output is structured. Every command is deterministic. No TUI, no blocking prompts, no interactive workflows that break when called by an agent. It was designed from day one to be invoked by LLM agents as a tool — but more importantly, to teach those agents how to tune a flight controller.  
+>  
+> Agents like OpenClaw, Hermes, Codex, and Claude Code can now truly *learn* APM/BF/PX4 tuning through SmartTune's structured outputs, confidence-scored recommendations, and inspectable knowledge base. It's not just a tool agents call — it's how agents learn the craft.
 
 ---
 
@@ -61,6 +63,19 @@ SmartTune was designed specifically for **LLM agent tool-calling workflows**. Ev
 | **Config-free** | Zero config files needed. Everything is flags or auto-detected. No env vars required. |
 | **Offline-first** | No network calls. No API keys. No rate limits. Safe for isolated/air-gapped environments. |
 | **Machine-recommendable** | Tuning suggestions include confidence scores and reasoning, not just parameter values. Agents can weigh multiple recommendations. |
+
+### What agents can learn through SmartTune
+
+SmartTune isn't just a tool agents *call* — it's how agents learn the craft of flight controller tuning:
+
+| Skill | How SmartTune teaches it |
+|-------|--------------------------|
+| **PID tuning intuition** | Step-response analysis with confidence scores. Agents learn which overshoot/rise-time patterns call for higher Kp vs. damping. |
+| **Frequency-domain reasoning** | FFT spectra with peak detection. Agents learn to distinguish vibration sources (prop/ motor/ frame resonance) from the spectrum shape. |
+| **Filter design logic** | Notch and low-pass filter recommendations with Bode plots. Agents see the tradeoff between filtering and phase lag. |
+| **Platform differences** | ArduPilot vs Betaflight parameter conventions. ParamRef maps between them — agents learn to translate tuning knowledge across platforms. |
+| **Safety awareness** | All recommendations are capped at ±20%. Agents learn conservative tuning by default. |
+| **Rule-based reasoning** | The 6-layer knowledge base is plain JSON. Agents can read, understand, and even propose rule changes by writing to their user layer. |
 
 ### What agents can do with SmartTune
 
@@ -324,6 +339,21 @@ class MyPlatform(PlatformAdapter):
 ```
 
 `stune platforms` will auto-discover it.
+
+---
+
+## Agent Stack Integration
+
+SmartTune is designed to work with any LLM agent framework. Here's how it fits:
+
+| Framework | Integration |
+|-----------|-------------|
+| **OpenClaw** | `stune` as an MCP tool — structured JSON output, no config needed |
+| **Claude Code / Codex** | Shell tool call — `stune analyze -i log.bin --format json` |
+| **Hermes Agent** | Deterministic output, safe for agent-in-the-loop tuning workflows |
+| **Custom agents** | pip-installable, importable Python API for advanced use cases |
+
+Agents call `stune`, get structured tuning recommendations, and can act on them. No TUI to navigate, no prompts to answer, no fragile screen-scraping.
 
 ---
 
