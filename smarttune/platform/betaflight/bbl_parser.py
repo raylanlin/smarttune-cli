@@ -862,13 +862,18 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
         while reader.has_data() and frame_count < max_frames:
             # 检查是否遇到新段的头
             if reader.peek_byte() == ord('H'):
-                save_pos = reader.pos
-                line_peek = reader.read_line()
-                if line_peek and "H Product:" in line_peek:
-                    reader.pos = save_pos
-                    break
-                # 其他 H 行（数据流中的补充头），跳过
-                continue
+                # 只有 "H " (H 后跟空格) 才是真正的 header 行
+                # 0x48 也可能出现在帧数据中，不能仅凭 peek 就 continue
+                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(' '):
+                    save_pos = reader.pos
+                    line_peek = reader.read_line()
+                    if line_peek and "H Product:" in line_peek:
+                        reader.pos = save_pos
+                        break
+                    # 其他 H 行（数据流中的补充头），跳过
+                    continue
+                # 0x48 后面不是空格，说明是帧数据中的巧合字节
+                # 不 continue，fall through 到 frame_marker 处理
 
             frame_marker = reader.read_byte()
 
@@ -877,16 +882,11 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                     values = decode_i_frame(reader, header, prev_values)
                     prev_values = values.copy()
 
-                    # Detect new segment: loopIteration drops significantly
-                    # (indicates parser hit a new flight segment with wrong field defs)
+                    # NOTE: loopIteration-based segment detection removed.
+                    # BF's loopIteration is a 16-bit counter that wraps every
+                    # ~16ms (at 8kHz looptime), causing false segment breaks.
+                    # Segment boundaries are detected by "H Product:" headers only.
                     cur_iter = values.get("loopIteration", 0)
-                    if last_loop_iter is not None and cur_iter < last_loop_iter - 10000:
-                        logger.info(
-                            "BBL: detected new segment at frame %d "
-                            "(loopIteration %d → %d), stopping segment 1",
-                            frame_count, last_loop_iter, cur_iter,
-                        )
-                        break
                     last_loop_iter = cur_iter
 
                     # Sanity check: if IMU fields have absurd values,
