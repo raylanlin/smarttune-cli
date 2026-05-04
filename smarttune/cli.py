@@ -44,8 +44,8 @@ def main():
     \b
     Supported platforms:
       ArduPilot   (.bin / .log)   — Full support
-      Betaflight  (.bbl / .bfl)   — Planned v2.0
-      PX4         (.ulg)          — Planned v2.x
+      Betaflight  (.bbl / .bfl)   — Full support (v2.0)
+      PX4         (.ulg)          — Partial support (v2.1)
 
     \b
     Workflow:
@@ -291,10 +291,12 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path))
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-a", "--axis", type=click.Choice(["roll", "pitch", "yaw", "all"],
               case_sensitive=False), default="all")
-@click.option("--visual/--no-visual", default=False)
+@click.option("--visual/--no-visual", default=False,
+              help="Generate step response plots")
 def pid(log_file: Path, platform_name: str, axis: str, visual: bool):
     """PID step response analysis."""
     _run_single_analysis("pid", log_file, platform_name, axis, visual)
@@ -307,8 +309,10 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool):
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path))
-@click.option("--platform", "platform_name", default="auto")
-@click.option("--visual/--no-visual", default=False)
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
+@click.option("--visual/--no-visual", default=False,
+              help="Generate FFT spectrum plot")
 def fft(log_file: Path, platform_name: str, visual: bool):
     """FFT vibration spectrum analysis."""
     _run_single_analysis("fft", log_file, platform_name, "all", visual)
@@ -321,7 +325,8 @@ def fft(log_file: Path, platform_name: str, visual: bool):
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path))
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 def magfit(log_file: Path, platform_name: str):
     """Magnetometer calibration analysis."""
     _run_single_analysis("magfit", log_file, platform_name, "all", False)
@@ -334,7 +339,8 @@ def magfit(log_file: Path, platform_name: str):
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path))
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-a", "--axis", type=click.Choice(["roll", "pitch", "yaw", "all"],
               case_sensitive=False), default="all")
 @click.option("--na", type=int, default=3, help="ARX model A polynomial order")
@@ -351,7 +357,8 @@ def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path))
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 def hardware(log_file: Path, platform_name: str):
     """Hardware configuration report."""
     _run_single_analysis("hardware", log_file, platform_name, "all", False)
@@ -364,7 +371,8 @@ def hardware(log_file: Path, platform_name: str):
 @main.command("filter")
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path), help="Flight log file")
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("--gyro-filter", type=float, default=None,
               help="Override GYRO_FILTER cutoff frequency (Hz)")
 @click.option("--notch-freq", type=float, default=None,
@@ -525,7 +533,8 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
               type=click.Path(exists=True, path_type=Path), help="Flight log file")
-@click.option("--platform", "platform_name", default="auto")
+@click.option("--platform", "platform_name", default="auto",
+              help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-o", "--output", "output_file", type=click.Path(path_type=Path),
               default=None, help="Output quality report file (optional)")
 def quality(log_file: Path, platform_name: str, output_file: Optional[Path]):
