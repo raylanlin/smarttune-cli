@@ -381,10 +381,10 @@ def compute_step_response_for_axis(
     else:
         sample_rate = 400.0
 
-    # 阈值：20 deg/s 换算为 rad/s（与 WebTools 一致，单位由 log_parser 确保为 rad/s）
-    # WebTools 原始数据为 deg/s，阈值 20 deg/s ≈ 0.349 rad/s
-    # log_parser.get_pid_data 返回 rad/s（PIDR.Tar 单位），因此须换算
-    min_amp = 20.0 / 57.29578  # 20 deg/s → rad/s ≈ 0.349
+    # 阈值：数据单位为 deg/s（ArduPilot 适配器已做 rad/s → deg/s 转换）
+    # 原 WebTools 阈值为 20 deg/s，但实测表明该日志中阶跃幅度分布较分散
+    # 使用 3.0 deg/s 作为最小目标幅值，在窗口数量和 SNR 之间取得平衡
+    min_amp = 3.0  # deg/s（经实测对齐旧版精度）
 
     result = estimate_step_response(
         target=desired,
