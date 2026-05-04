@@ -80,6 +80,18 @@ class StepMetrics:
     final_value: float = -1.0
     step_magnitude: float = -1.0
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rise_time_ms": self.rise_time_ms,
+            "overshoot_percent": self.overshoot_percent,
+            "settling_time_ms": self.settling_time_ms,
+            "oscillation_count": self.oscillation_count,
+            "steady_state_error_percent": self.steady_state_error_percent,
+            "peak_value": self.peak_value,
+            "final_value": self.final_value,
+            "step_magnitude": self.step_magnitude,
+        }
+
 
 @dataclass
 class DiagnosisEntry:
@@ -88,6 +100,14 @@ class DiagnosisEntry:
     severity: str          # "high", "medium", "low"
     affected_metric: str
     rule_id: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symptom": self.symptom,
+            "severity": self.severity,
+            "affected_metric": self.affected_metric,
+            "rule_id": self.rule_id,
+        }
 
 
 @dataclass
@@ -116,8 +136,27 @@ class AxisPIDResult:
     diagnoses: List[DiagnosisEntry] = field(default_factory=list)
     recommendations: List[ParamRecommendation] = field(default_factory=list)
     step_count: int = 0
-    # 原始阶跃响应数据（用于绘图）
+    # 原始阶跃响应数据（用于时域绘图）
     step_responses: List[Dict[str, Any]] = field(default_factory=list)
+    # FFT 频域阶跃响应（用于 WebTools 风格曲线图 — 核心可视化数据）
+    fft_step: Dict[str, Any] = field(default_factory=dict)
+    # 完整原始时间序列（time_ms, desired, actual, P, I, D）
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "axis": self.axis,
+            "metrics": self.metrics.to_dict(),
+            "assessment": self.assessment.value,
+            "recommendations": [
+                {"param": r.param.generic_name, "current": r.current,
+                 "suggested": r.suggested, "reason": r.reason, "action": r.action}
+                for r in self.recommendations
+            ],
+            "step_count": self.step_count,
+            "fft_step": self.fft_step,
+            "raw_data": self.raw_data,
+        }
 
 
 @dataclass

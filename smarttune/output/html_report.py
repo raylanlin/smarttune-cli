@@ -58,9 +58,9 @@ def _vib_color(level: str) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_html_report(
-    pid_results: Optional[Dict[str, Any]],
-    fft_results: Optional[Dict[str, Any]],
-    magfit_results: Optional[Dict[str, Any]],
+    pid_results=None,
+    fft_results=None,
+    magfit_results=None,
     log_path: str = "",
     pid_plot_fig=None,
     fft_plot_fig=None,
@@ -70,8 +70,12 @@ def generate_html_report(
 
     Parameters
     ----------
-    pid_results, fft_results, magfit_results : Optional[Dict]
-        各模块分析结果。
+    pid_results : PIDAnalysisResult | Dict | None
+        PID 分析结果（支持新 dataclass 和旧 dict 格式）。
+    fft_results : Dict | None
+        FFT 分析结果。
+    magfit_results : MagFitResult | Dict | None
+        磁力计分析结果。
     log_path : str
         原始日志文件路径（用于显示）。
     pid_plot_fig, fft_plot_fig :
@@ -189,17 +193,41 @@ def generate_html_report(
 </html>"""
 
 
-def _build_pid_html(results: Optional[Dict[str, Any]]) -> str:
+def _build_pid_html(results) -> str:
     if not results:
-        return '<div class="section"><div class="section-title">⚙️ PID 调参建议</div><p style="color:#64748b">暂无数据</p></div>'
+        return '<div class="section"><div class="section-title">⚙️ PID Tuning Recommendations</div><p style="color:#64748b">No data</p></div>'
 
-    axes_data: Dict[str, Dict] = {}
-    if "axis" in results:
-        axes_data[results["axis"]] = results
-    else:
-        for ax in ["roll", "pitch", "yaw"]:
-            if ax in results:
-                axes_data[ax] = results[ax]
+    # ── Adapt both PIDAnalysisResult (dataclass) and old dict format ──
+    axes_data: dict = {}
+
+    # Check if it's the new PIDAnalysisResult dataclass
+    if hasattr(results, 'axes') and hasattr(results, 'overall_assessment'):
+        # New dataclass format: PIDAnalysisResult
+        for axis_name, ax_result in results.axes.items():
+            metrics = ax_result.metrics.to_dict() if hasattr(ax_result.metrics, 'to_dict') else {}
+            recs = []
+            for r in ax_result.recommendations:
+                recs.append({
+                    "param": r.param.generic_name if hasattr(r.param, 'generic_name') else str(r.param),
+                    "current": r.current,
+                    "recommended": r.suggested,
+                    "reason": r.reason,
+                    "confidence": r.confidence.value if hasattr(r.confidence, 'value') else str(r.confidence),
+                })
+            axes_data[axis_name] = {
+                "assessment": ax_result.assessment.value if hasattr(ax_result.assessment, 'value') else str(ax_result.assessment),
+                "metrics": metrics,
+                "recommendations": recs,
+                "step_count": ax_result.step_count,
+            }
+    elif isinstance(results, dict):
+        # Old dict format
+        if "axis" in results:
+            axes_data[results["axis"]] = results
+        else:
+            for ax in ["roll", "pitch", "yaw"]:
+                if ax in results:
+                    axes_data[ax] = results[ax]
 
     blocks = []
     for ax, data in axes_data.items():
@@ -211,10 +239,10 @@ def _build_pid_html(results: Optional[Dict[str, Any]]) -> str:
         # metrics display
         m_parts = []
         for key, label, fmt in [
-            ("rise_time_ms", "上升时间", "{:.0f} ms"),
-            ("overshoot_percent", "超调", "{:.1f} %"),
-            ("settling_time_ms", "稳定时间", "{:.0f} ms"),
-            ("oscillation_count", "振荡次数", "{:.0f} 次"),
+            ("rise_time_ms", "Rise Time", "{:.0f} ms"),
+            ("overshoot_percent", "Overshoot", "{:.1f} %"),
+            ("settling_time_ms", "Settling", "{:.0f} ms"),
+            ("oscillation_count", "Oscillations", "{:.0f}"),
         ]:
             val = metrics.get(key, -1)
             if val >= 0:
@@ -227,7 +255,7 @@ def _build_pid_html(results: Optional[Dict[str, Any]]) -> str:
         for rec in recs:
             param = rec.get("param", "?")
             cur = rec.get("current", 0)
-            recom = rec.get("recommended", cur)
+            recom = rec.get("recommended", rec.get("suggested", cur))
             reason = rec.get("reason", "")
             conf = rec.get("confidence", "medium")
             direction = "↑" if recom > cur else "↓"
@@ -236,27 +264,31 @@ def _build_pid_html(results: Optional[Dict[str, Any]]) -> str:
                 delta = f"{direction}{pct:.1f}%"
             else:
                 delta = direction
+            conf_color = _assessment_color("EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR"))
             rec_items.append(
-                f'<li class="rec-item"><span class="rec-param">{param}</span><span class="rec-arrow"> {cur:.4g} → {recom:.4g} </span><span class="badge" style="background:{_assessment_color(conf.upper() if conf == "high" else "MARGINAL" if conf == "medium" else "POOR")}">{delta}</span><div class="rec-reason">{reason} · 置信度: <span class="confidence-{conf}">{conf}</span></div></li>'
+                f'<li class="rec-item"><span class="rec-param">{param}</span>'
+                f'<span class="rec-arrow"> {cur:.4g} → {recom:.4g} </span>'
+                f'<span class="badge" style="background:{conf_color}">{delta}</span>'
+                f'<div class="rec-reason">{reason} · Confidence: <span class="confidence-{conf}">{conf}</span></div></li>'
             )
         recs_html = (
             f'<ul class="rec-list">{"".join(rec_items)}</ul>' if rec_items
-            else '<p style="color:#22c55e;font-size:0.87rem;margin-top:8px">✓ 当前参数已达标，无需调整</p>'
+            else '<p style="color:#22c55e;font-size:0.87rem;margin-top:8px">✓ Parameters are within target — no adjustments needed</p>'
         )
 
         step_count = data.get("step_count", 0)
         blocks.append(f"""
   <div class="axis-block">
     <div class="axis-title">
-      {ax.capitalize()} 轴
+      {ax.capitalize()} Axis
       <span class="badge" style="background:{color};margin-left:8px">{assessment}</span>
-      <span style="color:#64748b;font-size:0.8rem;margin-left:10px">· {step_count} 个有效阶跃窗口</span>
+      <span style="color:#64748b;font-size:0.8rem;margin-left:10px">· {step_count} valid step windows</span>
     </div>
     {metrics_html}
     {recs_html}
   </div>""")
 
-    return f'<div class="section"><div class="section-title">⚙️ PID 调参建议</div>{"".join(blocks)}</div>'
+    return f'<div class="section"><div class="section-title">⚙️ PID Tuning Recommendations</div>{"".join(blocks)}</div>'
 
 
 def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
@@ -272,8 +304,9 @@ def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
     for p in peaks:
         src = p.get("source", "unknown")
         is_h = "✓" if p.get("is_harmonic") else "—"
-        mag = p.get("magnitude_db", p.get("magnitude", 0))
-        peak_rows += f"<tr><td>{p.get('freq', 0):.1f} Hz</td><td>{mag:.1f} dBFS</td><td>{src}</td><td>{is_h}</td></tr>"
+        mag = p.get("magnitude_db", p.get("amplitude_dbfs", p.get("magnitude", p.get("amplitude", 0))))
+        freq = p.get("freq", p.get("frequency_hz", 0))
+        peak_rows += f"<tr><td>{freq:.1f} Hz</td><td>{mag:.1f} dBFS</td><td>{src}</td><td>{is_h}</td></tr>"
 
     peaks_html = ""
     if peaks:
@@ -327,12 +360,16 @@ def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
 
 def _build_magfit_html(results) -> str:
     if not results:
-        return '<div class="section"><div class="section-title">🧭 磁力计校准</div><p style="color:#64748b">暂无数据</p></div>'
+        return '<div class="section"><div class="section-title">🧭 Magnetometer Calibration</div><p style="color:#64748b">No data</p></div>'
 
     fitness = getattr(results, "fitness_mgauss", None)
+    if fitness is None and hasattr(results, "fitness_mGauss"):
+        fitness = results.fitness_mGauss
     if fitness is None and hasattr(results, "get"):
-        fitness = results.get("fitness_mgauss")
+        fitness = results.get("fitness_mgauss", results.get("fitness_mGauss"))
     assessment = getattr(results, "assessment", None) or (results.get("assessment") if hasattr(results, "get") else None) or "?"
+    if hasattr(assessment, 'value'):
+        assessment = assessment.value
     color = _assessment_color(assessment)
 
     fitness_html = ""
@@ -340,7 +377,7 @@ def _build_magfit_html(results) -> str:
         fitness_html = f"""
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
     <div>
-      <span style="color:#94a3b8;font-size:0.85rem">评估</span><br>
+      <span style="color:#94a3b8;font-size:0.85rem">Assessment</span><br>
       <span class="badge" style="background:{color};font-size:1rem;padding:4px 16px">{assessment}</span>
     </div>
     <div>
@@ -349,21 +386,25 @@ def _build_magfit_html(results) -> str:
     </div>
   </div>"""
 
-    # offset params
+    # offset params — support multiple formats
     ofs_rows = ""
-    if hasattr(results, "ofs"):
-        for label, val in zip(["OFS_X","OFS_Y","OFS_Z"], results.ofs):
+    if hasattr(results, "ofs") and results.ofs:
+        for label, val in zip(["OFS_X", "OFS_Y", "OFS_Z"], results.ofs):
             ofs_rows += f'<tr><td class="name">COMPASS_{label}</td><td class="val">{val:.2f}</td></tr>'
+    elif hasattr(results, "offsets") and results.offsets:
+        for axis, val in results.offsets.items():
+            ofs_rows += f'<tr><td class="name">COMPASS_OFS_{axis.upper()}</td><td class="val">{val:.2f}</td></tr>'
     elif hasattr(results, "get"):
-        params = results.get("parameters", {})
-        for k, v in params.items():
-            ofs_rows += f'<tr><td class="name">{k}</td><td class="val">{v:.2f}</td></tr>'
+        params = results.get("parameters", results.get("offsets", {}))
+        if isinstance(params, dict):
+            for k, v in params.items():
+                ofs_rows += f'<tr><td class="name">{k}</td><td class="val">{v:.2f}</td></tr>'
 
     params_html = ""
     if ofs_rows:
         params_html = f'<table class="param-table"><tbody>{ofs_rows}</tbody></table>'
 
-    return f'<div class="section"><div class="section-title">🧭 磁力计校准</div>{fitness_html}{params_html}</div>'
+    return f'<div class="section"><div class="section-title">🧭 Magnetometer Calibration</div>{fitness_html}{params_html}</div>'
 
 
 def save_html_report(

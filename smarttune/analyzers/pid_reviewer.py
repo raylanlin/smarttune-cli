@@ -407,19 +407,72 @@ class PIDReviewer:
         return result
 
     def _analyze_axis(self, flight_data: FlightData, axis: str) -> AxisPIDResult:
-        """单轴完整分析。"""
+        """单轴完整分析 — 包含时域指标 + 频域阶跃响应 + 原始数据。"""
         sig = flight_data.pid[axis]
+        dt_ms = self._estimate_dt_ms(sig)
+
+        # 1. 时域阶跃响应指标
         metrics = self._compute_avg_metrics(sig)
         thresholds = self._thresholds.get(axis, {})
         assessment = _assess_metrics(metrics, thresholds)
 
-        # 生成建议（使用 generic param refs）
+        # 2. 参数建议
         current_params = self._get_current_pid(flight_data.params, axis)
         recommendations = self._generate_recommendations(metrics, current_params, thresholds, axis)
 
-        # Step count
-        dt_ms = self._estimate_dt_ms(sig)
-        step_count = len(detect_steps(sig.desired, dt_ms=dt_ms))
+        # 3. Step count
+        step_indices = detect_steps(sig.desired, dt_ms=dt_ms)
+        step_count = len(step_indices)
+
+        # 4. FFT 频域阶跃响应（与 ArduPilot WebTools PIDReview 一致）
+        fft_step = {}
+        try:
+            from smarttune.analyzers.step_response_fft import compute_step_response_for_axis
+            # 构造旧版 get_pid_data 返回格式
+            pid_dict = {
+                "Desired": sig.desired,
+                "Actual":  sig.actual,
+                "time":    sig.timestamp_s,
+            }
+            if sig.p_term is not None:
+                pid_dict["P"] = sig.p_term
+            if sig.i_term is not None:
+                pid_dict["I"] = sig.i_term
+            if sig.d_term is not None:
+                pid_dict["D"] = sig.d_term
+            if sig.ff_term is not None:
+                pid_dict["FF"] = sig.ff_term
+            fft_step = compute_step_response_for_axis(pid_dict, axis, imu_data=None)
+        except Exception as exc:
+            _log.debug("FFT step response failed for %s: %s", axis, exc)
+
+        # 5. 原始时间序列（供绘图）
+        time_ms = sig.timestamp_s * 1000.0
+        raw_data = {
+            "time_ms":  time_ms.tolist(),
+            "desired":  sig.desired.tolist(),
+            "actual":   sig.actual.tolist(),
+            "P":        sig.p_term.tolist() if sig.p_term is not None else [],
+            "I":        sig.i_term.tolist() if sig.i_term is not None else [],
+            "D":        sig.d_term.tolist() if sig.d_term is not None else [],
+        }
+
+        # 6. 时域阶跃窗口提取（供每个阶跃单独绘图）
+        step_responses = []
+        for idx in step_indices:
+            is_good, reason = _check_window_quality(sig.actual, sig.desired, idx)
+            if not is_good:
+                continue
+            t_rel, act_win, magnitude = _extract_step_response(
+                sig.desired, sig.actual, idx, dt_ms=dt_ms
+            )
+            t_global = time_ms[idx] + t_rel
+            step_responses.append({
+                "time_ms":   t_global.tolist(),
+                "actual":    act_win.tolist(),
+                "desired":   float(np.mean(sig.desired[max(0, idx):idx + 10])),
+                "magnitude": magnitude,
+            })
 
         return AxisPIDResult(
             axis=axis,
@@ -427,6 +480,9 @@ class PIDReviewer:
             assessment=assessment,
             recommendations=recommendations,
             step_count=step_count,
+            fft_step=fft_step,
+            raw_data=raw_data,
+            step_responses=step_responses,
         )
 
     def _compute_avg_metrics(self, sig: AxisPIDSignal) -> StepMetrics:
@@ -441,21 +497,39 @@ class PIDReviewer:
                          "oscillation_count", "steady_state_error_percent")
         totals = {f: 0.0 for f in metric_fields}
         counts = {f: 0 for f in metric_fields}
+        skipped_quality = 0
+        high_overshoot_count = 0
 
         for idx in step_indices:
             is_good, reason = _check_window_quality(sig.actual, sig.desired, idx)
             if not is_good:
+                skipped_quality += 1
+                _log.debug("Skipping step window idx=%d, quality: %s", idx, reason)
                 continue
             t_rel, act_win, magnitude = _extract_step_response(
                 sig.desired, sig.actual, idx, dt_ms=dt_ms
             )
             m = _compute_metrics(act_win, t_rel, magnitude, dt_ms=dt_ms,
                                  settle_band=self._settle_band)
+            if m.overshoot_percent > 150.0:
+                high_overshoot_count += 1
             for field in metric_fields:
                 val = getattr(m, field)
                 if val >= 0:
                     totals[field] += val
                     counts[field] += 1
+
+        if skipped_quality > 0:
+            _log.info(
+                "Quality filter: %d/%d candidate windows skipped, %d valid.",
+                skipped_quality, len(step_indices),
+                len(step_indices) - skipped_quality,
+            )
+        if high_overshoot_count > 0:
+            _log.warning(
+                "%d windows had overshoot > 150%%, consider checking quality filter thresholds.",
+                high_overshoot_count,
+            )
 
         result = StepMetrics()
         for field in metric_fields:
@@ -581,3 +655,51 @@ class PIDReviewer:
                 seen_params[param_key] = (severity, symptom_key)
 
         return recommendations
+
+    # ------------------------------------------------------------------
+    # 公开便利方法（供可视化、Skill 层调用）
+    # ------------------------------------------------------------------
+
+    def extract_step_response(self, flight_data: FlightData, axis: str) -> Dict[str, Any]:
+        """提取指定轴的阶跃响应数据（供可视化使用）。
+
+        Returns
+        -------
+        Dict[str, Any]
+            steps: List[Dict] — 每个阶跃窗口含 time_ms, actual, desired, magnitude
+            axis: str
+            dt_ms: float
+        """
+        ax = axis.lower()
+        if ax not in flight_data.pid:
+            return {"axis": ax, "steps": [], "dt_ms": 4.0}
+
+        sig = flight_data.pid[ax]
+        dt_ms = self._estimate_dt_ms(sig)
+        step_indices = detect_steps(sig.desired, dt_ms=dt_ms)
+        time_ms = sig.timestamp_s * 1000.0
+
+        steps_out = []
+        for idx in step_indices:
+            is_good, _ = _check_window_quality(sig.actual, sig.desired, idx)
+            if not is_good:
+                continue
+            t_rel, act_win, magnitude = _extract_step_response(
+                sig.desired, sig.actual, idx, dt_ms=dt_ms
+            )
+            t_global = time_ms[idx] + t_rel
+            steps_out.append({
+                "time_ms":   t_global.tolist(),
+                "actual":    act_win.tolist(),
+                "desired":   float(np.mean(sig.desired[max(0, idx):idx + 10])),
+                "magnitude": magnitude,
+            })
+
+        return {"axis": ax, "steps": steps_out, "dt_ms": dt_ms}
+
+    def get_step_response_data(self, flight_data: FlightData, axis: str) -> Dict[str, Any]:
+        """提取指定轴的阶跃响应时间序列数据（供可视化使用）。
+
+        Convenience wrapper around extract_step_response.
+        """
+        return self.extract_step_response(flight_data, axis)

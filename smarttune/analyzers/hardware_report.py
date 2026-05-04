@@ -229,28 +229,50 @@ def get_filter_config(params: Dict[str, float]) -> Dict[str, Any]:
 # 电池报告
 # ---------------------------------------------------------------------------
 
-def get_battery_report(parser: Any) -> List[Dict[str, Any]]:
-    """从 LogParser 生成电池统计报告。"""
+def get_battery_report(parser_or_flight_data: Any) -> List[Dict[str, Any]]:
+    """从 LogParser 或 FlightData 生成电池统计报告。"""
     reports = []
-    if not hasattr(parser, 'get_battery_data'):
+
+    # Support old LogParser interface
+    if hasattr(parser_or_flight_data, 'get_battery_data'):
+        parser = parser_or_flight_data
+        for bat_id in range(2):
+            data = parser.get_battery_data(bat_id)
+            if data["Volt"].size == 0:
+                continue
+            report = {
+                "id": bat_id,
+                "voltage_min": float(np.min(data["Volt"])) if data["Volt"].size else 0,
+                "voltage_max": float(np.max(data["Volt"])) if data["Volt"].size else 0,
+                "voltage_mean": float(np.mean(data["Volt"])) if data["Volt"].size else 0,
+                "current_max": float(np.max(data["Curr"])) if data["Curr"].size else 0,
+                "current_mean": float(np.mean(data["Curr"])) if data["Curr"].size else 0,
+                "samples": int(data["Volt"].size),
+            }
+            if data["CurrTot"].size > 0:
+                report["consumed_mah"] = float(data["CurrTot"][-1])
+            reports.append(report)
         return reports
 
-    for bat_id in range(2):
-        data = parser.get_battery_data(bat_id)
-        if data["Volt"].size == 0:
-            continue
+    # Support new FlightData interface
+    fd = parser_or_flight_data
+    if hasattr(fd, 'battery_voltage') and fd.battery_voltage is not None and len(fd.battery_voltage) > 0:
+        v = fd.battery_voltage
         report = {
-            "id": bat_id,
-            "voltage_min": float(np.min(data["Volt"])) if data["Volt"].size else 0,
-            "voltage_max": float(np.max(data["Volt"])) if data["Volt"].size else 0,
-            "voltage_mean": float(np.mean(data["Volt"])) if data["Volt"].size else 0,
-            "current_max": float(np.max(data["Curr"])) if data["Curr"].size else 0,
-            "current_mean": float(np.mean(data["Curr"])) if data["Curr"].size else 0,
-            "samples": int(data["Volt"].size),
+            "id": 0,
+            "voltage_min": float(np.min(v)),
+            "voltage_max": float(np.max(v)),
+            "voltage_mean": float(np.mean(v)),
+            "current_max": 0.0,
+            "current_mean": 0.0,
+            "consumed_mah": 0,
         }
-        if data["CurrTot"].size > 0:
-            report["consumed_mah"] = float(data["CurrTot"][-1])
+        if hasattr(fd, 'battery_current') and fd.battery_current is not None and len(fd.battery_current) > 0:
+            c = fd.battery_current
+            report["current_max"] = float(np.max(c))
+            report["current_mean"] = float(np.mean(c))
         reports.append(report)
+
     return reports
 
 
@@ -258,31 +280,41 @@ def get_battery_report(parser: Any) -> List[Dict[str, Any]]:
 # 日志完整性检查
 # ---------------------------------------------------------------------------
 
-def check_log_integrity(parser: Any) -> List[str]:
-    """扫描 MSG 消息和数据完整性。"""
+def check_log_integrity(parser_or_flight_data: Any) -> List[str]:
+    """扫描日志数据完整性。支持 LogParser 和 FlightData。"""
     issues = []
 
-    # 检查时间范围
-    t_min, t_max = parser.get_time_range()
-    duration = t_max - t_min
-    if duration < 5.0:
-        issues.append(f"日志持续时间过短: {duration:.1f}s（建议 > 30s）")
+    # Support old LogParser interface
+    if hasattr(parser_or_flight_data, 'get_time_range'):
+        parser = parser_or_flight_data
+        t_min, t_max = parser.get_time_range()
+        duration = t_max - t_min
+        if duration < 5.0:
+            issues.append(f"Log duration too short: {duration:.1f}s (recommend > 30s)")
 
-    # 检查关键消息
-    att = parser.get_attitude_data()
-    if att["time"].size < 100:
-        issues.append(f"姿态数据稀疏: {att['time'].size} 样本（建议 > 500）")
+        att = parser.get_attitude_data()
+        if att["time"].size < 100:
+            issues.append(f"Attitude data sparse: {att['time'].size} samples (recommend > 500)")
 
-    imu = parser.get_imu_data(0)
-    if imu["time"].size < 100:
-        issues.append(f"IMU 数据稀疏: {imu['time'].size} 样本")
+        imu = parser.get_imu_data(0)
+        if imu["time"].size < 100:
+            issues.append(f"IMU data sparse: {imu['time'].size} samples")
 
-    # 检查 MSG 中的错误关键字
-    if hasattr(parser, 'get_messages'):
-        for m in parser.get_messages():
-            txt = m.get("text", "").lower()
-            if any(kw in txt for kw in ["error", "fail", "crash", "watchdog", "reset"]):
-                issues.append(f"MSG 告警: {m['text'][:80]}")
+        if hasattr(parser, 'get_messages'):
+            for m in parser.get_messages():
+                txt = m.get("text", "").lower()
+                if any(kw in txt for kw in ["error", "fail", "crash", "watchdog", "reset"]):
+                    issues.append(f"MSG alert: {m['text'][:80]}")
+        return issues
+
+    # Support new FlightData interface
+    fd = parser_or_flight_data
+    if hasattr(fd, 'duration_s'):
+        if fd.duration_s < 5.0:
+            issues.append(f"Log duration too short: {fd.duration_s:.1f}s (recommend > 30s)")
+
+    if hasattr(fd, 'validate'):
+        issues.extend(fd.validate())
 
     return issues
 
