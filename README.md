@@ -406,57 +406,73 @@ When an AI agent analyzes a flight log through SmartTune, it produces a structur
 ```text
 ArduPilot Flight Log Analysis Report
 Log: 2026-04-26 13-46-44.bin | Duration: 995s | Platform: ArduPilot
-
-1. PID Step Response Analysis
-
-  Axis      Rating     Rise Time  Overshoot  Settling  Oscillations
-  ─────     ──────     ─────────  ────────   ────────  ────────────
-  Roll      MARGINAL      -1ms      0.0%      510ms        8
-  Pitch     MARGINAL      -1ms      0.0%      510ms        4
-  Yaw       MARGINAL      -1ms     -1.0%       -1ms        -
-
-  Roll Axis Recommendations:
-    ATC_RAT_RLL_D: 0.0036 → 0.0040 (+10%)  — Reduce oscillation (8 cycles)
-    ATC_RAT_RLL_I: 0.115  → 0.144  (+25%)  — Eliminate steady-state error (99.8%)
-    ATC_RAT_RLL_P: 0.115  → 0.104  (-10%)  — Reduce oscillation
-
-  Pitch Axis Recommendations:
-    ATC_RAT_PIT_I: 0.115 → 0.144 (+25%)  — Eliminate steady-state error (99.8%)
-    ATC_RAT_PIT_D: 0.0036 → 0.0040 (+10%)  — Reduce oscillation (4 cycles)
-    ATC_RAT_PIT_P: 0.115 → 0.104 (-10%)  — Reduce oscillation
-
-  Yaw Axis: No changes needed — parameters already acceptable.
-
-2. FFT Vibration Analysis
-
-  Rating: EXCELLENT (0.5 m/s²)
-
-  Current filter settings:
-    INS_GYRO_FILTER:  60 Hz
-    INS_ACCEL_FILTER: 10 Hz
-    No notch filters enabled
-
-  Recommendation: Vibration levels are excellent. No additional filtering required.
-
-3. Magnetometer Calibration
-
-  Fitness: 567.98 mGauss — BAD
-  Issues detected:
-    - Hard iron offset too high: max(|OFS|) = 625 > 600
-    - Soft iron anomalies on all axes (DIA_X/Y/Z = 0.300)
-    - Motor interference compensation excessive: max(|MOT|) = 200.0 > 100.0
-    - Poor flight coverage: no attitude variation during flight
-
-  Recommendations:
-    - Remove hard iron interference sources (speakers, magnets)
-    - Optimize soft iron layout (battery/motor placement)
-    - Recalibrate with proper flight pattern: yaw > 300°, pitch/roll > ±30°
-
-Summary:
-  Vibration: Excellent — hardware is solid
-  PID:       Marginal — increase I and D gains on Roll/Pitch, reduce P slightly
-  Mag:       Bad — compass calibration needed before precision flight
 ```
+
+#### 1. PID Step Response Analysis
+
+| Axis | Rating | Rise Time | Overshoot | Settling | Oscillations |
+|------|--------|-----------|-----------|----------|-------------|
+| Roll | MARGINAL | -1ms | 0.0% | 510ms | 8 |
+| Pitch | MARGINAL | -1ms | 0.0% | 510ms | 4 |
+| Yaw | MARGINAL | -1ms | -1.0% | -1ms | - |
+
+**Roll Axis Recommendations:**
+
+| Parameter | Current → New | Change | Reason |
+|-----------|---------------|--------|--------|
+| `ATC_RAT_RLL_D` | 0.0036 → 0.0040 | +10% | Reduce oscillation (8 cycles) |
+| `ATC_RAT_RLL_I` | 0.115 → 0.144 | +25% | Eliminate steady-state error (99.8%) |
+| `ATC_RAT_RLL_P` | 0.115 → 0.104 | -10% | Reduce oscillation |
+
+**Pitch Axis Recommendations:**
+
+| Parameter | Current → New | Change | Reason |
+|-----------|---------------|--------|--------|
+| `ATC_RAT_PIT_I` | 0.115 → 0.144 | +25% | Eliminate steady-state error (99.8%) |
+| `ATC_RAT_PIT_D` | 0.0036 → 0.0040 | +10% | Reduce oscillation (4 cycles) |
+| `ATC_RAT_PIT_P` | 0.115 → 0.104 | -10% | Reduce oscillation |
+
+**Yaw Axis:** No changes needed — parameters already acceptable.
+
+#### 2. FFT Vibration Analysis
+
+**Rating:** EXCELLENT (0.5 m/s²)
+
+**Current filter settings:**
+
+| Parameter | Value |
+|-----------|-------|
+| `INS_GYRO_FILTER` | 60 Hz |
+| `INS_ACCEL_FILTER` | 10 Hz |
+| Notch filters | None enabled |
+
+> Vibration levels are excellent. No additional filtering required.
+
+#### 3. Magnetometer Calibration
+
+**Fitness:** 567.98 mGauss — BAD
+
+**Issues detected:**
+
+| Issue | Threshold | Actual |
+|-------|-----------|--------|
+| Hard iron offset (max \|OFS\|) | 600 | 625 |
+| Soft iron anomaly (DIA_X/Y/Z) | — | 0.300 |
+| Motor interference (max \|MOT\|) | 100.0 | 200.0 |
+| Flight coverage | — | No attitude variation |
+
+**Recommendations:**
+- Remove hard iron interference sources (speakers, magnets)
+- Optimize soft iron layout (battery/motor placement)
+- Recalibrate with proper flight pattern: yaw > 300°, pitch/roll > ±30°
+
+#### Summary
+
+| Module | Status | Action |
+|--------|--------|--------|
+| Vibration | ✅ Excellent | Hardware is solid |
+| PID | ⚠️ Marginal | Increase I and D gains on Roll/Pitch, reduce P slightly |
+| Compass | ❌ Bad | Recalibrate before precision flight |
 
 The agent interprets SmartTune's structured JSON output, adds context, and produces a human-readable summary — bridging the gap between raw data and actionable tuning advice.
 
