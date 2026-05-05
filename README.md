@@ -181,6 +181,16 @@ stune pid -i flight.bin -a roll                        # Single axis
 stune pid -i flight.bbl --visual                       # Betaflight
 ```
 
+### PID Step Response Examples
+
+**ArduPilot** (DataFlash `.bin` log):
+
+![ArduPilot PID step response](assets/pid_ardupilot_example.png)
+
+**Betaflight** (Blackbox `.bbl` log):
+
+![Betaflight PID step response](assets/pid_betaflight_example.png)
+
 ### `stune fft`
 
 Frequency-domain vibration analysis with notch filter suggestions.
