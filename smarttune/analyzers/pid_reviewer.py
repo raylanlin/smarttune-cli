@@ -165,7 +165,7 @@ def _check_window_quality(
         return False, "window_too_short"
     if np.any(~np.isfinite(actual_win)):
         return False, "data_contains_nan_inf"
-    if float(np.max(np.abs(actual_win))) > 50.0:
+    if float(np.max(np.abs(actual_win))) > 2000.0:
         return False, "data_corrupt_extreme_value"
 
     before_end = step_idx

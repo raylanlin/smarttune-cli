@@ -26,16 +26,16 @@ import numpy as np
 
 _log = logging.getLogger(__name__)
 
-# 最小阶跃幅值阈值（rad/s），低于此的跳变视为噪声
-_MIN_STEP_AMP = 0.3  # rad/s ≈ 17 deg/s
+# 最小阶跃幅值阈值（deg/s），低于此的跳变视为噪声
+_MIN_STEP_AMP = 5.0  # deg/s
 
 # 窗口参数（秒）
 _WINDOW_BEFORE_S = 0.1   # 阶跃前保留时长
 _WINDOW_AFTER_S = 1.5    # 阶跃后保留时长（低采样率响应更慢）
 
 # 数据质量过滤常量
-_MAX_ACTUAL_RADS = 26.2  # 最大合法角速率 ≈ 1500 deg/s
-_MIN_STD_RADS = 0.05     # Actual 最小标准差（静止段过滤）
+_MAX_ACTUAL_DPS = 1500.0  # 最大合法角速率 (deg/s)
+_MIN_STD_DPS = 3.0        # Actual 最小标准差 (deg/s)，静止段过滤
 
 
 def _detect_steps_time_domain(
@@ -50,7 +50,7 @@ def _detect_steps_time_domain(
     Parameters
     ----------
     desired : np.ndarray
-        期望值序列（rad/s）。
+        期望值序列（deg/s）。
     sample_rate : float
         采样率（Hz）。
     threshold_frac : float
@@ -113,11 +113,11 @@ def _extract_window(
         return None
 
     # 极端值过滤
-    if float(np.max(np.abs(act_win))) > _MAX_ACTUAL_RADS:
+    if float(np.max(np.abs(act_win))) > _MAX_ACTUAL_DPS:
         return None
 
     # 静止段过滤
-    if float(np.std(act_win)) < _MIN_STD_RADS:
+    if float(np.std(act_win)) < _MIN_STD_DPS:
         return None
 
     # 计算阶跃幅值：用 des_win 的局部索引
@@ -163,9 +163,9 @@ def estimate_step_response_time_domain(
     Parameters
     ----------
     target : np.ndarray
-        期望值序列（rad/s）。
+        期望值序列（deg/s）。
     actual : np.ndarray
-        实际值序列（rad/s）。
+        实际值序列（deg/s）。
     sample_rate : float, optional
         采样率（Hz）。
     step_duration_s : float

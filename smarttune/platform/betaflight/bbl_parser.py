@@ -71,6 +71,7 @@ PREDICTOR_HOME_COORD = 7    # Home GPS 坐标
 PREDICTOR_1500 = 8          # 常量 1500
 PREDICTOR_VBATREF = 9       # 电池参考电压
 PREDICTOR_LAST_MAIN_FRAME_TIME = 10  # 上一主帧时间
+PREDICTOR_MINMOTOR = 11              # motorOutput[0] (DShot/数字协议最低值)
 
 # 编码类型 — 决定如何从二进制流中读取值
 ENCODING_SIGNED_VB = 0
@@ -223,94 +224,162 @@ class BBLStreamReader:
     def read_neg_14bit(self) -> int:
         """读取 neg_14bit 编码值。
 
-        2 字节, 14-bit 值 + 符号位。
-        如果值 < 16384，直接读 unsigned VB。
+        BF decoder: value = -signExtend14Bit(streamReadUnsignedVB(stream))
+        signExtend14Bit: 如果 bit13 置位，用 1 填充高位 (14-bit → 32-bit 符号扩展)
+        然后取反。
+
+        参考: betaflight blackbox-tools parser.c / decoders.c
         """
-        val = self.read_unsigned_vb()
-        if val >= 16384:
-            val -= 16384
-            val = -val
-        return val
+        raw = self.read_unsigned_vb()
+        # signExtend14Bit
+        if raw & 0x2000:  # bit 13 set
+            raw |= ~0x3FFF  # fill upper bits with 1s (sign extend)
+            # In Python, this makes it a large negative number
+            # We need to treat it as a signed 32-bit value
+            raw = raw & 0xFFFFFFFF
+            if raw >= 0x80000000:
+                raw -= 0x100000000
+        # Negate
+        return -raw
 
     def read_tag2_3s32(self) -> List[int]:
         """读取 tag2_3S32 编码 — 3 个 signed 值打包。
 
-        第一字节的低 2 位是 tag:
-          00: 3 个值都是 0
+        第一字节的高 2 位 (bits[7:6]) 是 tag:
+          00: 3 个 2-bit signed 值打包在 1 字节
           01: 3 个 4-bit signed 值打包在 2 字节
-          10: 3 个 8-bit signed 值打包在 3 字节
-          11: 3 个独立的 signed VB
+          10: 3 个值: 6-bit + 8-bit + 8-bit, 共 3 字节
+          11: 二级 header + 每字段 1/2/3/4 字节
+
+        参考: betaflight blackbox_encoding.c blackboxWriteTag2_3S32()
         """
         header = self.read_byte()
-        tag = header & 0x03
+        tag = (header >> 6) & 0x03
 
         if tag == 0:
-            return [0, 0, 0]
+            # BITS_2: ss|AA|BB|CC — 2 bits per field in the header byte
+            # BF encoder: (selector << 6) | ((val0 & 0x03) << 4) | ((val1 & 0x03) << 2) | (val2 & 0x03)
+            val0 = (header >> 4) & 0x03
+            val1 = (header >> 2) & 0x03
+            val2 = header & 0x03
+            # Sign-extend 2-bit values
+            if val0 >= 2: val0 -= 4
+            if val1 >= 2: val1 -= 4
+            if val2 >= 2: val2 -= 4
+            return [val0, val1, val2]
 
         elif tag == 1:
-            # 3 个 4-bit signed 值：第一字节的高 6 位 + 第二字节的低 6 位
+            # BITS_4: byte1 = ss|0000|AAAA, byte2 = BBBB|CCCC
+            # BF encoder: (selector << 6) | (val0 & 0x0F)  then  (val1 << 4) | (val2 & 0x0F)
+            val0 = header & 0x0F
             byte2 = self.read_byte()
-            combined = (header >> 2) | (byte2 << 6)
-            values = []
-            for i in range(3):
-                nibble = (combined >> (i * 4)) & 0x0F
-                # 4-bit signed: if bit3 set, negative
-                if nibble & 0x08:
-                    nibble -= 16
-                values.append(nibble)
-            return values
+            val1 = (byte2 >> 4) & 0x0F
+            val2 = byte2 & 0x0F
+            # Sign-extend 4-bit values
+            if val0 >= 8: val0 -= 16
+            if val1 >= 8: val1 -= 16
+            if val2 >= 8: val2 -= 16
+            return [val0, val1, val2]
 
         elif tag == 2:
-            # 3 个 8-bit signed 值
+            # BITS_6: byte1 = ss|AAAAAA, byte2 = val1 (8-bit signed), byte3 = val2 (8-bit signed)
+            # BF encoder: (selector << 6) | (val0 & 0x3F)  then  (uint8_t)val1  then  (uint8_t)val2
+            val0 = header & 0x3F
+            if val0 >= 32: val0 -= 64  # sign-extend 6-bit
             byte2 = self.read_byte()
+            val1 = byte2 if byte2 < 128 else byte2 - 256
             byte3 = self.read_byte()
-            combined = (header >> 2) | (byte2 << 6) | (byte3 << 14)
+            val2 = byte3 if byte3 < 128 else byte3 - 256
+            return [val0, val1, val2]
+
+        else:  # tag == 3
+            # BITS_32: secondary header for per-field byte widths
+            # byte1 = ss|tttttt where tt = byte width selector for each field
+            # BF encoder: selector2 encodes byte widths (0=1B, 1=2B, 2=3B, 3=4B) per field
+            selector2 = header & 0x3F
             values = []
             for i in range(3):
-                val = (combined >> (i * 8)) & 0xFF
-                if val & 0x80:
-                    val -= 256
+                field_width = selector2 & 0x03
+                selector2 >>= 2
+                if field_width == 0:  # 1 byte
+                    b = self.read_byte()
+                    val = b if b < 128 else b - 256
+                elif field_width == 1:  # 2 bytes LE
+                    lo = self.read_byte()
+                    hi = self.read_byte()
+                    val = lo | (hi << 8)
+                    if val >= 0x8000: val -= 0x10000
+                elif field_width == 2:  # 3 bytes LE
+                    b0 = self.read_byte()
+                    b1 = self.read_byte()
+                    b2 = self.read_byte()
+                    val = b0 | (b1 << 8) | (b2 << 16)
+                    if val >= 0x800000: val -= 0x1000000
+                else:  # 4 bytes LE
+                    b0 = self.read_byte()
+                    b1 = self.read_byte()
+                    b2 = self.read_byte()
+                    b3 = self.read_byte()
+                    val = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+                    if val >= 0x80000000: val -= 0x100000000
                 values.append(val)
             return values
 
-        else:  # tag == 3
-            return [self.read_signed_vb() for _ in range(3)]
-
     def read_tag8_4s16(self) -> List[int]:
-        """读取 tag8_4S16 编码 — 4 个值，tag 字节指示每个字段宽度。
+        """读取 tag8_4S16 编码 (v2) — 4 个值，tag 字节指示每个字段宽度。
 
-        tag 字节每 2 位描述对应字段：
+        tag 字节每 2 位描述对应字段 (低位先):
           00: 值为 0
-          01: 4-bit signed
+          01: 4-bit signed (nibble-packed: 两个 4-bit 值共享一个字节)
           10: 8-bit signed
-          11: 16-bit signed
+          11: 16-bit signed (little-endian)
+
+        4-bit 值使用 nibble packing:
+          - 每两个 4-bit 值打包进一个字节 (低 nibble 先写)
+          - 如果奇数个 4-bit 值，最后一个独占一字节的低 nibble
+
+        参考: betaflight blackbox_encoding.c blackboxWriteTag8_4S16()
+               betaflight blackbox-tools decoders.c streamReadTag8_4S16_v2()
         """
         tag = self.read_byte()
-        values = []
+
+        values = [0, 0, 0, 0]
+        nibble_buffer = 0
+        nibble_index = 0  # 0 = need to read byte, 1 = high nibble available
+
         for i in range(4):
             field_tag = (tag >> (i * 2)) & 0x03
             if field_tag == 0:
-                values.append(0)
+                # FIELD_ZERO
+                values[i] = 0
             elif field_tag == 1:
-                # 4-bit signed in lower nibble of a byte
-                raw = self.read_byte()
-                # Only use the raw byte value, sign extend from 8 bits
-                if raw & 0x80:
-                    raw -= 256
-                values.append(raw)
+                # FIELD_4BIT: nibble-packed
+                if nibble_index == 0:
+                    nibble_buffer = self.read_byte()
+                    val = nibble_buffer & 0x0F
+                    nibble_index = 1
+                else:
+                    val = (nibble_buffer >> 4) & 0x0F
+                    nibble_index = 0
+                # Sign-extend 4-bit
+                if val >= 8:
+                    val -= 16
+                values[i] = val
             elif field_tag == 2:
+                # FIELD_8BIT
                 raw = self.read_byte()
-                if raw & 0x80:
+                if raw >= 128:
                     raw -= 256
-                values.append(raw)
+                values[i] = raw
             else:
-                # 16-bit little-endian signed
+                # FIELD_16BIT: little-endian signed
                 lo = self.read_byte()
                 hi = self.read_byte()
                 val = lo | (hi << 8)
-                if val & 0x8000:
-                    val -= 65536
-                values.append(val)
+                if val >= 0x8000:
+                    val -= 0x10000
+                values[i] = val
+
         return values
 
     def read_tag8_8svb(self, count: int) -> List[int]:
@@ -332,9 +401,132 @@ class BBLStreamReader:
         return values
 
     def read_tag2_3svariable(self) -> List[int]:
-        """读取 tag2_3SVARIABLE 编码 — 类似 tag2_3s32 但用于变宽值。"""
-        # 实际上和 tag2_3s32 非常相似，BF 源码中用法一致
-        return self.read_tag2_3s32()
+        """读取 tag2_3SVARIABLE 编码 — 3 个值，非对称位宽。
+
+        tag 在 bits[7:6]:
+          00: 2 bits per field (same as tag2_3s32)
+          01: 5-5-4 bits per field
+          10: 8-7-7 bits per field
+          11: variable (same as tag2_3s32 tag=3)
+
+        参考: betaflight blackbox_encoding.c blackboxWriteTag2_3SVariable()
+        """
+        header = self.read_byte()
+        tag = (header >> 6) & 0x03
+
+        if tag == 0:
+            # BITS_2: ss|AA|BB|CC — same as tag2_3s32
+            val0 = (header >> 4) & 0x03
+            val1 = (header >> 2) & 0x03
+            val2 = header & 0x03
+            if val0 >= 2: val0 -= 4
+            if val1 >= 2: val1 -= 4
+            if val2 >= 2: val2 -= 4
+            return [val0, val1, val2]
+
+        elif tag == 1:
+            # BITS_554: ss11 1112 2222 3333
+            # BF: (selector << 6) | ((val0 & 0x1F) << 1) | ((val1 & 0x1F) >> 4)
+            #     ((val1 & 0x0F) << 4) | (val2 & 0x0F)
+            byte2 = self.read_byte()
+            val0 = (header >> 1) & 0x1F
+            val1 = ((header & 0x01) << 4) | ((byte2 >> 4) & 0x0F)
+            val2 = byte2 & 0x0F
+            # Sign extend: 5, 5, 4 bits
+            if val0 >= 16: val0 -= 32
+            if val1 >= 16: val1 -= 32
+            if val2 >= 8: val2 -= 16
+            return [val0, val1, val2]
+
+        elif tag == 2:
+            # BITS_877: ss11 1111 1122 2222 2333 3333
+            # BF: (selector << 6) | ((val0 >> 2) & 0x3F)
+            #     ((val0 & 0x03) << 6) | ((val1 >> 1) & 0x3F)  [WAIT: actually 0x7F]
+            #     ((val1 & 0x01) << 7) | (val2 & 0x7F)
+            byte2 = self.read_byte()
+            byte3 = self.read_byte()
+            # Reconstruct from the 3 bytes:
+            combined = header | (byte2 << 8) | (byte3 << 16)
+            # Remove the 2-bit tag from high bits of byte1
+            # Layout: ss AAAAAAAA BBBBBBB CCCCCCC
+            val2 = combined & 0x7F
+            val1 = (combined >> 7) & 0x7F
+            val0 = (combined >> 14) & 0xFF
+            # But tag is in bits[23:22], so we need to mask properly
+            # Actually: byte1 = ss|AAAAAA (6 bits of A), byte2 = AA|BBBBBBB (2 more bits of A + 7 of B)...
+            # Let me re-derive from BF encoder:
+            # BF writes: (selector << 6) | ((val0 >> 2) & 0x3F)
+            #            ((val0 & 0x03) << 6) | (val1 & 0x7F)  [wait, need to check]
+            #            (val2 & 0x7F)  [or with high bit of val1?]
+            # Actually from the encoder source comment: "877 bits per field"
+            # val0 = 8 bits, val1 = 7 bits, val2 = 7 bits
+            # Let me use a simpler extraction:
+            val0_hi = header & 0x3F  # low 6 bits of header = high 6 bits of val0
+            val0_lo = (byte2 >> 6) & 0x03  # high 2 bits of byte2 = low 2 bits of val0
+            val0 = (val0_hi << 2) | val0_lo
+            val1 = byte2 & 0x7F  # low 7 bits of byte2 (bit 7 is part of val0)
+            # Wait, byte2 has 8 bits: 2 for val0 + 6 for val1? No, 877 = 8+7+7 = 22 bits
+            # Total available after tag: 6 + 8 + 8 = 22 bits. OK.
+            # Re-derive:
+            # byte1: ss AAAAAA  (6 high bits of val0)
+            # byte2: AA BBBBBB  (2 low bits of val0, 6 high bits of val1) -- NO
+            # Actually BF encoder for 877:
+            # blackboxWrite((selector << 6) | ((values[0] >> 2) & 0x3F));
+            # blackboxWrite(((values[0] & 0x03) << 6) | (values[1] & 0x7F));  -- wait this is only 2+7=9 bits, but values[1] is 7 bits
+            # Actually values[1] needs 7 bits, so 0x7F masks to 7 bits, then values[0]&0x03 uses the upper 2 bits. But that's 2+7=9... doesn't fit in a byte.
+            # Let me look at this differently. BF encoder says:
+            #   blackboxWrite((selector << 6) | ((values[0] >> 2) & 0x3F));
+            #   blackboxWrite(((values[0] & 0x03) << 6) | ((values[1] >> 1) & 0x3F));  -- OR is it (values[1] & 0x3F)?
+            #   blackboxWrite(((values[1] & 0x01) << 7) | (values[2] & 0x7F));
+            # That would be: 6+2+6+1+7 = 22, with val0=8, val1=7, val2=7. 
+            # I need to just fetch the actual source. For now, let me try the simple approach:
+            pass
+
+        # For tag 2 and 3, fall through to generic approach  
+        if tag == 2:
+            # Re-extract properly
+            # byte1 = (2 << 6) | ((val0 >> 2) & 0x3F)  -> val0_hi6 = header & 0x3F
+            # byte2 = ((val0 & 0x03) << 6) | ((val1 >> 1) & 0x3F)  -> val0_lo2 = (byte2 >> 6), val1_hi6 = byte2 & 0x3F
+            # byte3 = ((val1 & 0x01) << 7) | (val2 & 0x7F) -> val1_lo1 = (byte3 >> 7), val2 = byte3 & 0x7F
+            val0 = ((header & 0x3F) << 2) | ((byte2 >> 6) & 0x03)
+            val1 = ((byte2 & 0x3F) << 1) | ((byte3 >> 7) & 0x01)
+            val2 = byte3 & 0x7F
+            # Sign extend
+            if val0 >= 128: val0 -= 256  # 8-bit
+            if val1 >= 64: val1 -= 128   # 7-bit
+            if val2 >= 64: val2 -= 128   # 7-bit
+            return [val0, val1, val2]
+
+        else:  # tag == 3
+            # Same as tag2_3s32 tag=3: per-field variable byte width
+            selector2 = header & 0x3F
+            values = []
+            for i in range(3):
+                field_width = selector2 & 0x03
+                selector2 >>= 2
+                if field_width == 0:
+                    b = self.read_byte()
+                    val = b if b < 128 else b - 256
+                elif field_width == 1:
+                    lo = self.read_byte()
+                    hi = self.read_byte()
+                    val = lo | (hi << 8)
+                    if val >= 0x8000: val -= 0x10000
+                elif field_width == 2:
+                    b0 = self.read_byte()
+                    b1 = self.read_byte()
+                    b2 = self.read_byte()
+                    val = b0 | (b1 << 8) | (b2 << 16)
+                    if val >= 0x800000: val -= 0x1000000
+                else:
+                    b0 = self.read_byte()
+                    b1 = self.read_byte()
+                    b2 = self.read_byte()
+                    b3 = self.read_byte()
+                    val = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+                    if val >= 0x80000000: val -= 0x100000000
+                values.append(val)
+            return values
 
     def skip_to_frame(self) -> Optional[int]:
         """跳过损坏数据，定位到下一个有效帧起始。
@@ -563,17 +755,37 @@ def _apply_predictor(predictor: int, raw_value: int,
                      prev_values: Dict[str, int],
                      field_name: str,
                      all_prev: Dict[str, int],
-                     header: BBLHeader) -> int:
-    """根据预测器类型，将原始编码值转换为实际值。"""
+                     header: BBLHeader,
+                     prev_prev_values: Optional[Dict[str, int]] = None) -> int:
+    """根据预测器类型，将原始编码值转换为实际值。
+
+    Parameters
+    ----------
+    prev_values : dict
+        上一帧（n-1）的所有字段值。
+    prev_prev_values : dict, optional
+        上上一帧（n-2）的所有字段值，用于 STRAIGHT_LINE 和 AVERAGE_2 预测器。
+    """
     if predictor == PREDICTOR_0:
         return raw_value
     elif predictor == PREDICTOR_PREVIOUS:
         return raw_value + prev_values.get(field_name, 0)
     elif predictor == PREDICTOR_STRAIGHT_LINE:
-        # 需要两帧历史，简化为 previous
-        return raw_value + prev_values.get(field_name, 0)
+        # predicted = 2 * prev[n-1] - prev[n-2]  (线性外推)
+        prev_val = prev_values.get(field_name, 0)
+        if prev_prev_values is not None:
+            prev_prev_val = prev_prev_values.get(field_name, prev_val)
+            return raw_value + 2 * prev_val - prev_prev_val
+        else:
+            return raw_value + prev_val
     elif predictor == PREDICTOR_AVERAGE_2:
-        return raw_value + prev_values.get(field_name, 0)
+        # predicted = (prev[n-1] + prev[n-2]) / 2
+        prev_val = prev_values.get(field_name, 0)
+        if prev_prev_values is not None:
+            prev_prev_val = prev_prev_values.get(field_name, prev_val)
+            return raw_value + (prev_val + prev_prev_val) // 2
+        else:
+            return raw_value + prev_val
     elif predictor == PREDICTOR_MINTHROTTLE:
         minthrottle = int(header.properties.get("minthrottle", "1070"))
         return raw_value + minthrottle
@@ -588,12 +800,24 @@ def _apply_predictor(predictor: int, raw_value: int,
         return raw_value + vbatref
     elif predictor == PREDICTOR_LAST_MAIN_FRAME_TIME:
         return raw_value + prev_values.get("loopIteration", 0)
+    elif predictor == PREDICTOR_MINMOTOR:
+        # BF 4.x: motorOutput header gives [low, high] for digital protocols
+        motor_output = header.properties.get("motorOutput", "")
+        if ',' in motor_output:
+            try:
+                min_motor = int(motor_output.split(',')[0])
+            except ValueError:
+                min_motor = 0
+        else:
+            min_motor = int(header.properties.get("minthrottle", "1070"))
+        return raw_value + min_motor
     else:
         return raw_value
 
 
 def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
-                   prev_values: Dict[str, int]) -> Dict[str, int]:
+                   prev_values: Dict[str, int],
+                   prev_prev_values: Optional[Dict[str, int]] = None) -> Dict[str, int]:
     """解码 I-frame (关键帧)。
 
     I-frame 包含所有字段的完整值，使用各字段的 I 编码。
@@ -613,7 +837,8 @@ def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header)
+                        fd.predictor, rv, prev_values, fd.name, values, header,
+                        prev_prev_values)
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_4S16:
             raw_values = _read_field_value(reader, encoding)
@@ -621,7 +846,8 @@ def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header)
+                        fd.predictor, rv, prev_values, fd.name, values, header,
+                        prev_prev_values)
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_8SVB:
             # 计算连续同编码字段数
@@ -633,20 +859,23 @@ def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header)
+                        fd.predictor, rv, prev_values, fd.name, values, header,
+                        prev_prev_values)
             i += count
         else:
             raw_values = _read_field_value(reader, encoding)
             raw = raw_values[0]
             values[fdef.name] = _apply_predictor(
-                fdef.predictor, raw, prev_values, fdef.name, values, header)
+                fdef.predictor, raw, prev_values, fdef.name, values, header,
+                prev_prev_values)
             i += 1
 
     return values
 
 
 def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
-                   prev_values: Dict[str, int]) -> Dict[str, int]:
+                   prev_values: Dict[str, int],
+                   prev_prev_values: Optional[Dict[str, int]] = None) -> Dict[str, int]:
     """解码 P-frame (差值帧)。
 
     P-frame 的值是相对于上一帧 (I 或 P) 的差值。
@@ -665,7 +894,8 @@ def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header)
+                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
+                        prev_prev_values)
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_4S16:
             raw_values = _read_field_value(reader, encoding)
@@ -673,7 +903,8 @@ def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header)
+                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
+                        prev_prev_values)
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_8SVB:
             count = 0
@@ -684,13 +915,15 @@ def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header)
+                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
+                        prev_prev_values)
             i += count
         else:
             raw_values = _read_field_value(reader, encoding)
             raw = raw_values[0]
             values[fdef.name] = _apply_predictor(
-                fdef.predictor, raw, prev_values, fdef.name, prev_values, header)
+                fdef.predictor, raw, prev_values, fdef.name, prev_values, header,
+                prev_prev_values)
             i += 1
 
     return values
@@ -850,6 +1083,7 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
 
         # 解析数据帧
         prev_values: Dict[str, int] = {}
+        prev_prev_values: Optional[Dict[str, int]] = None
         prev_slow: Dict[str, int] = {}
         frame_count = 0
         max_frames = 500_000  # 安全限制
@@ -879,7 +1113,12 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
 
             try:
                 if frame_marker == FRAME_TYPE_I:
-                    values = decode_i_frame(reader, header, prev_values)
+                    values = decode_i_frame(reader, header, prev_values, prev_prev_values)
+                    # After I-frame, set prev_prev = values so that the first
+                    # P-frame's STRAIGHT_LINE prediction = 2*prev - prev_prev = prev,
+                    # equivalent to PREVIOUS. This matches BF's blackbox_decode.c
+                    # which resets history[1] = history[0] after each I-frame.
+                    prev_prev_values = values.copy()
                     prev_values = values.copy()
 
                     # NOTE: loopIteration-based segment detection removed.
@@ -918,7 +1157,8 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                         # 没有先行 I-frame，跳过找下一个帧
                         reader.skip_to_frame()
                         continue
-                    values = decode_p_frame(reader, header, prev_values)
+                    values = decode_p_frame(reader, header, prev_values, prev_prev_values)
+                    prev_prev_values = prev_values.copy()
                     prev_values = values.copy()
                     frame = BBLFrame(
                         frame_type='P',

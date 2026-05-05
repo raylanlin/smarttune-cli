@@ -97,7 +97,7 @@ def estimate_step_response(
     sample_rate: float,
     window_size: Optional[int] = None,
     step_duration_s: float = 0.5,
-    min_target_amplitude: float = 20.0 / 57.29578,  # ≈0.349 rad/s（对齐 WebTools 20 deg/s）
+    min_target_amplitude: float = 20.0,  # 20 deg/s（对齐 WebTools 阈值）
     cutfreq: float = 25.0,
 ) -> Dict[str, Any]:
     """
@@ -116,8 +116,8 @@ def estimate_step_response(
     step_duration_s : float
         阶跃响应可视时长（秒，默认 0.5）。
     min_target_amplitude : float
-        窗口最小目标幅值阈值（默认 ≈0.349 rad/s，等效于 WebTools 的 20 deg/s）。
-        log_parser.get_pid_data 返回 rad/s，须使用已换算的值。
+        窗口最小目标幅值阈值（默认 20 deg/s，对齐 WebTools 阈值）。
+        数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）。
     cutfreq : float
         SNR 正则化截止频率（Hz，默认 25）。
 
@@ -220,9 +220,10 @@ def estimate_step_response(
             skipped_quality += 1
             continue
 
-        # 2. Actual 极端值检测：飞行中角速度 > 26 rad/s (≈1500 deg/s) 异常
+        # 2. Actual 极端值检测：飞行中角速度 > 1500 deg/s 异常
+        #    数据单位为 deg/s（BF gyroADC / AP RATE 均为 deg/s）
         act_max = float(np.max(np.abs(raw_act)))
-        if act_max > 26.2:
+        if act_max > 1500.0:
             skipped_quality += 1
             continue
 
@@ -233,7 +234,8 @@ def estimate_step_response(
             continue
 
         # 4. Actual 标准差过小（静止段，无有效响应）
-        if float(np.std(raw_act)) < 0.3:
+        #    单位 deg/s，5 deg/s 标准差以下视为静止
+        if float(np.std(raw_act)) < 5.0:
             skipped_quality += 1
             continue
 
@@ -381,10 +383,9 @@ def compute_step_response_for_axis(
     else:
         sample_rate = 400.0
 
-    # 阈值：数据单位为 deg/s（ArduPilot 适配器已做 rad/s → deg/s 转换）
-    # 原 WebTools 阈值为 20 deg/s，但实测表明该日志中阶跃幅度分布较分散
+    # 阈值：数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）
     # 使用 3.0 deg/s 作为最小目标幅值，在窗口数量和 SNR 之间取得平衡
-    min_amp = 3.0  # deg/s（经实测对齐旧版精度）
+    min_amp = 3.0  # deg/s
 
     result = estimate_step_response(
         target=desired,

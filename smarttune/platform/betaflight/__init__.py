@@ -136,6 +136,48 @@ def _resolve_field_name(field_names, candidates):
     return None
 
 
+def _sanitize_signal(arr: np.ndarray, max_abs: float = 2000.0) -> np.ndarray:
+    """清洗 BBL 解析异常值。
+
+    BBL P-frame 差值编码在帧丢失/损坏时会产生极端跳变值。
+    将超出 ±max_abs 范围的点替换为前后邻值的线性插值。
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        原始信号（deg/s 或其他物理量）。
+    max_abs : float
+        合理范围上界（默认 2000，适用于陀螺仪/setpoint deg/s）。
+
+    Returns
+    -------
+    np.ndarray
+        清洗后的信号（原数组不被修改）。
+    """
+    out = arr.copy()
+    bad_mask = np.abs(out) > max_abs
+    n_bad = int(np.sum(bad_mask))
+    if n_bad == 0:
+        return out
+
+    # 用线性插值替换异常点
+    good_mask = ~bad_mask
+    good_idx = np.where(good_mask)[0]
+    if len(good_idx) < 2:
+        # 几乎全坏，返回零
+        out[bad_mask] = 0.0
+        return out
+
+    bad_idx = np.where(bad_mask)[0]
+    out[bad_idx] = np.interp(bad_idx, good_idx, out[good_idx])
+
+    logger.debug(
+        "Sanitized %d outlier samples (%.2f%%) from signal (max_abs=%.0f)",
+        n_bad, n_bad / len(arr) * 100, max_abs,
+    )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # BetaflightAdapter
 # ---------------------------------------------------------------------------
@@ -265,6 +307,27 @@ class BetaflightAdapter(PlatformAdapter):
         else:
             sample_rate_hz = loop_rate_hz
 
+        # Account for P interval: BBL logs only every Nth loop iteration
+        # "P interval" header can be "num/denom" (e.g. "1/4") or plain integer (e.g. "4")
+        # Both mean: log every denom-th (or N-th) loop iteration
+        p_interval_str = header.properties.get("P interval", "")
+        if '/' in p_interval_str:
+            try:
+                parts = p_interval_str.split('/')
+                p_num = int(parts[0])
+                p_denom = int(parts[1])
+                if p_denom > 0 and p_num > 0:
+                    sample_rate_hz = sample_rate_hz * p_num / p_denom
+            except (ValueError, IndexError):
+                pass
+        elif p_interval_str.strip():
+            try:
+                p_denom = int(p_interval_str.strip())
+                if p_denom > 1:
+                    sample_rate_hz = sample_rate_hz / p_denom
+            except ValueError:
+                pass
+
         time_field_available = _TIME_FIELD in available_fields
         timestamps_us = []
         for f in frames:
@@ -277,8 +340,7 @@ class BetaflightAdapter(PlatformAdapter):
 
         # For multi-segment logs, the time field may have discontinuities.
         # Use frame index with fixed dt for reliable timestamps.
-        looptime_us = params.get("looptime", 250)
-        dt_s = looptime_us / 1_000_000.0
+        dt_s = 1.0 / sample_rate_hz  # Use the corrected sample rate
         timestamps_s = np.arange(n_frames, dtype=np.float64) * dt_s
 
         timestamps_us = np.array(timestamps_us, dtype=np.float64)
@@ -298,6 +360,21 @@ class BetaflightAdapter(PlatformAdapter):
             desired = (np.array([f.values.get(sp_name, 0) for f in frames], dtype=np.float64)
                        if sp_name else np.zeros(n_frames))
 
+            # BBL P-frame 差值编码在帧丢失时会产生极端跳变，
+            # 清洗超出物理合理范围的异常点。
+            # gyro/setpoint: BF 最大速率一般 ≤ 2000 deg/s (rate_limits)
+            rate_limit = 2000.0
+            try:
+                rl_str = header.properties.get("rate_limits", "1998,1998,1998")
+                rl_vals = [int(x) for x in rl_str.split(',')]
+                axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}[axis]
+                if axis_idx < len(rl_vals):
+                    rate_limit = float(rl_vals[axis_idx]) * 1.1  # 10% headroom
+            except (ValueError, IndexError):
+                pass
+            actual = _sanitize_signal(actual, max_abs=rate_limit)
+            desired = _sanitize_signal(desired, max_abs=rate_limit)
+
             p_name = _resolve_field_name(available_fields, _PID_P_FIELDS[axis])
             i_name = _resolve_field_name(available_fields, _PID_I_FIELDS[axis])
             d_name = _resolve_field_name(available_fields, _PID_D_FIELDS[axis])
@@ -311,6 +388,17 @@ class BetaflightAdapter(PlatformAdapter):
                        if d_name else None)
             ff_term = (np.array([f.values.get(f_name, 0) for f in frames], dtype=np.float64)
                         if f_name else None)
+
+            # PID terms: typical range ±500, clamp at ±2000
+            pid_clamp = 2000.0
+            if p_term is not None:
+                p_term = _sanitize_signal(p_term, max_abs=pid_clamp)
+            if i_term is not None:
+                i_term = _sanitize_signal(i_term, max_abs=pid_clamp)
+            if d_term is not None:
+                d_term = _sanitize_signal(d_term, max_abs=pid_clamp)
+            if ff_term is not None:
+                ff_term = _sanitize_signal(ff_term, max_abs=pid_clamp)
 
             pid_data[axis] = AxisPIDSignal(
                 timestamp_s=timestamps_s.copy(),
@@ -332,6 +420,9 @@ class BetaflightAdapter(PlatformAdapter):
             gx = np.array([f.values.get(gyro_x_name, 0) for f in frames], dtype=np.float64)
             gy = np.array([f.values.get(gyro_y_name, 0) for f in frames], dtype=np.float64)
             gz = np.array([f.values.get(gyro_z_name, 0) for f in frames], dtype=np.float64)
+            gx = _sanitize_signal(gx, max_abs=2000.0)
+            gy = _sanitize_signal(gy, max_abs=2000.0)
+            gz = _sanitize_signal(gz, max_abs=2000.0)
             gyro = np.column_stack([gx, gy, gz])
 
         # ── 提取加速度 ─────────────────────────────
