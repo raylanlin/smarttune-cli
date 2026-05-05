@@ -515,13 +515,18 @@ class OutputFormatter:
             resp = np.array(step_resp)
 
             # Plot step response
-            ax.plot(t, resp, "b-", linewidth=1.5, alpha=0.9, label="Response")
-
-            # Reference lines
-            ax.axhline(0, color="black", linestyle="-", linewidth=0.5, alpha=0.5)
-            ax.axhline(1, color="black", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
-            ax.axhline(0.1, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
-            ax.axhline(0.9, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
+            if self._theme == "dark":
+                ax.plot(t, resp, color="#e63946", linewidth=1.5, alpha=0.9, label="Response")
+                ax.axhline(0, color="#555555", linestyle="-", linewidth=0.5, alpha=0.5)
+                ax.axhline(1, color="#ffffff", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+                ax.axhline(0.1, color="#444444", linestyle=":", linewidth=0.8, alpha=0.5)
+                ax.axhline(0.9, color="#444444", linestyle=":", linewidth=0.8, alpha=0.5)
+            else:
+                ax.plot(t, resp, "b-", linewidth=1.5, alpha=0.9, label="Response")
+                ax.axhline(0, color="black", linestyle="-", linewidth=0.5, alpha=0.5)
+                ax.axhline(1, color="black", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+                ax.axhline(0.1, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
+                ax.axhline(0.9, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
 
             # Axes limits
             max_time_ms = max(t) if len(t) > 0 else 500
@@ -572,12 +577,14 @@ class OutputFormatter:
         if raw_spectrum and raw_spectrum.get("freqs"):
             freqs = np.array(raw_spectrum["freqs"])
             mags = np.array(raw_spectrum["magnitudes"])
-            ax.plot(freqs, mags, "b-", linewidth=1.0, alpha=0.8, label="Spectrum")
+            spectrum_color = "#ffd60a" if self._theme == "dark" else "b-"
+            ax.plot(freqs, mags, spectrum_color, linewidth=1.0, alpha=0.8, label="Spectrum")
 
             if mags.size > 0:
                 sorted_mag = np.sort(mags)
                 noise_floor = float(np.mean(sorted_mag[:max(1, mags.size // 5)]))
-                ax.axhline(noise_floor, color="gray", linestyle="--",
+                noise_floor_color = "#888888" if self._theme == "dark" else "gray"
+                ax.axhline(noise_floor, color=noise_floor_color, linestyle="--",
                            linewidth=0.8, alpha=0.5, label=f"Noise floor ({noise_floor:.0f}dB)")
         else:
             # Fallback to bar chart (peaks only)
@@ -585,7 +592,8 @@ class OutputFormatter:
             if peaks:
                 freqs_bar = [p.get("freq", p.get("frequency_hz", 0)) for p in peaks]
                 mags_bar = [p.get("magnitude_db", p.get("amplitude_dbfs", p.get("amplitude", 0))) for p in peaks]
-                ax.bar(freqs_bar, mags_bar, color="steelblue", alpha=0.8, width=10)
+                bar_color = "#ff6b35" if self._theme == "dark" else "steelblue"
+                ax.bar(freqs_bar, mags_bar, color=bar_color, alpha=0.8, width=10)
 
         # Annotate peaks
         peaks = results.get("peak_frequencies", [])
@@ -604,7 +612,11 @@ class OutputFormatter:
             ax.annotate(label, (f, m), textcoords="offset points",
                         xytext=(5, 8), ha="left", fontsize=8,
                         color="darkred" if is_harm else "black")
-            ax.plot(f, m, "r*" if is_harm else "ro", markersize=8 if is_harm else 6, alpha=0.7)
+            if self._theme == "dark":
+                ax.plot(f, m, color="#ff0000", marker="*" if is_harm else "o",
+                        markersize=8 if is_harm else 6, alpha=0.9)
+            else:
+                ax.plot(f, m, "r*" if is_harm else "ro", markersize=8 if is_harm else 6, alpha=0.7)
 
         # Notch center frequency line
         recs = results.get("recommendations", {})
@@ -612,12 +624,14 @@ class OutputFormatter:
         if isinstance(recs, dict):
             notch_freq = recs.get("INS_HNTCH_FREQ", 0)
         if notch_freq > 0:
-            ax.axvline(notch_freq, color="green", linestyle="--",
+            notch_color = "#00ff00" if self._theme == "dark" else "green"
+            ax.axvline(notch_freq, color=notch_color, linestyle="--",
                        linewidth=1.5, alpha=0.7, label=f"Notch center ({notch_freq:.0f}Hz)")
             notch_bw = recs.get("INS_HNTCH_BW", 0) if isinstance(recs, dict) else 0
             if notch_bw > 0:
+                notch_span_color = "#00cc00" if self._theme == "dark" else "green"
                 ax.axvspan(notch_freq - notch_bw / 2, notch_freq + notch_bw / 2,
-                           color="green", alpha=0.15, label=f"Notch BW ({notch_bw:.0f}Hz)")
+                           color=notch_span_color, alpha=0.15, label=f"Notch BW ({notch_bw:.0f}Hz)")
 
         # Title & axes
         vib = results.get("vibration_level", "?")
