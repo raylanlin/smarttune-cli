@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.0.0-blue?logo=github" alt="v2.0.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.1.0-blue?logo=github" alt="v2.1.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-96%20passed-brightgreen" alt="Tests" /></a>
@@ -271,10 +271,14 @@ SmartTune identifies your log format from file headers — no `--platform` flag 
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
-│  Analysis Engine                             │
+│  Analysis Engine (platform-aware)            │
 │  PID / FFT / SysID / MagFit / Filter / HW   │
+│  Per-platform modules:                       │
+│    ardupilot/  → WebTools-aligned FFT        │
+│    betaflight/ → Wiener deconvolution FFT    │
+│    px4/        → stubs                       │
 │  BF: Feedforward · RPM Filter · D-term      │
-│  Platform-agnostic analyzers                │
+│  Protocol-based interface constraints        │
 └──────────────────┬──────────────────────────┘
                    │ AnalysisResult + ParamRef
 ┌──────────────────▼──────────────────────────┐
@@ -378,6 +382,7 @@ stune analyze -i flight.bin --format json | jq '.pid.roll.rating'
 | v1.x | ArduPilot full support | ✅ |
 | v2.0 Phase 1 | Multi-platform architecture | ✅ |
 | v2.0 Phase 2 | Betaflight BBL parser + analytics | ✅ |
+| **v2.1** | Platform-specific analyzers + Protocol constraints | ✅ |
 | v2.x | PX4 ULog adapter | 🔲 |
 | v3.0 | Tool-calling manifest, plugin system, web UI | 🔲 |
 
