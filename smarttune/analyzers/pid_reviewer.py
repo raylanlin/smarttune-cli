@@ -424,15 +424,17 @@ class PIDReviewer:
         step_indices = detect_steps(sig.desired, dt_ms=dt_ms)
         step_count = len(step_indices)
 
-        # 4. FFT 频域阶跃响应（按平台分派）
-        #    APM/PX4 → WebTools 对齐（step_response_fft）
-        #    BF      → Wiener 反卷积（step_response_fft_bf，对齐 PID Toolbox）
+        # 4. FFT 频域阶跃响应（按平台动态分派）
+        #    platform/ardupilot/step_response_fft.py  → WebTools 对齐
+        #    platform/betaflight/step_response_fft.py  → Wiener 反卷积（PID Toolbox 对齐）
+        #    platform/px4/step_response_fft.py         → 未来
         fft_step = {}
         try:
-            if flight_data.platform == "betaflight":
-                from smarttune.analyzers.step_response_fft_bf import compute_step_response_for_axis
-            else:
-                from smarttune.analyzers.step_response_fft import compute_step_response_for_axis
+            mod = __import__(
+                f"smarttune.platform.{flight_data.platform}.step_response_fft",
+                fromlist=["compute_step_response_for_axis"],
+            )
+            compute_step_response_for_axis = mod.compute_step_response_for_axis
             # 构造旧版 get_pid_data 返回格式
             pid_dict = {
                 "Desired": sig.desired,

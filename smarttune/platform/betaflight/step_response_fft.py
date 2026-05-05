@@ -1,9 +1,11 @@
 """
 阶跃响应估计 — Wiener 反卷积法（Betaflight 专用）。
 
-本模块仅在 platform == "betaflight" 时由 pid_reviewer.py 分派。
-算法对齐 BF 社区 PID Toolbox 的解析结果，与 APM/PX4 的 WebTools
-对齐版（step_response_fft.py）互不干扰。
+本模块在 pid_reviewer.py 中按 platform 动态分派：
+  smarttune.platform.betaflight.step_response_fft
+
+算法对齐 BF 社区 PID Toolbox 的解析结果，与 ArduPilot 的 WebTools
+对齐版（platform/ardupilot/step_response_fft.py）互不干扰。
 
 算法流程：
 
