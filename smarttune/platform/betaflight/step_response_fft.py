@@ -23,85 +23,19 @@
 - output = gyroADC / actual rate (deg/s)
 """
 
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Optional
 import numpy as np
 
 
 def _hanning(n: int) -> np.ndarray:
-    """Hanning 窗，与 fft.js/hanning 一致。"""
+    """Hanning 窗。"""
     scale = 2.0 * np.pi / (n - 1)
     return 0.5 - 0.5 * np.cos(scale * np.arange(n))
 
 
 def _real_length(n: int) -> int:
-    """单边 FFT 长度，与 fft.js/real_length 一致。"""
+    """单边 FFT 长度。"""
     return n // 2 + 1
-
-
-def _to_double_sided(single: np.ndarray) -> np.ndarray:
-    """
-    单边复谱转双边复谱（复现 WebTools to_double_sided）。
-
-    single: complex128 ndarray, shape (real_len,)
-        rfft 结果（已缩放：DC/Nyq *1/N, 其余 *2/N）
-    returns: complex128 ndarray, shape (2*real_len - 2,)
-        full_len = 2 * (real_len - 1)
-        DC / Nyquist 原样保留
-        正频率 *0.5；负频率位置存放 -conj(正频率*0.5)
-        即：neg_real = -pos_real, neg_imag = +pos_imag
-    """
-    real_len = len(single)
-    full_len = 2 * (real_len - 1)
-    ret = np.zeros(full_len, dtype=np.complex128)
-
-    # DC
-    ret[0] = single[0]
-    # Nyquist
-    ret[real_len - 1] = single[real_len - 1]
-
-    # 正/负频率向量化
-    # WebTools to_double_sided:
-    #   ret[2*i]   =  single[2*i] * 0.5   (正频率 real)
-    #   ret[2*i+1] =  single[2*i+1] * 0.5 (正频率 imag)
-    #   ret[2*(N-i)]   = -single[2*i] * 0.5   (负频率 real = -正频率 real)
-    #   ret[2*(N-i)+1] =  single[2*i+1] * 0.5 (负频率 imag = +正频率 imag)
-    # 即负频率 = -conj(正频率值)
-    if real_len > 2:
-        pos = single[1:real_len - 1] * 0.5
-        ret[1:real_len - 1] = pos
-        # 负频率 = -conj(pos)：real 取反，imag 不变
-        ret[full_len - 1:real_len - 1:-1] = -np.conj(pos)
-
-    return ret
-
-
-def _complex_mul(a: np.ndarray, b: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    复向量逐元素乘法 a * b（复现 WebTools complex_mul）。
-
-    返回 (real_part, imag_part)，各自为独立 ndarray。
-    """
-    ra = a.real
-    ia = a.imag
-    rb = b.real
-    ib = b.imag
-    return (ra * rb - ia * ib, ra * ib + ia * rb)
-
-
-def _complex_div(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """
-    复向量逐元素除法 a / b（复现 WebTools complex_div）。
-
-    返回 complex64 ndarray。
-    """
-    ra = a.real
-    ia = a.imag
-    rb = b.real
-    ib = b.imag
-    denom = rb * rb + ib * ib
-    real_part = (ra * rb + ia * ib) / denom
-    imag_part = (ia * rb - ra * ib) / denom  # (bc - ad) / denom
-    return real_part + 1j * imag_part
 
 
 def estimate_step_response(

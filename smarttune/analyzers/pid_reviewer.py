@@ -12,6 +12,7 @@ PID 阶跃响应分析引擎 — 平台无关。
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -429,29 +430,48 @@ class PIDReviewer:
         #    platform/betaflight/step_response_fft.py  → Wiener 反卷积（PID Toolbox 对齐）
         #    platform/px4/step_response_fft.py         → 未来
         fft_step = {}
-        try:
-            mod = __import__(
-                f"smarttune.platform.{flight_data.platform}.step_response_fft",
-                fromlist=["compute_step_response_for_axis"],
+        _VALID_PLATFORMS = {"ardupilot", "betaflight", "px4"}
+        platform_key = flight_data.platform.lower()
+        if platform_key not in _VALID_PLATFORMS:
+            _log.warning(
+                "Unknown platform %r for FFT step response dispatch; "
+                "expected one of %s", flight_data.platform, _VALID_PLATFORMS,
             )
-            compute_step_response_for_axis = mod.compute_step_response_for_axis
-            # 构造旧版 get_pid_data 返回格式
-            pid_dict = {
-                "Desired": sig.desired,
-                "Actual":  sig.actual,
-                "time":    sig.timestamp_s,
-            }
-            if sig.p_term is not None:
-                pid_dict["P"] = sig.p_term
-            if sig.i_term is not None:
-                pid_dict["I"] = sig.i_term
-            if sig.d_term is not None:
-                pid_dict["D"] = sig.d_term
-            if sig.ff_term is not None:
-                pid_dict["FF"] = sig.ff_term
-            fft_step = compute_step_response_for_axis(pid_dict, axis, imu_data=None)
-        except Exception as exc:
-            _log.debug("FFT step response failed for %s: %s", axis, exc)
+        else:
+            try:
+                mod = importlib.import_module(
+                    f"smarttune.platform.{platform_key}.step_response_fft"
+                )
+                compute_fn = getattr(mod, "compute_step_response_for_axis", None)
+                if compute_fn is None:
+                    _log.debug(
+                        "Module smarttune.platform.%s.step_response_fft has no "
+                        "compute_step_response_for_axis; skipping FFT step.",
+                        platform_key,
+                    )
+                else:
+                    # 构造旧版 get_pid_data 返回格式
+                    pid_dict = {
+                        "Desired": sig.desired,
+                        "Actual":  sig.actual,
+                        "time":    sig.timestamp_s,
+                    }
+                    if sig.p_term is not None:
+                        pid_dict["P"] = sig.p_term
+                    if sig.i_term is not None:
+                        pid_dict["I"] = sig.i_term
+                    if sig.d_term is not None:
+                        pid_dict["D"] = sig.d_term
+                    if sig.ff_term is not None:
+                        pid_dict["FF"] = sig.ff_term
+                    fft_step = compute_fn(pid_dict, axis, imu_data=None)
+            except ModuleNotFoundError:
+                _log.debug(
+                    "No step_response_fft module for platform %s; "
+                    "FFT step response skipped.", platform_key,
+                )
+            except Exception as exc:
+                _log.debug("FFT step response failed for %s: %s", axis, exc)
 
         # 5. 原始时间序列（供绘图）
         time_ms = sig.timestamp_s * 1000.0

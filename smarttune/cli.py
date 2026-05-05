@@ -428,7 +428,15 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
         except SmartTuneError as exc:
             _fail_in_progress(progress, exc)
 
-    from smarttune.analyzers.filter_transfer import compute_filter_response, derive_filters_from_params
+    import importlib
+    _ft_mod = importlib.import_module(
+        f"smarttune.platform.{adapter.name}.filter_transfer"
+    )
+    compute_filter_response  = _ft_mod.compute_filter_response
+    derive_filters_from_params = _ft_mod.derive_filters_from_params
+    get_fallback_gyro_filter_hz = _ft_mod.get_fallback_gyro_filter_hz
+    get_notch_bandwidth_hz = _ft_mod.get_notch_bandwidth_hz
+    build_filter_display_lines = _ft_mod.build_filter_display_lines
 
     params = flight_data.params or {}
     sample_rate = flight_data.sample_rate_hz or 400
@@ -439,12 +447,12 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
     config_summary = ""
 
     if use_manual:
-        current_gyro = gyro_filter if gyro_filter is not None else params.get("INS_GYRO_FILTER", 0)
+        current_gyro = gyro_filter if gyro_filter is not None else get_fallback_gyro_filter_hz(params)
         notch_params = None
         if notch_freq is not None and notch_freq > 0:
             notch_params = {
                 "center_hz": notch_freq,
-                "bandwidth_hz": params.get("INS_HNTCH_BW", 10),
+                "bandwidth_hz": get_notch_bandwidth_hz(params),
                 "attenuation_db": 30,
                 "harmonics": 3,
             }
@@ -487,25 +495,9 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
 
     # Auto mode: show full filter chain info
     if not use_manual:
-        lpf_hz = params.get("INS_GYRO_FILTER", 0)
-        _console.print(f"\n[bold]Filter chain:[/bold]")
-        _console.print(f"  LPF: INS_GYRO_FILTER = {lpf_hz:.0f} Hz")
-        for i, pfx in enumerate(["INS_HNTCH_", "INS_HNTC2_"]):
-            en = int(params.get(f"{pfx}ENABLE", 0))
-            if en:
-                freq_val = params.get(f"{pfx}FREQ", 0)
-                bw_val = params.get(f"{pfx}BW", 0)
-                att_val = params.get(f"{pfx}ATT", 0)
-                hmncs = int(params.get(f"{pfx}HMNCS", 0))
-                opts = int(params.get(f"{pfx}OPTS", 0))
-                mode_val = int(params.get(f"{pfx}MODE", 0))
-                double = "Double" if (opts & 1) else ""
-                triple = "Triple" if (opts & 16) else ""
-                notch_type = triple or double or "Single"
-                _console.print(
-                    f"  Notch{i+1}: {freq_val:.0f}Hz, BW={bw_val:.0f}, ATT={att_val:.0f}dB, "
-                    f"Harmonics={bin(hmncs)}, {notch_type}, Mode={mode_val}"
-                )
+        _console.print("\n[bold]Filter chain:[/bold]")
+        for line in build_filter_display_lines(params):
+            _console.print(line)
 
     # ── Visualization ──
     if visual:
@@ -841,8 +833,11 @@ def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
                 progress.update(task2, completed=True, description=f"[green]✓ {capability.upper()} complete")
                 fmt.format_sysid(results)
             elif capability == "hardware":
-                from smarttune.analyzers.hardware_report import generate_hardware_report
-                report = generate_hardware_report(flight_data.params, flight_data=flight_data)
+                import importlib as _il
+                _hr_mod = _il.import_module(
+                    f"smarttune.platform.{adapter.name}.hardware_report"
+                )
+                report = _hr_mod.generate_hardware_report(flight_data.params, flight_data=flight_data)
                 progress.update(task2, completed=True, description=f"[green]✓ {capability.upper()} complete")
                 fmt.format_hardware(report, visual=visual)
             else:
