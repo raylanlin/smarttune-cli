@@ -181,16 +181,6 @@ stune pid -i flight.bin -a roll                        # Single axis
 stune pid -i flight.bbl --visual                       # Betaflight
 ```
 
-### PID Step Response Examples
-
-**ArduPilot** (DataFlash `.bin` log):
-
-![ArduPilot PID step response](assets/pid_ardupilot_example.png)
-
-**Betaflight** (Blackbox `.bbl` log):
-
-![Betaflight PID step response](assets/pid_betaflight_example.png)
-
 ### `stune fft`
 
 Frequency-domain vibration analysis with notch filter suggestions.
@@ -368,6 +358,46 @@ SmartTune is designed to work with any LLM agent framework. Here's how it fits:
 | **Custom agents** | pip-installable, importable Python API for advanced use cases |
 
 Agents call `stune`, get structured tuning recommendations, and can act on them. No TUI to navigate, no prompts to answer, no fragile screen-scraping.
+
+---
+
+## Examples
+
+### Terminal Output
+
+```text
+Platform: Betaflight
+╭──────────────────────────────────────────────────────────────────╮
+│ PID Step Response Analysis                                       │
+╰──────────────────────────────────────────────────────────────────╯
+
+  PITCH: MARGINAL  (steps: 4)
+  ROLL:  MARGINAL  (steps: 1)
+  YAW:   MARGINAL  (steps: 1)
+  Overall: MARGINAL
+
+╭──────────────────────────────────────────────────────────────────╮
+│ FFT Vibration Analysis                                           │
+╰──────────────────────────────────────────────────────────────────╯
+  Vibration: MARGINAL (10.0 m/s²)
+  Freq (Hz)    Amplitude (dB)    Source
+       93.7             -46.5    motor
+    → gyro_notch1_hz: 93.7
+    → gyro_lowpass_hz: 40
+    → acc_lpf_hz: 10
+
+✓ Analysis complete!
+```
+
+### PID Step Response
+
+**ArduPilot** (DataFlash `.bin` log):
+
+![ArduPilot PID step response](assets/pid_ardupilot_example.png)
+
+**Betaflight** (Blackbox `.bbl` log):
+
+![Betaflight PID step response](assets/pid_betaflight_example.png)
 
 ---
 

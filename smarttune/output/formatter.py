@@ -490,6 +490,16 @@ class OutputFormatter:
 
         n = len(axes_data)
         fig, axes_plots = plt.subplots(n, 1, figsize=(10, 4 * n), squeeze=False)
+        fig.patch.set_facecolor("#1a1a2e")
+        plt.rcParams.update({
+            "text.color": "#e0e0e0",
+            "axes.labelcolor": "#e0e0e0",
+            "axes.facecolor": "#16213e",
+            "axes.edgecolor": "#4a4a6a",
+            "xtick.color": "#e0e0e0",
+            "ytick.color": "#e0e0e0",
+            "grid.color": "#3a3a5a",
+        })
 
         for i, (axis_name, axis_data) in enumerate(axes_data.items()):
             fft_step = axis_data.get("fft_step", {})
@@ -510,13 +520,13 @@ class OutputFormatter:
             resp = np.array(step_resp)
 
             # Plot step response
-            ax.plot(t, resp, "b-", linewidth=1.5, alpha=0.9, label="Response")
+            ax.plot(t, resp, color="#4fc3f7", linewidth=1.5, alpha=0.9, label="Response")
 
             # Reference lines
-            ax.axhline(0, color="black", linestyle="-", linewidth=0.5, alpha=0.5)
-            ax.axhline(1, color="black", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
-            ax.axhline(0.1, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
-            ax.axhline(0.9, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
+            ax.axhline(0, color="#888888", linestyle="-", linewidth=0.5, alpha=0.5)
+            ax.axhline(1, color="#ff7043", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+            ax.axhline(0.1, color="#666666", linestyle=":", linewidth=0.8, alpha=0.5)
+            ax.axhline(0.9, color="#666666", linestyle=":", linewidth=0.8, alpha=0.5)
 
             # Axes limits
             max_time_ms = max(t) if len(t) > 0 else 500
@@ -533,7 +543,7 @@ class OutputFormatter:
 
         plt.tight_layout()
         out_path = self._plot_save("pid_analysis.png")
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor())
         plt.close(fig)
         return out_path
 
@@ -559,6 +569,16 @@ class OutputFormatter:
             return None
 
         fig, ax = plt.subplots(figsize=(10, 5))
+        fig.patch.set_facecolor("#1a1a2e")
+        ax.set_facecolor("#16213e")
+        plt.rcParams.update({
+            "text.color": "#e0e0e0",
+            "axes.labelcolor": "#e0e0e0",
+            "axes.edgecolor": "#4a4a6a",
+            "xtick.color": "#e0e0e0",
+            "ytick.color": "#e0e0e0",
+            "grid.color": "#3a3a5a",
+        })
 
         # Full spectrum curve
         if raw_spectrum and raw_spectrum.get("freqs"):
@@ -629,7 +649,7 @@ class OutputFormatter:
 
         plt.tight_layout()
         out_path = self._plot_save("fft_spectrum.png")
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor())
         plt.close(fig)
         return out_path
 
