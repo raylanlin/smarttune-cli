@@ -489,16 +489,16 @@ class OutputFormatter:
             return None
 
         n = len(axes_data)
-        fig, axes_plots = plt.subplots(n, 1, figsize=(10, 4 * n), squeeze=False)
+        fig, axes_plots = plt.subplots(n, 1, figsize=(12, 2.8 * n), squeeze=False)
         fig.patch.set_facecolor("#1a1a2e")
         plt.rcParams.update({
             "text.color": "#e0e0e0",
             "axes.labelcolor": "#e0e0e0",
             "axes.facecolor": "#16213e",
-            "axes.edgecolor": "#4a4a6a",
-            "xtick.color": "#e0e0e0",
-            "ytick.color": "#e0e0e0",
-            "grid.color": "#3a3a5a",
+            "axes.edgecolor": "#3d3d5c",
+            "xtick.color": "#c0c0d0",
+            "ytick.color": "#c0c0d0",
+            "grid.color": "#2a2a4a",
         })
 
         for i, (axis_name, axis_data) in enumerate(axes_data.items()):
@@ -541,9 +541,9 @@ class OutputFormatter:
             ax.legend(fontsize=8, loc="lower right")
             ax.grid(True, alpha=0.3)
 
-        plt.tight_layout()
+        plt.tight_layout(pad=0.3)
         out_path = self._plot_save("pid_analysis.png")
-        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor())
+        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor(), bbox_inches="tight")
         plt.close(fig)
         return out_path
 
@@ -568,16 +568,16 @@ class OutputFormatter:
         except ImportError:
             return None
 
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(12, 4.5))
         fig.patch.set_facecolor("#1a1a2e")
         ax.set_facecolor("#16213e")
         plt.rcParams.update({
             "text.color": "#e0e0e0",
             "axes.labelcolor": "#e0e0e0",
-            "axes.edgecolor": "#4a4a6a",
-            "xtick.color": "#e0e0e0",
-            "ytick.color": "#e0e0e0",
-            "grid.color": "#3a3a5a",
+            "axes.edgecolor": "#3d3d5c",
+            "xtick.color": "#c0c0d0",
+            "ytick.color": "#c0c0d0",
+            "grid.color": "#2a2a4a",
         })
 
         # Full spectrum curve
@@ -647,9 +647,9 @@ class OutputFormatter:
             max_freq = max(max_freq, notch_freq * 1.2)
         ax.set_xlim(0, max_freq)
 
-        plt.tight_layout()
+        plt.tight_layout(pad=0.3)
         out_path = self._plot_save("fft_spectrum.png")
-        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor())
+        plt.savefig(out_path, dpi=150, facecolor=fig.get_facecolor(), bbox_inches="tight")
         plt.close(fig)
         return out_path
 
