@@ -523,10 +523,13 @@ class OutputFormatter:
                 ax.axhline(0.9, color="#444444", linestyle=":", linewidth=0.8, alpha=0.5)
             else:
                 ax.plot(t, resp, "b-", linewidth=1.5, alpha=0.9, label="Response")
-                ax.axhline(0, color="black", linestyle="-", linewidth=0.5, alpha=0.5)
-                ax.axhline(1, color="black", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
-                ax.axhline(0.1, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
-                ax.axhline(0.9, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
+                ax.axhline(0, color="#cccccc", linestyle="-", linewidth=0.5, alpha=0.5)
+                ax.axhline(1, color="#999999", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+                ax.axhline(0.1, color="#dddddd", linestyle=":", linewidth=0.8, alpha=0.5)
+                ax.axhline(0.9, color="#dddddd", linestyle=":", linewidth=0.8, alpha=0.5)
+                # Subtle axes spines for light theme
+                for spine in ax.spines.values():
+                    spine.set_color("#e0e0e0")
 
             # Axes limits
             max_time_ms = max(t) if len(t) > 0 else 500
@@ -641,6 +644,10 @@ class OutputFormatter:
         ax.set_ylabel("Magnitude (dBFS)")
         ax.legend(fontsize=8, loc="best")
         ax.grid(True, alpha=0.3)
+        # Subtle axes spines for light theme
+        if self._theme != "dark":
+            for spine in ax.spines.values():
+                spine.set_color("#e0e0e0")
 
         max_freq = 500
         if peaks:
