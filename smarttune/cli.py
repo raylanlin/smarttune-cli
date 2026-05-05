@@ -386,7 +386,8 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
 
     \b
     Two modes:
-      - Auto mode (default): derive from log INS_HNTCH_*/INS_HNTC2_* parameters
+      - Auto mode (default): derive filter config from log parameters
+        (platform-specific: INS_HNTCH_* for ArduPilot, gyro_lowpass_hz / notch for BF)
       - Manual mode: specify --gyro-filter/--notch-freq directly
 
     \b
