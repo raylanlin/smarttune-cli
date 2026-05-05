@@ -58,10 +58,12 @@ class OutputFormatter:
         adapter: PlatformAdapter,
         output_file: Optional[Path] = None,
         console: Optional[Console] = None,
+        theme: str = "light",
     ) -> None:
         self._adapter = adapter
         self._output_file = output_file
         self._console = console or Console(stderr=True)
+        self._theme = theme if theme in ("light", "dark") else "light"
 
     # ------------------------------------------------------------------
     # 参数翻译
@@ -467,6 +469,9 @@ class OutputFormatter:
         except ImportError:
             return None
 
+        if self._theme == "dark":
+            plt.style.use("dark_background")
+
         # 统一提取 axes 数据
         axes_data: Dict[str, Any] = {}
         if isinstance(results, PIDAnalysisResult):
@@ -558,6 +563,9 @@ class OutputFormatter:
         except ImportError:
             return None
 
+        if self._theme == "dark":
+            plt.style.use("dark_background")
+
         fig, ax = plt.subplots(figsize=(10, 5))
 
         # Full spectrum curve
@@ -648,6 +656,9 @@ class OutputFormatter:
             import matplotlib.pyplot as plt
         except ImportError:
             return None
+
+        if self._theme == "dark":
+            plt.style.use("dark_background")
 
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 

@@ -110,8 +110,10 @@ def platforms():
 @click.option("--visual/--no-visual", default=False, help="Generate plots")
 @click.option("--axis", type=click.Choice(["roll", "pitch", "yaw", "all"], case_sensitive=False),
               default="all", help="Axis to analyze")
+@click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
+              default="light", help="Plot theme: light (default) or dark")
 def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
-            report_format: Optional[str], visual: bool, axis: str):
+            report_format: Optional[str], visual: bool, axis: str, theme: str):
     """Comprehensive log analysis — PID + FFT + filter + mag recommendations."""
     try:
         adapter = resolve_adapter(platform_name, log_file)
@@ -145,7 +147,7 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
 
         capabilities = adapter.capabilities()
         kb = KnowledgeBase(platform=adapter.name)
-        fmt = OutputFormatter(adapter=adapter, output_file=output_file)
+        fmt = OutputFormatter(adapter=adapter, output_file=output_file, theme=theme)
         full_result = FullAnalysisResult(platform=adapter.name, log_file=str(log_file))
 
         # Phase 2: PID Analysis
@@ -297,9 +299,11 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
               case_sensitive=False), default="all")
 @click.option("--visual/--no-visual", default=False,
               help="Generate step response plots")
-def pid(log_file: Path, platform_name: str, axis: str, visual: bool):
+@click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
+              default="light", help="Plot theme: light (default) or dark")
+def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str):
     """PID step response analysis."""
-    _run_single_analysis("pid", log_file, platform_name, axis, visual)
+    _run_single_analysis("pid", log_file, platform_name, axis, visual, theme=theme)
 
 
 # ---------------------------------------------------------------------------
@@ -313,9 +317,11 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool):
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("--visual/--no-visual", default=False,
               help="Generate FFT spectrum plot")
-def fft(log_file: Path, platform_name: str, visual: bool):
+@click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
+              default="light", help="Plot theme: light (default) or dark")
+def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
     """FFT vibration spectrum analysis."""
-    _run_single_analysis("fft", log_file, platform_name, "all", visual)
+    _run_single_analysis("fft", log_file, platform_name, "all", visual, theme=theme)
 
 
 # ---------------------------------------------------------------------------
@@ -380,8 +386,10 @@ def hardware(log_file: Path, platform_name: str):
 @click.option("--auto/--no-auto", default=True,
               help="Auto-derive filter config from log parameters (default: on)")
 @click.option("--visual/--no-visual", default=False, help="Generate Bode Plot visualization")
+@click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
+              default="light", help="Plot theme: light (default) or dark")
 def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
-               notch_freq: Optional[float], auto: bool, visual: bool):
+               notch_freq: Optional[float], auto: bool, visual: bool, theme: str):
     """Filter transfer function analysis (Bode Plot).
 
     \b
@@ -772,7 +780,7 @@ def quality(log_file: Path, platform_name: str, output_file: Optional[Path]):
 # ---------------------------------------------------------------------------
 
 def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
-                         axis: str, visual: bool):
+                         axis: str, visual: bool, theme: str = "light"):
     try:
         adapter = resolve_adapter(platform_name, log_file)
     except SmartTuneError as exc:
@@ -806,7 +814,7 @@ def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
         from smarttune.knowledge import KnowledgeBase
         from smarttune.output.formatter import OutputFormatter
         kb = KnowledgeBase(platform=adapter.name)
-        fmt = OutputFormatter(adapter=adapter)
+        fmt = OutputFormatter(adapter=adapter, theme=theme)
 
         try:
             if capability == "pid":
