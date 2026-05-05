@@ -565,6 +565,7 @@ class OutputFormatter:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
+            plt.style.use("dark_background")
         except ImportError:
             return None
 
@@ -747,6 +748,6 @@ class OutputFormatter:
 
         plt.tight_layout()
         out_path = self._plot_save("hardware_report.png")
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(out_path, dpi=150, bbox_inches='tight')
         plt.close(fig)
         return out_path
