@@ -1,20 +1,19 @@
 """
-阶跃响应估计 — Wiener 反卷积法。
+阶跃响应估计（对齐 ArduPilot WebTools PIDReview.js / Plasmatree PID-Analyzer）。
 
-算法流程：
+算法流程（完全复现 WebTools redraw_step + Libraries/Array_Math.js + Libraries/fft.js）：
 
 1. 分窗：Hanning 窗，window_size 点，spacing = round(window_size / 16)
-2. 每窗 rfft → 单边谱
-3. 交叉谱 Pyx = Y·conj(X)，自谱 Pxx = |X|²
-4. 自适应 SNR 正则化：基于高斯 CDF 的频率依赖权重，
-   乘以 Pxx 中位数自动匹配信号功率量级
-5. Wiener 反卷积：H = Pyx / (Pxx + sn)
-6. irfft → 脉冲响应 → 累积和 → 阶跃响应
+2. 每窗做 fft.js realTransform（单边 FFT，DC/Nyquist 乘 1/N，其余乘 2/N）
+3. to_double_sided：正频率×0.5，负频率共轭×(-0.5)
+4. 构造 SNR 正则化：累积高斯积分 → 归一化 → 镜像 → (1 - sn + eps) → ×10 → 倒数
+5. Wiener 反卷积：H = Pyx / (Pxx + sn) 其中 sn 加到 Pxx 实部
+6. IFFT → 脉冲响应 → 累积和 → 阶跃响应
 7. 跨窗口平均
 
-数据源：
-- input = setpoint / desired rate (deg/s)
-- output = gyroADC / actual rate (deg/s)
+数据源（与 WebTools 一致）：
+- input = Tar（RATE.Des，单位与日志一致，无额外转换）
+- output = IMU.Gyr（优先）→ 回退 PIDR.Act
 """
 
 from typing import Dict, Any, List, Tuple, Optional
@@ -36,35 +35,29 @@ def _to_double_sided(single: np.ndarray) -> np.ndarray:
     """
     单边复谱转双边复谱（复现 WebTools to_double_sided）。
 
-    single: complex128 ndarray, shape (real_len,)
+    single: complex64 ndarray, shape (real_len,)
         rfft 结果（已缩放：DC/Nyq *1/N, 其余 *2/N）
-    returns: complex128 ndarray, shape (2*real_len - 2,)
+    returns: complex64 ndarray, shape (2*real_len - 2,)
         full_len = 2 * (real_len - 1)
         DC / Nyquist 原样保留
-        正频率 *0.5；负频率位置存放 -conj(正频率*0.5)
-        即：neg_real = -pos_real, neg_imag = +pos_imag
+        正频率 *0.5；负频率位置存放正频率的共轭 *0.5
     """
     real_len = len(single)
     full_len = 2 * (real_len - 1)
-    ret = np.zeros(full_len, dtype=np.complex128)
+    ret = np.zeros(full_len, dtype=np.complex64)
 
     # DC
     ret[0] = single[0]
     # Nyquist
     ret[real_len - 1] = single[real_len - 1]
 
-    # 正/负频率向量化
-    # WebTools to_double_sided:
-    #   ret[2*i]   =  single[2*i] * 0.5   (正频率 real)
-    #   ret[2*i+1] =  single[2*i+1] * 0.5 (正频率 imag)
-    #   ret[2*(N-i)]   = -single[2*i] * 0.5   (负频率 real = -正频率 real)
-    #   ret[2*(N-i)+1] =  single[2*i+1] * 0.5 (负频率 imag = +正频率 imag)
-    # 即负频率 = -conj(正频率值)
+    # 正/负频率向量化（P3-#5）：原 Python 循环逐元素填充，对典型 ~400 点窗口
+    # 执行数百次。numpy slicing + 共轭批量赋值，性能提升一到两个数量级。
     if real_len > 2:
         pos = single[1:real_len - 1] * 0.5
         ret[1:real_len - 1] = pos
-        # 负频率 = -conj(pos)：real 取反，imag 不变
-        ret[full_len - 1:real_len - 1:-1] = -np.conj(pos)
+        # 负频率位置 full_len-1 .. real_len，对应正频率 1..real_len-2 的反向共轭
+        ret[full_len - 1:real_len - 1:-1] = np.conj(pos)
 
     return ret
 
@@ -108,9 +101,7 @@ def estimate_step_response(
     cutfreq: float = 25.0,
 ) -> Dict[str, Any]:
     """
-    估计阶跃响应（Wiener 反卷积 + 高斯 SNR 正则化）。
-
-    算法：分窗 → rfft → Wiener H = Pyx/(Pxx + sn) → irfft → cumsum → 平均
+    估计阶跃响应（复现 WebTools redraw_step 核心算法）。
 
     Parameters
     ----------
@@ -167,42 +158,51 @@ def estimate_step_response(
 
     step_end = min(int(step_duration_s / dt), window_size)
     time_arr = np.arange(step_end) * dt
+    full_len = 2 * (real_len - 1)  # 双边谱长度
 
     # ------------------------------------------------------------
-    # 构造 SNR 正则化权重 (0~1 的高斯 CDF 形状)
+    # FFT 缩放因子（与 WebTools run_fft 一致）
+    # DC/Nyquist: 1/N，其余: 2/N
     # ------------------------------------------------------------
+    scale = np.ones(real_len, dtype=np.float64)
+    scale[0] = 1.0 / window_size
+    for j in range(1, real_len - 1):
+        scale[j] = 2.0 / window_size
+    scale[real_len - 1] = 1.0 / window_size
+
+    # ------------------------------------------------------------
+    # 构造 SNR 正则化（复现 WebTools redraw_step 精确流程）
+    # ------------------------------------------------------------
+    # bins 对应频率 (Hz)
     bins = np.fft.rfftfreq(window_size, d=dt)
+    # 找到 cutfreq 所在 bin 索引
     bin_idx = int(np.searchsorted(bins, cutfreq, side="right"))
-    # 对齐 WebTools: double-sided 长度修正
-    len_lpf = bin_idx + bin_idx - 2
+    len_lpf = bin_idx
+    len_lpf += len_lpf - 2  # account for double sided, DC and Nyquist not copied
     len_lpf = max(len_lpf, 1)
 
     radius = int(np.ceil(len_lpf * 0.5))
     sigma = len_lpf / 6.0
 
-    # 构造高斯 CDF 权重 (仅用于计算正则化强度比例)
-    gauss_cdf = np.zeros(real_len, dtype=np.float64)
-    last_val = 0.0
+    # 累积高斯积分（完整兑现 fft.js 逐元素循环）
+    sn = np.ones(real_len, dtype=np.float64)
+    last_sn = 0.0
     for j in range(min(len_lpf, real_len)):
-        gauss_cdf[j] = last_val + np.exp((-0.5 / sigma ** 2) * (j - radius) ** 2)
-        last_val = gauss_cdf[j]
-    if last_val > 0:
-        gauss_cdf[:min(len_lpf, real_len)] /= last_val
-    # gauss_cdf[j] 在 0~len_lpf 从 0 升到 1，之后保持 0
+        sn[j] = last_sn + np.exp((-0.5 / sigma ** 2) * (j - radius) ** 2)
+        last_sn = sn[j]
 
-    # 将高斯 CDF 转为正则化倒数权重 (与 WebTools 一致的变换)
-    # gauss_cdf ≈ 0 → sn_weight ≈ 1/(10*1) = 0.1 (低 → 弱正则化)
-    # gauss_cdf ≈ 1 → sn_weight ≈ 1/(10*eps) ≈ 1e8 (高 → 强抑制)
-    sn_weight = 1.0 / (10.0 * (1.0 - gauss_cdf + 1e-9))
+    # 归一化到 1
+    if last_sn > 0:
+        sn[:min(len_lpf, real_len)] /= last_sn
+
+    # 镜像拼接（精确复现 WebTools 语法）
+    sn = np.concatenate([sn, sn[1:real_len - 1][::-1]])
+
+    # Scale: -1 → offset 1 + 1e-9 → ×10 → inverse
+    sn = 1.0 / (10.0 * (1.0 - sn + 1e-9))
 
     # ------------------------------------------------------------
     # 分窗 FFT → Wiener 反卷积 → 阶跃响应
-    #
-    # 核心修正：使用 rfft/irfft 直接工作在单边谱上，
-    # 避免 scale + _to_double_sided 引入的 Pxx 量级缩小问题。
-    # 旧代码中 scale (2/N) 将 Pxx 缩小 ~N² 倍，而固定量级的 sn
-    # 没有同步缩放，导致 sn 在几乎所有频率上主导 Pxx + sn，
-    # 将传递函数 H 压制到远小于 1。
     # ------------------------------------------------------------
     all_steps: List[np.ndarray] = []
     skipped_quality = 0
@@ -242,31 +242,41 @@ def estimate_step_response(
         tar_win = raw_tar * window
         act_win = raw_act * window
 
-        # 幅值阈值（检查加窗后的峰值）
+        # 幅值阈值（与 WebTools TarMax < 20.0 一致）
         tar_max = np.max(np.abs(tar_win))
         if tar_max < min_target_amplitude:
             continue
 
-        # ── rfft（不额外缩放，让 Pxx 保持与信号幅值匹配的量级）──
-        X = np.fft.rfft(tar_win)
-        Y = np.fft.rfft(act_win)
+        # FFT（fft.js realTransform → rfft）
+        tar_fft = np.fft.rfft(tar_win) * scale
+        act_fft = np.fft.rfft(act_win) * scale
 
-        # ── 交叉谱 / 自谱 ──
-        Pxx = (X * np.conj(X)).real   # 自谱，纯实数
-        Pyx = Y * np.conj(X)          # 交叉谱
+        # 转双边谱
+        X = _to_double_sided(tar_fft)
+        Y = _to_double_sided(act_fft)
 
-        # ── 自适应 SNR 正则化 ──
-        # sn_weight 定义了各频率的正则化相对强度 (0.1 到 ~1e8)
-        # 乘以 Pxx 的中位数使正则化量级与实际信号功率匹配
-        sn_scale = float(np.median(Pxx[1:])) if real_len > 1 else 1.0
-        sn_scale = max(sn_scale, 1e-30)
-        sn = sn_weight * sn_scale
+        # 共轭
+        Xcon = np.conj(X)
 
-        # ── Wiener 反卷积 ──
-        H = Pyx / (Pxx + sn)
+        # Pyx = Y * conj(X), Pxx = X * conj(X)
+        # 使用 _complex_mul 得到 (real, imag) 元组
+        Pyx_real, Pyx_imag = _complex_mul(Y, Xcon)
+        Pxx_real, Pxx_imag = _complex_mul(X, Xcon)
 
-        # ── irfft → 脉冲响应 → 累积和 → 阶跃响应 ──
-        impulse = np.fft.irfft(H, n=window_size)
+        # 加 SNR 正则化到 Pxx 实部（与 WebTools Pxx[0] = array_add(Pxx[0], sn) 一致）
+        Pxx_real += sn
+
+        # 组装复数组
+        Pyx = Pyx_real + 1j * Pyx_imag
+        Pxx = Pxx_real + 1j * Pxx_imag
+
+        # 传递函数 H = Pyx / Pxx
+        H = _complex_div(Pyx, Pxx)
+
+        # IFFT → 脉冲响应（取实部）
+        impulse = np.fft.ifft(H).real
+
+        # 累积和 → 阶跃响应
         step = np.cumsum(impulse[:step_end])
 
         # 5. 阶跃响应质量检查：超调 > 300% 视为异常窗口
@@ -290,7 +300,7 @@ def estimate_step_response(
             "total_windows": num_windows,
         }
 
-    # 均值平均
+    # 均值平均（与 WebTools 一致）
     step_array = np.array(all_steps)
     step_out = np.mean(step_array, axis=0)
 
@@ -300,7 +310,7 @@ def estimate_step_response(
         "skipped_quality": skipped_quality,
         "window_size": window_size,
         "sample_rate": sample_rate,
-        "method": "wiener_fft",
+        "method": "webtools_fft",
     }
 
     return {
