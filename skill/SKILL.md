@@ -225,8 +225,4 @@ stune magfit -i flight.bin
 | Log quality scoring | `stune quality` | ✅ |
 | Multi-platform support | AP + BF + PX4 | ✅ |
 
-## Relationship to Legacy ap-tune
 
-- `ap-tune` (ArduPilot-only) → **Deprecated**, code merged into SmartTune v2.0
-- `stune` (SmartTune v2.0+) → **Current sole CLI**, unified multi-platform interface
-- Never use `ap-tune`. Always use `stune`.
