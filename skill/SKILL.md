@@ -191,10 +191,13 @@ stune magfit -i flight.bin
 
 ## Further Help
 
+**Rule: Always check `--help` before using a command you haven't run recently.** Every subcommand has a detailed help block with examples and option descriptions.
+
 | Scenario | Action |
 |----------|--------|
 | Full parameter list | `stune <command> --help` |
-| Parameter meaning reference | Knowledge base built into CLI (`smarttune/knowledge/`) |
+| Usage examples | Built into each subcommand's help text |
+| Parameter meaning reference | Knowledge base built into CLI (`smarttune/knowledge/`) | |
 
 ## Comparison with WebTools
 

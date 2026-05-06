@@ -292,17 +292,30 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
 
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
-              type=click.Path(exists=True, path_type=Path))
+              type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-a", "--axis", type=click.Choice(["roll", "pitch", "yaw", "all"],
-              case_sensitive=False), default="all")
+              case_sensitive=False), default="all",
+              help="Axis to analyze (default: all)")
 @click.option("--visual/--no-visual", default=False,
               help="Generate step response plots")
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
 def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str):
-    """PID step response analysis."""
+    """PID step response analysis.
+
+    \b
+    Detects stick-input step responses from flight data and evaluates:
+      · Rise time, overshoot, settling time, oscillation count
+      · Per-axis diagnostics with tuning recommendations
+
+    \b
+    Examples:
+      stune pid -i flight.bin                  # All axes
+      stune pid -i flight.bin -a roll          # Roll only
+      stune pid -i flight.bin -a roll --visual # Roll with plots
+    """
     _run_single_analysis("pid", log_file, platform_name, axis, visual, theme=theme)
 
 
@@ -312,7 +325,7 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str)
 
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
-              type=click.Path(exists=True, path_type=Path))
+              type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("--visual/--no-visual", default=False,
@@ -320,7 +333,18 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str)
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
 def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
-    """FFT vibration spectrum analysis."""
+    """FFT vibration spectrum analysis.
+
+    \b
+    Analyzes gyro data to identify vibration frequencies and suggests:
+      · Vibration severity rating (EXCELLENT/GOOD/MARGINAL/POOR)
+      · Notch filter parameters (INS_HNTCH_FREQ, INS_HNTCH_BW)
+
+    \b
+    Examples:
+      stune fft -i flight.bin          # Basic analysis
+      stune fft -i flight.bin --visual # With spectrum plot
+    """
     _run_single_analysis("fft", log_file, platform_name, "all", visual, theme=theme)
 
 
@@ -330,11 +354,22 @@ def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
 
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
-              type=click.Path(exists=True, path_type=Path))
+              type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 def magfit(log_file: Path, platform_name: str):
-    """Magnetometer calibration analysis."""
+    """Magnetometer calibration analysis.
+
+    \b
+    Evaluates compass calibration quality:
+      · Fitness score (mGauss) — lower is better
+      · Hard iron / soft iron interference diagnosis
+      · Flight coverage check (yaw/pitch/roll range)
+
+    \b
+    Example:
+      stune magfit -i flight.bin
+    """
     _run_single_analysis("magfit", log_file, platform_name, "all", False)
 
 
@@ -344,15 +379,27 @@ def magfit(log_file: Path, platform_name: str):
 
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
-              type=click.Path(exists=True, path_type=Path))
+              type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-a", "--axis", type=click.Choice(["roll", "pitch", "yaw", "all"],
-              case_sensitive=False), default="all")
-@click.option("--na", type=int, default=3, help="ARX model A polynomial order")
-@click.option("--nb", type=int, default=2, help="ARX model B polynomial order")
+              case_sensitive=False), default="all",
+              help="Axis to analyze (default: all)")
+@click.option("--na", type=int, default=3, help="ARX model A polynomial order (default: 3)")
+@click.option("--nb", type=int, default=2, help="ARX model B polynomial order (default: 2)")
 def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
-    """System identification — ARX model parameter estimation."""
+    """System identification — ARX model parameter estimation.
+
+    \b
+    Estimates transfer function from flight data:
+      · Natural frequency, damping ratio, time constant
+      · PID bandwidth recommendations
+
+    \b
+    Examples:
+      stune sysid -i flight.bin                  # All axes (na=3, nb=2)
+      stune sysid -i flight.bin -a roll --na 4   # Custom ARX order
+    """
     _run_single_analysis("sysid", log_file, platform_name, axis, False)
 
 
@@ -362,11 +409,23 @@ def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
 
 @main.command()
 @click.option("-i", "--input", "log_file", required=True,
-              type=click.Path(exists=True, path_type=Path))
+              type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 def hardware(log_file: Path, platform_name: str):
-    """Hardware configuration report."""
+    """Hardware configuration report.
+
+    \b
+    Displays sensor configuration and active parameters:
+      · IMU setup (gyro/accel IDs, calibration status)
+      · Compass configuration
+      · Active filter settings
+      · Rate PID parameters
+
+    \b
+    Example:
+      stune hardware -i flight.bin
+    """
     _run_single_analysis("hardware", log_file, platform_name, "all", False)
 
 
