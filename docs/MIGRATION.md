@@ -1,62 +1,62 @@
 # SmartTune Migration Guide
 
-## ap-tune → smarttune 模块迁移映射
+## ap-tune → smarttune Module Migration Map
 
-本文档记录从 `ap-tune` (ArduPilot-only) 到 `smarttune` (multi-platform) 的模块映射关系，
-便于逐步迁移现有分析逻辑。
+This document maps the module migration from `ap-tune` (ArduPilot-only) to `smarttune` (multi-platform),
+to facilitate incremental migration of existing analysis logic.
 
-### 模块映射
+### Module Mapping
 
-| 旧模块 (ap_tune) | 新位置 (smarttune) | 状态 | 说明 |
+| Old Module (ap_tune) | New Location (smarttune) | Status | Notes |
 |---|---|---|---|
-| `cli.py` | `smarttune/cli.py` | ✅ 已重写 | 新增 `--platform`，PID+FFT 已接通 |
-| `errors.py` | `smarttune/errors.py` | ✅ 已重写 | 基类改名 `SmartTuneError` |
-| `log_parser.py` | `smarttune/platform/ardupilot/` | ✅ 已迁入 | 拆为 adapter 的 `parse()` 方法 |
-| `pid_reviewer.py` | `smarttune/analyzers/pid_reviewer.py` | ✅ 已迁移 | 接收 FlightData，输出 ParamRef |
-| `fft_analyzer.py` | `smarttune/analyzers/fft_analyzer.py` | ✅ 已迁移 | 接收 FlightData，不依赖 LogParser |
-| `step_response_fft.py` | `smarttune/analyzers/step_response_fft.py` | ✅ 原样迁移 | 纯数值计算，无改动 |
-| `step_response_time_domain.py` | `smarttune/analyzers/step_response_td.py` | ✅ 原样迁移 | 纯数值计算，无改动 |
-| `magfit.py` | `smarttune/analyzers/magfit.py` | ✅ 已迁移 | 接收 FlightData，CLI 待接通 |
-| `filter_transfer.py` | `smarttune/analyzers/filter_transfer.py` | ✅ 原样迁移 | 纯数学，无 LogParser 依赖 |
-| `filter_visualization.py` | `smarttune/output/filter_visualization.py` | ✅ import 已修正 | |
-| `sysid_analyzer.py` | `smarttune/analyzers/sysid_analyzer.py` | ✅ 已迁移 | 接收 FlightData |
-| `hardware_report.py` | `smarttune/analyzers/hardware_report.py` | ✅ 已迁移 | 接收 FlightData |
-| `output.py` | `smarttune/output/formatter.py` | ✅ 已重写 | 通过 PlatformAdapter 翻译参数名 |
-| `html_report.py` | `smarttune/output/html_report.py` | 🔲 待适配 | 可用旧代码参考 |
-| `knowledge/__init__.py` | `smarttune/knowledge/loader.py` | ✅ 已重写 | 新增平台维度 |
-| `knowledge/rules/*.json` | `smarttune/knowledge/rules/ardupilot/` | ✅ 已迁移 | |
+| `cli.py` | `smarttune/cli.py` | ✅ Rewritten | Added `--platform`, PID+FFT wired up |
+| `errors.py` | `smarttune/errors.py` | ✅ Rewritten | Base class renamed to `SmartTuneError` |
+| `log_parser.py` | `smarttune/platform/ardupilot/` | ✅ Migrated | Split into adapter's `parse()` method |
+| `pid_reviewer.py` | `smarttune/analyzers/pid_reviewer.py` | ✅ Migrated | Accepts FlightData, outputs ParamRef |
+| `fft_analyzer.py` | `smarttune/analyzers/fft_analyzer.py` | ✅ Migrated | Accepts FlightData, no LogParser dependency |
+| `step_response_fft.py` | `smarttune/analyzers/step_response_fft.py` | ✅ As-is | Pure numerical computation, unmodified |
+| `step_response_time_domain.py` | `smarttune/analyzers/step_response_td.py` | ✅ As-is | Pure numerical computation, unmodified |
+| `magfit.py` | `smarttune/analyzers/magfit.py` | ✅ Migrated | Accepts FlightData, CLI pending wiring |
+| `filter_transfer.py` | `smarttune/analyzers/filter_transfer.py` | ✅ As-is | Pure math, no LogParser dependency |
+| `filter_visualization.py` | `smarttune/output/filter_visualization.py` | ✅ Import fixed | |
+| `sysid_analyzer.py` | `smarttune/analyzers/sysid_analyzer.py` | ✅ Migrated | Accepts FlightData |
+| `hardware_report.py` | `smarttune/analyzers/hardware_report.py` | ✅ Migrated | Accepts FlightData |
+| `output.py` | `smarttune/output/formatter.py` | ✅ Rewritten | Parameter name translation via PlatformAdapter |
+| `html_report.py` | `smarttune/output/html_report.py` | 🔲 Needs adaptation | Old code available as reference |
+| `knowledge/__init__.py` | `smarttune/knowledge/loader.py` | ✅ Rewritten | Added platform dimension |
+| `knowledge/rules/*.json` | `smarttune/knowledge/rules/ardupilot/` | ✅ Migrated | |
 
-### 迁移每个分析器的步骤
+### Migrating Each Analyzer
 
-以 `pid_reviewer.py` 为例：
+Using `pid_reviewer.py` as an example:
 
-1. **改输入签名**: `__init__(self, parser: LogParser, knowledge)` → `__init__(self, knowledge)`
-2. **改 analyze 签名**: `analyze(axis=None)` → `analyze(flight_data: FlightData, axis=None)`
-3. **替换数据访问**:
+1. **Change input signature**: `__init__(self, parser: LogParser, knowledge)` → `__init__(self, knowledge)`
+2. **Change analyze signature**: `analyze(axis=None)` → `analyze(flight_data: FlightData, axis=None)`
+3. **Replace data access**:
    - `parser.get_pid_data("roll")` → `flight_data.pid["roll"]`
    - `parser.get_parameters()` → `flight_data.params`
    - `parser.get_imu_data()` → `flight_data.gyro` / `flight_data.accel`
-4. **替换参数名**: 硬编码的 `"ATC_RAT_RLL_P"` → `ParamRef("pid.roll.p")`
-5. **替换输出**: `Recommendation(param="ATC_RAT_RLL_P", ...)` → `ParamRecommendation(param=ParamRef("pid.roll.p"), ...)`
-6. **测试**: 用现有 ArduPilot 日志验证输出结果一致
+4. **Replace parameter names**: hardcoded `"ATC_RAT_RLL_P"` → `ParamRef("pid.roll.p")`
+5. **Replace output**: `Recommendation(param="ATC_RAT_RLL_P", ...)` → `ParamRecommendation(param=ParamRef("pid.roll.p"), ...)`
+6. **Test**: Verify output consistency against existing ArduPilot logs
 
-### 新增文件（非迁移）
+### New Files (non-migration)
 
-| 文件 | 说明 |
+| File | Description |
 |---|---|
-| `smarttune/models/flight_data.py` | FlightData / AxisPIDSignal / ModeChange 定义 |
-| `smarttune/models/analysis_result.py` | ParamRef / 所有 Result 类型定义 |
-| `smarttune/platform/base.py` | PlatformAdapter 抽象基类 |
-| `smarttune/platform/registry.py` | 平台注册 + 自动检测 |
-| `smarttune/platform/betaflight/` | BF BBL 适配器（Phase 2） |
-| `smarttune/platform/px4/` | PX4 ULog 适配器（Phase 3） |
-| `smarttune/knowledge/rules/common/` | 跨平台通用规则 |
-| `smarttune/knowledge/rules/betaflight/` | BF 特有规则 |
+| `smarttune/models/flight_data.py` | FlightData / AxisPIDSignal / ModeChange definitions |
+| `smarttune/models/analysis_result.py` | ParamRef / all Result type definitions |
+| `smarttune/platform/base.py` | PlatformAdapter abstract base class |
+| `smarttune/platform/registry.py` | Platform registration + auto-detection |
+| `smarttune/platform/betaflight/` | BF BBL adapter (Phase 2) |
+| `smarttune/platform/px4/` | PX4 ULog adapter (Phase 3) |
+| `smarttune/knowledge/rules/common/` | Cross-platform common rules |
+| `smarttune/knowledge/rules/betaflight/` | BF-specific rules |
 
-### Pro 知识库迁移
+### Pro Knowledge Base Migration
 
-`smarttune-knowledge-pro` 需要：
-1. 包名从 `ardupilot_knowledge_pro` → `smarttune_knowledge_pro`
-2. `load()` 函数签名改为 `load(platform: str = None) -> Dict`
-3. 返回结构: `{"common": {...}, "ardupilot": {...}, "betaflight": {...}}`
-4. 规则目录按平台分子目录
+`smarttune-knowledge-pro` requires:
+1. Package rename from `ardupilot_knowledge_pro` → `smarttune_knowledge_pro`
+2. `load()` signature change to `load(platform: str = None) -> Dict`
+3. Return structure: `{"common": {...}, "ardupilot": {...}, "betaflight": {...}}`
+4. Rule directories organized by platform subdirectory
