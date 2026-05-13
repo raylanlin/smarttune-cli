@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <strong>Flight log analysis, designed for AI agents</strong><br>
-  Machine-readable output · Structured data · No GUI · Zero cloud
+  <strong>Offline flight log analysis, built agent-first from day one</strong><br>
+  One command from raw log to tunable PID/FFT/MagFit parameters — no special flights needed
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.1.0-blue?logo=github" alt="v2.1.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.2.0-blue?logo=github" alt="v2.2.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-96%20passed-brightgreen" alt="Tests" /></a>
@@ -25,10 +25,10 @@
 
 ---
 
-> **SmartTune is a tuning CLI built for the age of AI-assisted flight log analysis.**  
-> Every output is structured. Every command is deterministic. No TUI, no blocking prompts, no interactive workflows that break when called by an agent. It was designed from day one to be invoked by LLM agents as a tool — but more importantly, to teach those agents how to tune a flight controller.  
+> **Pip-install SmartTune, point it at a flight log, and your agent comes back with exact parameter deltas — not vague "try lowering P."**  
+> Every output is structured JSON or Markdown. No TUI, no blocking prompts, no ANSI escape codes to strip. The CLI was designed from day one to be invoked by an LLM agent as a subprocess tool — OpenClaw, Hermes, QwenPaw, Codex, Claude Code. Any agent that can shell out to `subprocess.run()` can use it.  
 >  
-> Agents like OpenClaw, Hermes, Codex, and Claude Code can now truly *learn* APM/BF/PX4 tuning through SmartTune's structured outputs, confidence-scored recommendations, and inspectable knowledge base. It's not just a tool agents call — it's how agents learn the craft.
+> Under the hood: ArduPilot step-response analysis replicates WebTools PIDReview.js via Wiener deconvolution. Betaflight blackbox logs are parsed by a 1000+ line pure-Python decoder (no C extensions, no Node.js). All three platforms output to one `FlightData` dataclass so analyzers work identically across APM/BF/PX4. The 6-layer knowledge base is plain JSON — agents can read rules and propose new ones by editing `~/.smarttune/knowledge/`.
 
 ---
 
@@ -500,6 +500,7 @@ stune analyze -i flight.bin --format json | jq '.pid.roll.rating'
 | v2.0 Phase 1 | Multi-platform architecture | ✅ |
 | v2.0 Phase 2 | Betaflight BBL parser + analytics | ✅ |
 | **v2.1** | Platform-specific analyzers + Protocol constraints | ✅ |
+| **v2.2** | Full English docs, CLI --help, OpenClaw SKILL.md | ✅ |
 | v2.x | PX4 ULog adapter | 🔲 |
 | v3.0 | Tool-calling manifest, plugin system, web UI | 🔲 |
 
@@ -509,7 +510,7 @@ stune analyze -i flight.bin --format json | jq '.pid.roll.rating'
 
 **Raylan LIN** — [@raylanlin](https://github.com/raylanlin)
 
-Built and maintained by a pilot who trusts agents more than checklists.
+Built and maintained by a pilot who builds ArduPilot firmware (ParallelFC, self-learning PID, STM32H7 custom FC boards) and teaches his AI agent to tune better than he does.
 
 ---
 
