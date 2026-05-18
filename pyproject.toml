@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smarttune"
-version = "2.2.0"
+version = "2.3.0"
 description = "Multi-platform flight log analysis & tuning advisor CLI"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -40,6 +40,7 @@ dependencies = [
 [project.optional-dependencies]
 ardupilot = ["pymavlink>=2.4.0"]
 px4 = ["pyulog>=1.0.0"]
+mcp = ["mcp>=1.0.0", "pydantic>=2.0.0"]
 all = ["pymavlink>=2.4.0", "pyulog>=1.0.0"]
 dev = [
     "pytest>=7.0.0",
@@ -55,6 +56,7 @@ Issues = "https://github.com/raylanlin/smarttune-cli/issues"
 
 [project.scripts]
 stune = "smarttune.cli:main"
+smarttune-mcp = "smarttune.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.2.0-blue?logo=github" alt="v2.2.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.3.0-blue?logo=github" alt="v2.3.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-96%20passed-brightgreen" alt="Tests" /></a>
@@ -57,7 +57,7 @@ SmartTune was designed specifically for **LLM agent tool-calling workflows**. Ev
 | Principle | Implementation |
 |-----------|---------------|
 | **Deterministic output** | No interactive prompts, no TUI, no progress bars when piped to files. Same input → same output. |
-| **Structured by default** | JSON output via `--format json`. No parsing fragile ANSI-escaped terminal dumps. |
+| **Structured by default** | JSON output via MCP server (`smarttune_analyze_log`). Markdown/HTML via CLI `--report md\|html`. No parsing fragile ANSI-escaped terminal dumps. |
 | **Self-describing** | `stune platforms` lists available adapters. Error codes are standardized (E10xx–E50xx). Exit codes are meaningful. |
 | **Fail-fast & isolated** | Single-module failure doesn't abort the full analysis. Each module gets its own try/except block. |
 | **Config-free** | Zero config files needed. Everything is flags or auto-detected. No env vars required. |
@@ -85,6 +85,66 @@ SmartTune isn't just a tool agents *call* — it's how agents learn the craft of
 - **CI/CD integration** — run `stune analyze` as part of a pre-flight validation pipeline
 - **Collaborative diagnosis** — have the agent compare logs from before/after a crash
 
+### MCP Server (Model Context Protocol)
+
+SmartTune includes a **read-only MCP server** that lets LLM agents call analysis tools directly — no shell, no subprocess, no arbitrary file writes.
+
+**Install with MCP support:**
+
+```bash
+pip install -e ".[all,mcp]"
+```
+
+**Run the MCP server:**
+
+```bash
+smarttune-mcp          # stdio transport (for agent frameworks)
+# or
+python -m smarttune.mcp_server
+```
+
+**Available MCP tools:**
+
+| Tool | Purpose |
+|------|---------|
+| `smarttune_list_platforms` | List supported platforms, extensions, and capabilities |
+| `smarttune_log_quality` | Parse a log and return quality score, data availability, validation issues |
+| `smarttune_analyze_log` | Run full analysis (PID + FFT + MagFit + hardware) and return structured JSON or Markdown |
+
+All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`.
+
+**Security boundary:**
+
+- No shell execution — library calls only
+- No arbitrary file writes — results are returned inline
+- No parameter mutation — no MAVLink writes, no firmware flashing
+- Path validation — allowed roots, extensions (`.bin`, `.log`, `.bbl`, `.bfl`, `.ulg`), file size limits, symlink resolution
+- Configurable via environment variables:
+
+```bash
+export SMARTTUNE_MCP_ALLOWED_ROOTS="/path/a:/path/b"
+export SMARTTUNE_MCP_MAX_FILE_MB="300"
+```
+
+**OpenClaw / Claude Desktop configuration:**
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "SmartTune": {
+        "command": "smarttune-mcp",
+        "args": [],
+        "env": {
+          "SMARTTUNE_MCP_ALLOWED_ROOTS": "/home/user/.openclaw/workspace/files/inbox:/home/user/.openclaw/workspace/files/output:/tmp",
+          "SMARTTUNE_MCP_MAX_FILE_MB": "300"
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## Quick Start
@@ -92,9 +152,6 @@ SmartTune isn't just a tool agents *call* — it's how agents learn the craft of
 ```bash
 # Full analysis (auto-detect platform)
 stune analyze -i flight.bin
-
-# JSON output for agent consumption
-stune analyze -i flight.bin --format json
 
 # With charts (human-friendly)
 stune analyze -i flight.bbl --visual
@@ -107,10 +164,15 @@ stune sysid -i flight.bin -a pitch
 stune hardware -i flight.bin
 
 # Export to Markdown report
-stune analyze -i flight.bin --format markdown -o report.md
+stune analyze -i flight.bin --report md -o report.md
+
+# Export to HTML report
+stune analyze -i flight.bin --report html -o report.html
 
 # List supported platforms
 stune platforms
+
+# For JSON output, use the MCP server (see "For Agents" above)
 ```
 
 ---
@@ -122,9 +184,11 @@ SmartTune supports multiple output formats, each designed for a specific consump
 | Format | Use Case | Example |
 |--------|----------|---------|
 | **Terminal** | Human inspection in the shell | `stune analyze -i flight.bin` |
-| **JSON** | Agent/script consumption | `stune analyze -i flight.bin --format json` |
-| **Markdown** | Reports, READMEs, documentation | `stune analyze -i flight.bin --format markdown -o report.md` |
-| **HTML** | Visual reports with embedded charts | `stune analyze -i flight.bin --visual --format html` |
+| **JSON** | Agent/script consumption | MCP: `smarttune_analyze_log(log_path="flight.bin")` |
+| **Markdown** | Reports, READMEs, documentation | `stune analyze -i flight.bin --report md -o report.md` |
+| **HTML** | Visual reports with embedded charts | `stune analyze -i flight.bin --report html -o report.html` |
+
+> **Note:** JSON output is available through the MCP server. The CLI currently supports `--report md` and `--report html`. A `--format json` CLI flag is planned for a future release.
 
 ### JSON output example
 
@@ -167,8 +231,8 @@ Full-spectrum analysis: PID + FFT + MagFit + hardware — all in one pass.
 stune analyze -i flight.bin                           # Auto-detect
 stune analyze -i flight.bbl --platform betaflight      # Force platform
 stune analyze -i flight.bin --visual                   # With charts
-stune analyze -i flight.bin --format json              # Machine-readable
-stune analyze -i flight.bin -o report.md               # Export
+stune analyze -i flight.bin --report md -o report.md   # Markdown export
+stune analyze -i flight.bin --report html -o report.html  # HTML export
 ```
 
 ### `stune pid`
@@ -261,9 +325,21 @@ SmartTune identifies your log format from file headers — no `--platform` flag 
 ┌─────────────────────────────────────────────┐
 │  CLI Layer                                   │
 │  stune analyze / pid / fft / ...            │
-│  --format json / markdown / html / terminal  │
+│  --report md / html                          │
 └──────────────────┬──────────────────────────┘
                    │
+┌──────────────────┤  ┌───────────────────────┐
+│                  │  │  MCP Server (stdio)    │
+│                  │  │  smarttune-mcp         │
+│                  │  │  JSON / Markdown out   │
+│                  │  │  Read-only · No shell  │
+│                  │  └───────────┬───────────┘
+│                  │              │
+│  ┌───────────────▼──────────────▼────────────┐
+│  │  Services Layer (shared)                   │
+│  │  services/analysis.py · services/serialize │
+│  └───────────────┬──────────────────────────┘
+│                  │
 ┌──────────────────▼──────────────────────────┐
 │  Platform Adapter Layer                      │
 │  ArduPilot · Betaflight · PX4               │
@@ -352,10 +428,10 @@ SmartTune is designed to work with any LLM agent framework. Here's how it fits:
 
 | Framework | Integration |
 |-----------|-------------|
-| **OpenClaw** | `stune` as an MCP tool — structured JSON output, no config needed |
-| **Claude Code / Codex** | Shell tool call — `stune analyze -i log.bin --format json` |
+| **OpenClaw** | `smarttune-mcp` as an MCP server — structured JSON output, read-only, no config needed |
+| **Claude Code / Codex** | MCP server or shell tool call — `stune analyze -i log.bin --report md` |
 | **Hermes Agent** | Deterministic output, safe for agent-in-the-loop tuning workflows |
-| **Custom agents** | pip-installable, importable Python API for advanced use cases |
+| **Custom agents** | pip-installable, importable Python API via `smarttune.services.analysis` |
 
 Agents call `stune`, get structured tuning recommendations, and can act on them. No TUI to navigate, no prompts to answer, no fragile screen-scraping.
 
@@ -486,8 +562,8 @@ Yes, the terminal output is also beautiful. Rich-powered tables, progress bars, 
 # Human-friendly terminal output (default)
 stune analyze -i flight.bin
 
-# Same data, machine-parseable
-stune analyze -i flight.bin --format json | jq '.pid.roll.rating'
+# Machine-parseable via MCP server
+# smarttune_analyze_log(log_path="flight.bin", response_format="json")
 ```
 
 ---

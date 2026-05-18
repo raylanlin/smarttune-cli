@@ -2,6 +2,28 @@
 
 All notable changes to SmartTune CLI will be documented in this file.
 
+## [2.3.0] — 2026-05-19
+
+### Added
+- **Read-only MCP server** — `smarttune-mcp` exposes SmartTune analysis to OpenClaw and other MCP clients without shell access.
+- `smarttune_list_platforms` MCP tool — reports CLI-supported extensions and MCP-accepted extensions separately.
+- `smarttune_log_quality` MCP tool — returns structured log quality, data availability, and validation metadata.
+- `smarttune_analyze_log` MCP tool — returns compact JSON or Markdown analysis for PID, FFT, MagFit, and hardware modules.
+- Pure service layer under `smarttune/services/` for analysis and JSON-safe serialization.
+- MCP security tests covering extension allowlists, path traversal, symlink escape, and file size limits.
+
+### Security
+- MCP path validation resolves symlinks with `resolve(strict=True)`, enforces allowed roots, and rejects arbitrary file extensions.
+- MCP tools do not expose subprocess, shell execution, arbitrary output paths, parameter writes, or filesystem mutation.
+- Betaflight `.txt` logs remain CLI-supported but are intentionally excluded from the MCP allowlist.
+
+### Fixed
+- Fixed `smarttune/analyzers/magfit.py` indentation so MagFit imports cleanly.
+- Hardware analysis service now uses the existing `generate_hardware_report()` function path.
+- Runtime `SMARTTUNE_MCP_MAX_FILE_MB` changes are respected during path validation.
+
+---
+
 ## [2.0.0] — 2026-05-03
 
 ### Added

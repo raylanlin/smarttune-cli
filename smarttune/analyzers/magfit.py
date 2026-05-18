@@ -399,10 +399,10 @@ class MAGFit:
 
         # GPS 位置
         gps = flight_data.extras.get("gps_position", {})
-        self._lat = gps.get("lat", self._params.get("GPS_LAT", 22.5))
-        self._lon = gps.get("lon", self._params.get("GPS_LON", 114.0))
-        self._alt_m = gps.get("alt", self._params.get("ALT_M", 50.0))
-                self._alt_m = 50.0
+        if gps:
+            self._lat = gps.get("lat", self._params.get("GPS_LAT", 22.5))
+            self._lon = gps.get("lon", self._params.get("GPS_LON", 114.0))
+            self._alt_m = gps.get("alt", self._params.get("ALT_M", 50.0))
         else:
             self._lat = self._params.get("GPS_LAT", 22.5)
             self._lon = self._params.get("GPS_LON", 114.0)
