@@ -2,6 +2,14 @@
 
 All notable changes to SmartTune CLI will be documented in this file.
 
+## [2.3.1] — 2026-05-19
+
+### Added
+* Added a dedicated `skill-mcp/` package for read-only MCP-connected agents that must not use shell, `exec`, or the `stune` CLI.
+* Documented MCP-only agent workflow, supported log extensions, tool selection, and safety boundaries for customer-support deployments.
+
+---
+
 ## [2.3.0] — 2026-05-19
 
 ### Added
