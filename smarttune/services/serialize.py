@@ -171,11 +171,36 @@ def serialize_pid_result(
 
 
 def serialize_fft_result(
-    result: FFTAnalysisResult,
+    result,
     adapter: Optional[PlatformAdapter] = None,
     max_recommendations: int = 20,
 ) -> Dict[str, Any]:
     """Serialize FFT analysis result (no raw spectrum data)."""
+    # Handle both dataclass (old) and dict (new optimized) formats
+    if isinstance(result, dict):
+        # Dict format from optimized analyzers
+        peaks_raw = result.get("peaks", [])
+        peaks = [
+            {
+                "frequency_hz": _safe_float(p.get("freq", p.get("frequency_hz", 0))),
+                "amplitude": _safe_float(p.get("power_db", p.get("amplitude", 0))),
+                "source_guess": p.get("source", p.get("source_guess", "")),
+            }
+            for p in peaks_raw[:20]
+        ]
+        recs_raw = result.get("recommendations", [])
+        recs = [
+            serialize_param_recommendation(r, adapter)
+            for r in recs_raw[:max_recommendations]
+        ] if isinstance(recs_raw, list) else []
+        return {
+            "vibration_level": result.get("vibration_level", ""),
+            "noise_floor": _safe_float(result.get("noise_floor", 0)),
+            "peaks": peaks,
+            "recommendations": recs,
+        }
+
+    # Dataclass format (original)
     peaks = [
         {
             "frequency_hz": _safe_float(p.frequency_hz),
