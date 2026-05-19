@@ -1200,6 +1200,224 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
 
 
 # ---------------------------------------------------------------------------
+# Columnar (memory-efficient) parser
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BBLColumnarSegment:
+    """Memory-efficient columnar segment: NumPy arrays instead of per-frame dicts.
+
+    Each field is stored as a contiguous np.int64 column of length n_frames.
+    This avoids ~1 KB of Python dict/object overhead per frame, saving ~300 MB
+    on a typical 300K-frame log.
+    """
+    header: BBLHeader
+    field_names: List[str]              # ordered field name list
+    columns: Dict[str, np.ndarray]      # field_name → np.int64[n_frames]
+    frame_types: np.ndarray             # np.uint8[n_frames], ord('I') or ord('P')
+    n_frames: int = 0
+    events: List[BBLEvent] = field(default_factory=list)
+
+    def get_column(self, name: str) -> Optional[np.ndarray]:
+        """Get a field column, or None if the field doesn't exist."""
+        return self.columns.get(name)
+
+    @property
+    def available_fields(self) -> set:
+        return set(self.field_names)
+
+    @property
+    def i_frame_count(self) -> int:
+        return int(np.sum(self.frame_types[:self.n_frames] == FRAME_TYPE_I))
+
+    @property
+    def p_frame_count(self) -> int:
+        return int(np.sum(self.frame_types[:self.n_frames] == FRAME_TYPE_P))
+
+
+def _grow_arrays(columns: Dict[str, np.ndarray],
+                 frame_types: np.ndarray,
+                 new_capacity: int) -> np.ndarray:
+    """Double the capacity of all column arrays. Returns new frame_types."""
+    for name in columns:
+        old = columns[name]
+        new = np.zeros(new_capacity, dtype=old.dtype)
+        new[:len(old)] = old
+        columns[name] = new
+    new_ft = np.zeros(new_capacity, dtype=np.uint8)
+    new_ft[:len(frame_types)] = frame_types
+    return new_ft
+
+
+def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSegment]:
+    """Memory-efficient BBL parser — stores frames as NumPy columns, not dicts.
+
+    Functionally equivalent to parse_bbl() but uses ~5-10% of the memory
+    for the frame data. The decode logic is identical; only the storage
+    container changes.
+
+    Parameters
+    ----------
+    data : bytes
+        Complete BBL file content
+    max_segments : int
+        Maximum segments to parse (default 1)
+
+    Returns
+    -------
+    List[BBLColumnarSegment]
+        Parsed segments with columnar frame data
+    """
+    result_segments: List[BBLColumnarSegment] = []
+    reader = BBLStreamReader(data)
+
+    while reader.has_data() and len(result_segments) < max_segments:
+        # Find segment start — "H Product:"
+        found = False
+        while reader.has_data():
+            if reader.peek_byte() == ord('H'):
+                save_pos = reader.pos
+                line = reader.read_line()
+                if line and "H Product:" in line:
+                    reader.pos = save_pos
+                    found = True
+                    break
+            else:
+                reader.pos += 1
+
+        if not found:
+            break
+
+        header = parse_header(reader)
+
+        if not header.i_field_defs:
+            logger.warning("BBL segment has no I-frame field definitions, skipping")
+            continue
+
+        # Pre-allocate columnar storage
+        field_names = [f.name for f in header.i_field_defs]
+        initial_capacity = 8192  # will grow × 2 as needed
+        columns: Dict[str, np.ndarray] = {
+            name: np.zeros(initial_capacity, dtype=np.int64)
+            for name in field_names
+        }
+        frame_types = np.zeros(initial_capacity, dtype=np.uint8)
+        capacity = initial_capacity
+        n_frames = 0
+        events: List[BBLEvent] = []
+
+        # Decode state (same as parse_bbl)
+        prev_values: Dict[str, int] = {}
+        prev_prev_values: Optional[Dict[str, int]] = None
+        prev_slow: Dict[str, int] = {}
+        max_frames = 500_000
+        corrupt_frame_count = 0
+        max_corrupt_frames = 5
+
+        while reader.has_data() and n_frames < max_frames:
+            # Check for new segment header
+            if reader.peek_byte() == ord('H'):
+                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(' '):
+                    save_pos = reader.pos
+                    line_peek = reader.read_line()
+                    if line_peek and "H Product:" in line_peek:
+                        reader.pos = save_pos
+                        break
+                    continue
+
+            frame_marker = reader.read_byte()
+
+            try:
+                if frame_marker == FRAME_TYPE_I:
+                    values = decode_i_frame(reader, header, prev_values, prev_prev_values)
+                    prev_prev_values = values.copy()
+                    prev_values = values.copy()
+
+                    if _has_corrupted_imu_values(values):
+                        corrupt_frame_count += 1
+                        if corrupt_frame_count >= max_corrupt_frames:
+                            logger.warning(
+                                "BBL: %d consecutive corrupted frames at frame %d, "
+                                "stopping segment parse",
+                                corrupt_frame_count, n_frames,
+                            )
+                            break
+                        continue
+                    else:
+                        corrupt_frame_count = 0
+
+                    # Store into columns
+                    if n_frames >= capacity:
+                        capacity *= 2
+                        frame_types = _grow_arrays(columns, frame_types, capacity)
+
+                    for name in field_names:
+                        columns[name][n_frames] = values.get(name, 0)
+                    frame_types[n_frames] = FRAME_TYPE_I
+                    n_frames += 1
+
+                elif frame_marker == FRAME_TYPE_P:
+                    if not prev_values:
+                        reader.skip_to_frame()
+                        continue
+                    values = decode_p_frame(reader, header, prev_values, prev_prev_values)
+                    prev_prev_values = prev_values.copy()
+                    prev_values = values.copy()
+
+                    # Store into columns
+                    if n_frames >= capacity:
+                        capacity *= 2
+                        frame_types = _grow_arrays(columns, frame_types, capacity)
+
+                    for name in field_names:
+                        columns[name][n_frames] = values.get(name, 0)
+                    frame_types[n_frames] = FRAME_TYPE_P
+                    n_frames += 1
+
+                elif frame_marker == FRAME_TYPE_S:
+                    values = decode_s_frame(reader, header, prev_slow)
+                    prev_slow = values.copy()
+
+                elif frame_marker == FRAME_TYPE_E:
+                    event = decode_e_frame(reader, header)
+                    events.append(event)
+
+                else:
+                    ft = reader.skip_to_frame()
+                    if ft is None:
+                        break
+
+            except EOFError:
+                logger.debug("BBL: reached end of data mid-frame at frame %d", n_frames)
+                break
+            except Exception as e:
+                logger.debug("BBL: error decoding frame %d: %s", n_frames, e)
+                ft = reader.skip_to_frame()
+                if ft is None:
+                    break
+
+        # Trim to actual size
+        trimmed_columns = {
+            name: arr[:n_frames].copy() for name, arr in columns.items()
+        }
+        trimmed_ft = frame_types[:n_frames].copy()
+        # Free the oversized arrays
+        del columns, frame_types
+
+        seg = BBLColumnarSegment(
+            header=header,
+            field_names=field_names,
+            columns=trimmed_columns,
+            frame_types=trimmed_ft,
+            n_frames=n_frames,
+            events=events,
+        )
+        result_segments.append(seg)
+
+    return result_segments
+
+
+# ---------------------------------------------------------------------------
 # Utility: extract flight mode from E-frame flags
 # ---------------------------------------------------------------------------
 

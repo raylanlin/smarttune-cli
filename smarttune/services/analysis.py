@@ -36,8 +36,9 @@ def load_flight_data(
 
     Raises SmartTuneError on detection or parse failure.
     """
-    adapter = resolve_adapter(platform, log_path)
-    flight_data = adapter.parse(log_path)
+    _lp = Path(log_path) if isinstance(log_path, str) else log_path
+    adapter = resolve_adapter(platform, _lp)
+    flight_data = adapter.parse(_lp)
     return adapter, flight_data
 
 

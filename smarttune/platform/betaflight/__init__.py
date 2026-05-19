@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 import numpy as np
 
@@ -235,8 +235,9 @@ class BetaflightAdapter(PlatformAdapter):
             填充了 BF 日志数据的统一飞行数据结构
         """
         from smarttune.platform.betaflight.bbl_parser import (
-            parse_bbl, get_primary_mode,
-            EVENT_FLIGHT_MODE,
+            parse_bbl_columnar, get_primary_mode,
+            EVENT_FLIGHT_MODE, BBLColumnarSegment,
+            FRAME_TYPE_I, FRAME_TYPE_P,
         )
 
         if not path.is_file():
@@ -259,14 +260,17 @@ class BetaflightAdapter(PlatformAdapter):
                 hint="Ensure this is a .bbl/.bfl file from Betaflight.",
             )
 
-        # 解析 BBL 数据 — 解析所有段，拼接为连续数据
+        # 解析 BBL 数据 — memory-efficient columnar path
         try:
-            segments = parse_bbl(data, max_segments=10)
+            segments = parse_bbl_columnar(data, max_segments=10)
         except Exception as exc:
             raise ParseError(
                 message=f"BBL parse failed: {exc}",
                 hint="The log file may be corrupted or use an unsupported format version.",
             )
+
+        # Free the raw bytes now that parsing is done
+        del data
 
         if not segments:
             raise ParseError(
@@ -274,23 +278,39 @@ class BetaflightAdapter(PlatformAdapter):
                 hint="The log file may be empty or corrupted.",
             )
 
-        # 拼接所有段的帧（多段飞行/解锁记录合并分析）
+        # Merge columns from all segments
         header = segments[0].header
-        frames = []
-        for seg in segments:
-            if seg.header.i_field_defs:
-                frames.extend(seg.frames)
+        all_events = []
+        column_chunks: List[BBLColumnarSegment] = []
+        total_frames = 0
 
-        if len(frames) < 10:
+        for seg in segments:
+            if seg.n_frames > 0:
+                column_chunks.append(seg)
+                total_frames += seg.n_frames
+            all_events.extend(seg.events)
+
+        if total_frames < 10:
             raise InsufficientPIDDataError(
-                message=f"Too few frames in log ({len(frames)})",
+                message=f"Too few frames in log ({total_frames})",
                 hint="The flight recording may have been too short.",
             )
 
-        # ── 确定可用字段 ────────────────────────────
-        available_fields = set()
-        if frames:
-            available_fields = set(frames[0].values.keys())
+        # Concatenate columns from all segments into single arrays
+        if len(column_chunks) == 1:
+            merged_columns = column_chunks[0].columns
+            merged_ft = column_chunks[0].frame_types
+            available_fields = column_chunks[0].available_fields
+        else:
+            available_fields = column_chunks[0].available_fields
+            merged_columns = {}
+            for name in column_chunks[0].field_names:
+                merged_columns[name] = np.concatenate(
+                    [seg.columns[name] for seg in column_chunks if name in seg.columns]
+                )
+            merged_ft = np.concatenate([seg.frame_types for seg in column_chunks])
+
+        n_frames = total_frames
 
         # ── 提取参数 (从头信息) ────────────────────
         params: Dict[str, float] = {}
@@ -307,9 +327,7 @@ class BetaflightAdapter(PlatformAdapter):
         else:
             sample_rate_hz = loop_rate_hz
 
-        # Account for P interval: BBL logs only every Nth loop iteration
-        # "P interval" header can be "num/denom" (e.g. "1/4") or plain integer (e.g. "4")
-        # Both mean: log every denom-th (or N-th) loop iteration
+        # Account for P interval
         p_interval_str = header.properties.get("P interval", "")
         if '/' in p_interval_str:
             try:
@@ -328,22 +346,15 @@ class BetaflightAdapter(PlatformAdapter):
             except ValueError:
                 pass
 
-        time_field_available = _TIME_FIELD in available_fields
-        timestamps_us = []
-        for f in frames:
-            if time_field_available:
-                timestamps_us.append(f.values.get(_TIME_FIELD, 0))
-            else:
-                timestamps_us.append(f.values.get("loopIteration", 0))
-
-        n_frames = len(frames)
-
-        # For multi-segment logs, the time field may have discontinuities.
-        # Use frame index with fixed dt for reliable timestamps.
-        dt_s = 1.0 / sample_rate_hz  # Use the corrected sample rate
+        dt_s = 1.0 / sample_rate_hz
         timestamps_s = np.arange(n_frames, dtype=np.float64) * dt_s
 
-        timestamps_us = np.array(timestamps_us, dtype=np.float64)
+        # ── Helper to get a column as float64 ──────────
+        def _col_f64(name: str) -> Optional[np.ndarray]:
+            arr = merged_columns.get(name)
+            if arr is not None:
+                return arr.astype(np.float64)
+            return None
 
         # ── 提取 PID 信号 ──────────────────────────
         pid_data: Dict[str, AxisPIDSignal] = {}
@@ -355,21 +366,16 @@ class BetaflightAdapter(PlatformAdapter):
             if gyro_name is None and sp_name is None:
                 continue
 
-            actual = (np.array([f.values.get(gyro_name, 0) for f in frames], dtype=np.float64)
-                      if gyro_name else np.zeros(n_frames))
-            desired = (np.array([f.values.get(sp_name, 0) for f in frames], dtype=np.float64)
-                       if sp_name else np.zeros(n_frames))
+            actual = _col_f64(gyro_name) if gyro_name else np.zeros(n_frames)
+            desired = _col_f64(sp_name) if sp_name else np.zeros(n_frames)
 
-            # BBL P-frame 差值编码在帧丢失时会产生极端跳变，
-            # 清洗超出物理合理范围的异常点。
-            # gyro/setpoint: BF 最大速率一般 ≤ 2000 deg/s (rate_limits)
             rate_limit = 2000.0
             try:
                 rl_str = header.properties.get("rate_limits", "1998,1998,1998")
                 rl_vals = [int(x) for x in rl_str.split(',')]
                 axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}[axis]
                 if axis_idx < len(rl_vals):
-                    rate_limit = float(rl_vals[axis_idx]) * 1.1  # 10% headroom
+                    rate_limit = float(rl_vals[axis_idx]) * 1.1
             except (ValueError, IndexError):
                 pass
             actual = _sanitize_signal(actual, max_abs=rate_limit)
@@ -380,25 +386,10 @@ class BetaflightAdapter(PlatformAdapter):
             d_name = _resolve_field_name(available_fields, _PID_D_FIELDS[axis])
             f_name = _resolve_field_name(available_fields, _PID_F_FIELDS[axis])
 
-            p_term = (np.array([f.values.get(p_name, 0) for f in frames], dtype=np.float64)
-                       if p_name else None)
-            i_term = (np.array([f.values.get(i_name, 0) for f in frames], dtype=np.float64)
-                       if i_name else None)
-            d_term = (np.array([f.values.get(d_name, 0) for f in frames], dtype=np.float64)
-                       if d_name else None)
-            ff_term = (np.array([f.values.get(f_name, 0) for f in frames], dtype=np.float64)
-                        if f_name else None)
-
-            # PID terms: typical range ±500, clamp at ±2000
-            pid_clamp = 2000.0
-            if p_term is not None:
-                p_term = _sanitize_signal(p_term, max_abs=pid_clamp)
-            if i_term is not None:
-                i_term = _sanitize_signal(i_term, max_abs=pid_clamp)
-            if d_term is not None:
-                d_term = _sanitize_signal(d_term, max_abs=pid_clamp)
-            if ff_term is not None:
-                ff_term = _sanitize_signal(ff_term, max_abs=pid_clamp)
+            p_term = _sanitize_signal(_col_f64(p_name), max_abs=2000.0) if p_name else None
+            i_term = _sanitize_signal(_col_f64(i_name), max_abs=2000.0) if i_name else None
+            d_term = _sanitize_signal(_col_f64(d_name), max_abs=2000.0) if d_name else None
+            ff_term = _sanitize_signal(_col_f64(f_name), max_abs=2000.0) if f_name else None
 
             pid_data[axis] = AxisPIDSignal(
                 timestamp_s=timestamps_s.copy(),
@@ -417,13 +408,11 @@ class BetaflightAdapter(PlatformAdapter):
 
         gyro = None
         if gyro_x_name and gyro_y_name and gyro_z_name:
-            gx = np.array([f.values.get(gyro_x_name, 0) for f in frames], dtype=np.float64)
-            gy = np.array([f.values.get(gyro_y_name, 0) for f in frames], dtype=np.float64)
-            gz = np.array([f.values.get(gyro_z_name, 0) for f in frames], dtype=np.float64)
-            gx = _sanitize_signal(gx, max_abs=2000.0)
-            gy = _sanitize_signal(gy, max_abs=2000.0)
-            gz = _sanitize_signal(gz, max_abs=2000.0)
+            gx = _sanitize_signal(_col_f64(gyro_x_name), max_abs=2000.0)
+            gy = _sanitize_signal(_col_f64(gyro_y_name), max_abs=2000.0)
+            gz = _sanitize_signal(_col_f64(gyro_z_name), max_abs=2000.0)
             gyro = np.column_stack([gx, gy, gz])
+            del gx, gy, gz  # free intermediates
 
         # ── 提取加速度 ─────────────────────────────
         acc_x_name = _resolve_field_name(available_fields, _ACCEL_FIELDS["x"])
@@ -432,27 +421,24 @@ class BetaflightAdapter(PlatformAdapter):
 
         accel = None
         if acc_x_name and acc_y_name and acc_z_name:
-            ax = np.array([f.values.get(acc_x_name, 0) for f in frames], dtype=np.float64)
-            ay = np.array([f.values.get(acc_y_name, 0) for f in frames], dtype=np.float64)
-            az = np.array([f.values.get(acc_z_name, 0) for f in frames], dtype=np.float64)
-            # BF BBL logs accSmooth as raw ADC values.
-            # Convert to m/s² using acc_1G from header (varies by accelerometer chip).
+            ax = _col_f64(acc_x_name)
+            ay = _col_f64(acc_y_name)
+            az = _col_f64(acc_z_name)
             acc_1g_raw = params.get("acc_1G", 256)
             try:
                 acc_1g_raw = int(acc_1g_raw)
             except (ValueError, TypeError):
                 acc_1g_raw = 256
             accel = np.column_stack([ax, ay, az]) * (9.80665 / acc_1g_raw)
+            del ax, ay, az
 
         # ── 提取电机输出 ────────────────────────────
         motor_output = None
         motor_names = [m for m in _MOTOR_FIELDS if m in available_fields]
         if motor_names:
-            motor_cols = []
-            for mn in motor_names:
-                motor_cols.append(
-                    np.array([f.values.get(mn, 0) for f in frames], dtype=np.float64))
+            motor_cols = [_col_f64(mn) for mn in motor_names]
             motor_raw = np.column_stack(motor_cols)
+            del motor_cols
             minthrottle = params.get("minthrottle", 1070)
             maxthrottle = params.get("maxthrottle", 2000)
             throttle_range = maxthrottle - minthrottle
@@ -461,20 +447,25 @@ class BetaflightAdapter(PlatformAdapter):
                     (motor_raw - minthrottle) / throttle_range, 0.0, 1.0)
             else:
                 motor_output = motor_raw
+            del motor_raw
+
+        # Free the merged columns now that we've extracted everything
+        i_frame_count = int(np.sum(merged_ft == FRAME_TYPE_I))
+        p_frame_count = int(np.sum(merged_ft == FRAME_TYPE_P))
+        del merged_columns, merged_ft
 
         # ── 提取飞行模式 ──────────────────────────
         mode_changes: List[ModeChange] = []
-        for seg in segments:
-            for event in seg.events:
-                if event.event_type == EVENT_FLIGHT_MODE:
-                    flags = event.data.get("flags", 0)
-                    raw_mode = get_primary_mode(flags)
-                    unified = _MODE_MAP.get(raw_mode, raw_mode.lower())
-                    mode_changes.append(ModeChange(
-                        timestamp_s=0.0,
-                        mode_name=unified,
-                        raw_mode=raw_mode,
-                    ))
+        for event in all_events:
+            if event.event_type == EVENT_FLIGHT_MODE:
+                flags = event.data.get("flags", 0)
+                raw_mode = get_primary_mode(flags)
+                unified = _MODE_MAP.get(raw_mode, raw_mode.lower())
+                mode_changes.append(ModeChange(
+                    timestamp_s=0.0,
+                    mode_name=unified,
+                    raw_mode=raw_mode,
+                ))
 
         # ── 组装 FlightData ─────────────────────────
         duration_s = float(timestamps_s[-1]) if len(timestamps_s) > 1 else 0.0
@@ -499,9 +490,9 @@ class BetaflightAdapter(PlatformAdapter):
                 "firmware_type": header.firmware_type,
                 "data_version": header.data_version,
                 "frame_count": n_frames,
-                "i_frame_count": sum(1 for f in frames if f.frame_type == 'I'),
-                "p_frame_count": sum(1 for f in frames if f.frame_type == 'P'),
-                "event_count": sum(len(s.events) for s in segments),
+                "i_frame_count": i_frame_count,
+                "p_frame_count": p_frame_count,
+                "event_count": len(all_events),
             },
         )
 
