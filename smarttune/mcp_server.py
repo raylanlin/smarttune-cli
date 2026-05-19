@@ -6,6 +6,17 @@ Read-only MCP (Model Context Protocol) server for SmartTune.
 Exposes flight log analysis tools for LLM agents (e.g. OpenClaw customer
 service) without shell execution, arbitrary file writes, or parameter mutation.
 
+Tool parity with CLI:
+  smarttune_list_platforms    ↔  stune platforms
+  smarttune_log_quality      ↔  stune quality
+  smarttune_analyze_log      ↔  stune analyze
+  smarttune_analyze_pid      ↔  stune pid
+  smarttune_analyze_fft      ↔  stune fft
+  smarttune_analyze_magfit   ↔  stune magfit
+  smarttune_analyze_sysid    ↔  stune sysid
+  smarttune_analyze_filter   ↔  stune filter
+  smarttune_analyze_hardware ↔  stune hardware
+
 Security boundaries:
   - No subprocess / os.system / shell commands
   - No arbitrary output paths
@@ -132,13 +143,42 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Helper: wrap service calls with path validation and error handling
+# ---------------------------------------------------------------------------
+
+def _call_service(func, log_path: str, **kwargs) -> str:
+    """Validate path, call service function, return JSON string.
+
+    Catches SmartTuneError and unexpected exceptions, returning them
+    as structured JSON error responses instead of crashing the server.
+    """
+    try:
+        resolved = validate_log_path(log_path)
+    except PathValidationError as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2)
+
+    try:
+        result = func(log_path=resolved, **kwargs)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except SmartTuneError as exc:
+        return json.dumps({
+            "error": exc.message,
+            "code": exc.code,
+            "hint": exc.hint,
+        }, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.exception("Unexpected error in %s", func.__name__)
+        return json.dumps({"error": f"Unexpected error: {exc}"}, ensure_ascii=False, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Markdown report renderer
 # ---------------------------------------------------------------------------
 
 def _render_markdown(result: Dict[str, Any]) -> str:
     """Render analysis result dict as a compact Markdown report."""
     lines: List[str] = []
-    lines.append(f"# SmartTune Analysis Report")
+    lines.append("# SmartTune Analysis Report")
     lines.append("")
     lines.append(f"**Platform:** {result.get('display_name', result.get('platform', 'unknown'))}")
     lines.append(f"**Log file:** {result.get('log_file', 'unknown')}")
@@ -210,20 +250,70 @@ def _render_markdown(result: Dict[str, Any]) -> str:
         hw = modules["hardware"]
         lines.append("## Hardware Configuration")
         lines.append("")
-        version_info = hw.get("version_info", {})
-        sys_info = hw.get("sys_info", {})
-        if version_info.get("firmware"):
-            lines.append(f"- Firmware: {version_info['firmware']}")
-        if sys_info.get("board_name"):
-            lines.append(f"- Board: {sys_info['board_name']}")
-        if sys_info.get("sched_loop_rate"):
-            lines.append(f"- Loop rate: {sys_info['sched_loop_rate']} Hz")
+        if hw.get("firmware"):
+            lines.append(f"- Firmware: {hw['firmware']}")
+        elif hw.get("version_info", {}).get("firmware"):
+            lines.append(f"- Firmware: {hw['version_info']['firmware']}")
+        if hw.get("board_name"):
+            lines.append(f"- Board: {hw['board_name']}")
+        elif hw.get("sys_info", {}).get("board_name"):
+            lines.append(f"- Board: {hw['sys_info']['board_name']}")
         issues = hw.get("integrity_issues", [])
         if issues:
             lines.append("- Issues:")
             for issue in issues:
                 lines.append(f"  - {issue}")
         lines.append("")
+
+    # SysID
+    if "sysid" in modules:
+        sysid = modules["sysid"]
+        lines.append("## System Identification (ARX)")
+        lines.append("")
+        for axis_name, axis_data in sysid.get("axes", {}).items():
+            lines.append(f"### {axis_name.capitalize()} Axis")
+            cont = axis_data.get("continuous_approximation", {})
+            pid_rec = axis_data.get("pid_recommendations", {})
+            fit = axis_data.get("fit_quality", {})
+            if cont:
+                lines.append(f"- Natural frequency: {cont.get('natural_freq_hz', '?')} Hz")
+                lines.append(f"- Damping ratio: {cont.get('damping_ratio', '?')}")
+            if pid_rec:
+                lines.append(f"- Suggested bandwidth: {pid_rec.get('suggested_bandwidth_hz', '?')} Hz")
+                lines.append(f"- Suggested P gain: {pid_rec.get('suggested_p_gain', '?')}")
+            if fit:
+                lines.append(f"- Fit quality: {fit.get('fit_percent', '?')}%")
+            lines.append("")
+
+    # Filter
+    if "filter" in modules:
+        filt = modules["filter"]
+        lines.append("## Filter Transfer Function")
+        lines.append("")
+        lines.append(f"- Config: {filt.get('config_summary', 'N/A')}")
+        if filt.get("cutoff_3db_hz"):
+            lines.append(f"- -3dB cutoff: {filt['cutoff_3db_hz']} Hz")
+        kfr = filt.get("key_frequency_response", [])
+        if kfr:
+            lines.append("")
+            lines.append("| Freq (Hz) | Magnitude (dB) | Phase (°) |")
+            lines.append("|-----------|----------------|-----------|")
+            for pt in kfr:
+                lines.append(f"| {pt['frequency_hz']} | {pt['magnitude_db']} | {pt['phase_deg']} |")
+        lines.append("")
+
+    # Extra analyzers
+    if "extra" in modules:
+        lines.append("## Platform-Specific Analysis")
+        lines.append("")
+        for name, data in modules["extra"].items():
+            lines.append(f"### {name}")
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    lines.append(f"- {k}: {v}")
+            else:
+                lines.append(str(data))
+            lines.append("")
 
     # Module failures
     failures = result.get("module_failures", [])
@@ -242,27 +332,47 @@ def _render_markdown(result: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool annotations — shared across all tools
+# ---------------------------------------------------------------------------
+
+_READ_ONLY_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(
     "smarttune_mcp",
     instructions=(
-        "SmartTune MCP — Read-only flight log analysis tools. "
-        "Supports ArduPilot, Betaflight, and PX4 logs. "
-        "All tools are safe, idempotent, and never write parameters."
+        "SmartTune MCP — Read-only flight log analysis tools for multi-rotor drones. "
+        "Supports ArduPilot (.bin/.log), Betaflight (.bbl/.bfl), and PX4 (.ulg) logs. "
+        "All tools are safe, idempotent, and never write parameters to the flight controller.\n\n"
+        "Available tools:\n"
+        "  smarttune_list_platforms    — List supported platforms and capabilities\n"
+        "  smarttune_log_quality      — Assess log data quality before analysis\n"
+        "  smarttune_analyze_log      — Comprehensive analysis (all modules)\n"
+        "  smarttune_analyze_pid      — PID step response analysis\n"
+        "  smarttune_analyze_fft      — FFT vibration spectrum analysis\n"
+        "  smarttune_analyze_magfit   — Magnetometer calibration analysis\n"
+        "  smarttune_analyze_sysid    — ARX system identification\n"
+        "  smarttune_analyze_filter   — Filter transfer function (Bode plot)\n"
+        "  smarttune_analyze_hardware — Hardware configuration report\n"
+        "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n\n"
+        "Recommended workflow: list_platforms → log_quality → analyze_log (or individual tools)\n"
+        "For visual reports: analyze first, then generate_plot for the relevant chart type."
     ),
 )
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
-)
+# ── 1. List Platforms ──────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_platforms() -> str:
     """List all supported flight controller platforms, their log file extensions, and analysis capabilities.
 
@@ -275,7 +385,6 @@ def smarttune_list_platforms() -> str:
     for p in platforms:
         if isinstance(p.get("capabilities"), str):
             p["capabilities"] = [c.strip() for c in p["capabilities"].split(",") if c.strip()]
-        # Mark which extensions the MCP server actually accepts
         if isinstance(p.get("extensions"), str):
             cli_exts = [e.strip() for e in p["extensions"].split(",") if e.strip()]
         else:
@@ -290,55 +399,30 @@ def smarttune_list_platforms() -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
-)
+# ── 2. Log Quality ────────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_log_quality(
     log_path: str,
     platform: str = "auto",
 ) -> str:
-    """Parse a flight log and assess its quality for analysis.
+    """Assess flight log data quality for analysis.
 
-    Returns JSON with platform info, data availability flags, duration,
-    sample rate, validation issues, and a quality score/rating.
+    Evaluates data completeness (PID, gyro, mag, motor, battery), flight duration,
+    stick excitation (step response windows per axis), and sample rate consistency
+    (jitter, drop rate). Returns a quality score (0-100) with rating and advice.
 
     Args:
         log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
         platform: Platform override — "auto" (default), "ardupilot", "betaflight", or "px4".
     """
-    try:
-        resolved = validate_log_path(log_path)
-    except PathValidationError as exc:
-        return json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2)
-
-    try:
-        from smarttune.services.analysis import get_log_quality
-        result = get_log_quality(resolved, platform=platform)
-        return json.dumps(result, ensure_ascii=False, indent=2)
-    except SmartTuneError as exc:
-        return json.dumps({
-            "error": exc.message,
-            "code": exc.code,
-            "hint": exc.hint,
-        }, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        logger.exception("Unexpected error in smarttune_log_quality")
-        return json.dumps({"error": f"Unexpected error: {exc}"}, ensure_ascii=False, indent=2)
+    from smarttune.services.analysis import get_log_quality
+    return _call_service(get_log_quality, log_path, platform=platform)
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
-)
+# ── 3. Comprehensive Analysis ─────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_log(
     log_path: str,
     platform: str = "auto",
@@ -349,14 +433,15 @@ def smarttune_analyze_log(
 ) -> str:
     """Run comprehensive flight log analysis and return structured recommendations.
 
-    Analyzes PID tuning, vibration (FFT), magnetometer calibration, and hardware
-    configuration. Returns compact results suitable for explaining to users.
+    Runs all available analysis modules: PID tuning, vibration (FFT), magnetometer
+    calibration, hardware config, system identification (ARX), and filter transfer
+    function. Returns compact results suitable for explaining to users.
 
     Args:
         log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
         platform: Platform override — "auto" (default), "ardupilot", "betaflight", or "px4".
         axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
-        include_modules: Subset of ["pid", "fft", "magfit", "hardware", "filter"]. None = all available.
+        include_modules: Subset of ["pid", "fft", "magfit", "hardware", "filter", "sysid"]. None = all available.
         response_format: Output format — "json" (default) or "markdown".
         max_recommendations: Maximum number of parameter recommendations (1–100, default 20).
     """
@@ -372,7 +457,7 @@ def smarttune_analyze_log(
         return json.dumps({"error": f"Invalid response_format: {response_format!r}. Must be json or markdown."})
 
     # Validate include_modules
-    valid_modules = {"pid", "fft", "magfit", "hardware", "filter"}
+    valid_modules = {"pid", "fft", "magfit", "hardware", "filter", "sysid"}
     if include_modules is not None:
         invalid = set(include_modules) - valid_modules
         if invalid:
@@ -407,6 +492,223 @@ def smarttune_analyze_log(
     except Exception as exc:
         logger.exception("Unexpected error in smarttune_analyze_log")
         return json.dumps({"error": f"Unexpected error: {exc}"}, ensure_ascii=False, indent=2)
+
+
+# ── 4. PID Analysis ───────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_pid(
+    log_path: str,
+    platform: str = "auto",
+    axis: str = "all",
+    max_recommendations: int = 20,
+) -> str:
+    """PID step response analysis — detect step responses and evaluate tuning quality.
+
+    Analyzes stick-input step responses and evaluates rise time, overshoot,
+    settling time, oscillation count. Provides per-axis diagnostics with
+    specific parameter tuning recommendations.
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
+        max_recommendations: Maximum parameter recommendations (1–100, default 20).
+    """
+    if axis not in ("all", "roll", "pitch", "yaw"):
+        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+
+    from smarttune.services.analysis import analyze_pid
+    return _call_service(
+        analyze_pid, log_path,
+        platform=platform, axis=axis,
+        max_recommendations=max(1, min(100, max_recommendations)),
+    )
+
+
+# ── 5. FFT Analysis ───────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_fft(
+    log_path: str,
+    platform: str = "auto",
+    max_recommendations: int = 20,
+) -> str:
+    """FFT vibration spectrum analysis — identify vibration frequencies and severity.
+
+    Analyzes gyro data to identify vibration peaks, noise floor, and suggests
+    notch filter parameters (e.g. INS_HNTCH_FREQ, INS_HNTCH_BW for ArduPilot).
+    Returns vibration severity rating (EXCELLENT/GOOD/MARGINAL/POOR).
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        max_recommendations: Maximum parameter recommendations (1–100, default 20).
+    """
+    from smarttune.services.analysis import analyze_fft
+    return _call_service(
+        analyze_fft, log_path,
+        platform=platform,
+        max_recommendations=max(1, min(100, max_recommendations)),
+    )
+
+
+# ── 6. MagFit Analysis ────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_magfit(
+    log_path: str,
+    platform: str = "auto",
+    max_recommendations: int = 20,
+) -> str:
+    """Magnetometer calibration analysis — evaluate compass calibration quality.
+
+    Evaluates compass fitness score (mGauss), hard/soft iron interference,
+    flight coverage (yaw/pitch/roll range), and provides calibration
+    offset recommendations.
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        max_recommendations: Maximum parameter recommendations (1–100, default 20).
+    """
+    from smarttune.services.analysis import analyze_magfit
+    return _call_service(
+        analyze_magfit, log_path,
+        platform=platform,
+        max_recommendations=max(1, min(100, max_recommendations)),
+    )
+
+
+# ── 7. System Identification ──────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_sysid(
+    log_path: str,
+    platform: str = "auto",
+    axis: str = "all",
+    na: int = 3,
+    nb: int = 2,
+) -> str:
+    """ARX system identification — estimate transfer function from flight data.
+
+    Fits an ARX(na,nb) model to PID rate data, extracts natural frequency,
+    damping ratio, DC gain, and provides PID bandwidth recommendations.
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
+        na: ARX model A polynomial order (default 3).
+        nb: ARX model B polynomial order (default 2).
+    """
+    if axis not in ("all", "roll", "pitch", "yaw"):
+        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+    na = max(1, min(10, na))
+    nb = max(1, min(10, nb))
+
+    from smarttune.services.analysis import analyze_sysid
+    return _call_service(
+        analyze_sysid, log_path,
+        platform=platform, axis=axis, na=na, nb=nb,
+    )
+
+
+# ── 8. Filter Analysis ────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_filter(
+    log_path: str,
+    platform: str = "auto",
+    gyro_filter_hz: Optional[float] = None,
+    notch_freq_hz: Optional[float] = None,
+    auto_derive: bool = True,
+) -> str:
+    """Filter transfer function analysis (Bode plot data).
+
+    Two modes:
+      - Auto mode (default): derive filter config from log parameters
+      - Manual mode: specify gyro_filter_hz / notch_freq_hz directly
+
+    Returns key frequency response points, -3dB cutoff, config summary,
+    and filter chain details (auto mode).
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        gyro_filter_hz: Override GYRO_FILTER cutoff frequency (Hz). Switches to manual mode.
+        notch_freq_hz: Specify Notch center frequency (Hz). Switches to manual mode.
+        auto_derive: Auto-derive filter config from log parameters (default: true).
+    """
+    from smarttune.services.analysis import analyze_filter
+    return _call_service(
+        analyze_filter, log_path,
+        platform=platform,
+        gyro_filter_hz=gyro_filter_hz,
+        notch_freq_hz=notch_freq_hz,
+        auto_derive=auto_derive,
+    )
+
+
+# ── 9. Hardware Report ─────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_analyze_hardware(
+    log_path: str,
+    platform: str = "auto",
+) -> str:
+    """Hardware configuration report — sensor setup, filter config, PID parameters.
+
+    Displays IMU setup (gyro/accel IDs, calibration status), compass configuration,
+    active filter settings, rate PID parameters, battery report, and firmware/board info.
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+    """
+    from smarttune.services.analysis import analyze_hardware
+    return _call_service(analyze_hardware, log_path, platform=platform)
+
+
+# ── 10. Plot Generation ──────────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_generate_plot(
+    log_path: str,
+    plot_type: str = "pid",
+    platform: str = "auto",
+    axis: str = "all",
+    theme: str = "light",
+) -> str:
+    """Generate an analysis chart as a base64 PNG image.
+
+    Returns a data URL (data:image/png;base64,...) that can be displayed
+    directly in an <img> tag or rendered by an agent's image viewer.
+
+    Available plot types:
+      - "pid"    — PID step response curve (per axis)
+      - "fft"    — FFT vibration spectrum with peak annotations
+      - "filter" — Filter Bode plot (magnitude + phase)
+
+    Args:
+        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        plot_type: Chart type — "pid" (default), "fft", or "filter".
+        platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
+        axis: Axis for PID plot — "all" (default), "roll", "pitch", or "yaw".
+        theme: Color theme — "light" (default) or "dark".
+    """
+    if plot_type not in ("pid", "fft", "filter"):
+        return json.dumps({"error": f"Invalid plot_type: {plot_type!r}. Must be pid, fft, or filter."})
+    if axis not in ("all", "roll", "pitch", "yaw"):
+        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+    if theme not in ("light", "dark"):
+        return json.dumps({"error": f"Invalid theme: {theme!r}. Must be light or dark."})
+
+    from smarttune.services.plot import generate_plot
+    return _call_service(
+        generate_plot, log_path,
+        platform=platform, plot_type=plot_type, axis=axis, theme=theme,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -252,6 +252,69 @@ def serialize_hardware_report(report: HardwareReport) -> Dict[str, Any]:
     }
 
 
+def serialize_sysid_results(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize system identification results.
+
+    Accepts a dict of {axis_name: SysIDResult} from SysIDAnalyzer.analyze().
+    """
+    axes: Dict[str, Any] = {}
+    for axis_name, result in results.items():
+        # SysIDResult has a .to_dict() method
+        if hasattr(result, 'to_dict'):
+            axes[axis_name] = result.to_dict()
+        elif isinstance(result, dict):
+            axes[axis_name] = to_jsonable(result)
+        else:
+            axes[axis_name] = to_jsonable(result)
+    return {"axes": axes}
+
+
+def serialize_filter_result(
+    cutoff_3db_hz: Optional[float],
+    config_summary: str,
+    freqs: Any,
+    mag_db: Any,
+    phase_deg: Any,
+    sample_rate_hz: float,
+) -> Dict[str, Any]:
+    """Serialize filter transfer function analysis to a compact dict.
+
+    Returns key frequency points instead of full arrays.
+    """
+    key_freqs_list = [1, 5, 10, 20, 40, 80, 120, 200]
+    key_points = []
+    if _HAS_NUMPY and isinstance(freqs, np.ndarray):
+        for fk in key_freqs_list:
+            if fk >= freqs[-1]:
+                break
+            idx = int(np.argmin(np.abs(freqs - fk)))
+            key_points.append({
+                "frequency_hz": fk,
+                "magnitude_db": round(float(mag_db[idx]), 1),
+                "phase_deg": round(float(phase_deg[idx]), 1),
+            })
+
+    return {
+        "config_summary": config_summary,
+        "cutoff_3db_hz": round(cutoff_3db_hz, 1) if cutoff_3db_hz is not None else None,
+        "key_frequency_response": key_points,
+        "sample_rate_hz": round(sample_rate_hz, 1),
+    }
+
+
+def serialize_extra_analyzers_results(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize results from platform extra analyzers (e.g. Betaflight FF/RPM/DTerm)."""
+    out: Dict[str, Any] = {}
+    for name, result in results.items():
+        if hasattr(result, 'to_dict'):
+            out[name] = result.to_dict()
+        elif isinstance(result, dict):
+            out[name] = to_jsonable(result)
+        else:
+            out[name] = to_jsonable(result)
+    return out
+
+
 def serialize_full_result(
     result: FullAnalysisResult,
     adapter: Optional[PlatformAdapter] = None,
