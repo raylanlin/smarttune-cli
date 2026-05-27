@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-2.3.1-blue?logo=github" alt="v2.3.1" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.0.0-blue?logo=github" alt="v3.0.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
-  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-96%20passed-brightgreen" alt="Tests" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-141%20passed-brightgreen" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -25,8 +25,8 @@
 
 ---
 
-> **Pip-install SmartTune, point it at a flight log, and your agent comes back with exact parameter deltas — not vague "try lowering P."**  
-> Every output is structured JSON or Markdown. No TUI, no blocking prompts, no ANSI escape codes to strip. The CLI was designed from day one to be invoked by an LLM agent as a subprocess tool — OpenClaw, Hermes, QwenPaw, Codex, Claude Code. Any agent that can shell out to `subprocess.run()` can use it.  
+> **Pip-install SmartTune, point it at a flight log, and your agent comes back with exact parameter deltas — validated against real firmware parameter tables.**  
+> No more guessing: `stune params --validate` checks every recommendation before it reaches the user.  
 >  
 > Under the hood: ArduPilot step-response analysis replicates WebTools PIDReview.js via Wiener deconvolution. Betaflight blackbox logs are parsed by a 1000+ line pure-Python decoder (no C extensions, no Node.js). All three platforms output to one `FlightData` dataclass so analyzers work identically across APM/BF/PX4. The 6-layer knowledge base is plain JSON — agents can read rules and propose new ones by editing `~/.smarttune/knowledge/`.
 
@@ -103,15 +103,30 @@ smarttune-mcp          # stdio transport (for agent frameworks)
 python -m smarttune.mcp_server
 ```
 
-**Available MCP tools:**
+**Available MCP tools (13 total):**
 
 | Tool | Purpose |
 |------|---------|
 | `smarttune_list_platforms` | List supported platforms, extensions, and capabilities |
-| `smarttune_log_quality` | Parse a log and return quality score, data availability, validation issues |
-| `smarttune_analyze_log` | Run full analysis (PID + FFT + MagFit + hardware) and return structured JSON or Markdown |
+| `smarttune_log_quality` | Parse log and return quality score, data availability, validation issues |
+| `smarttune_analyze_log` | Full analysis (PID + FFT + Filter + Mag + SysID + Hardware) as JSON/Markdown |
+| `smarttune_analyze_pid` | PID step response analysis per axis |
+| `smarttune_analyze_fft` | FFT vibration spectrum with peak detection |
+| `smarttune_analyze_magfit` | Magnetometer calibration analysis |
+| `smarttune_analyze_sysid` | ARX system identification (natural freq, damping ratio) |
+| `smarttune_analyze_filter` | Filter transfer function analysis (Bode plot data) |
+| `smarttune_analyze_hardware` | Hardware configuration report |
+| `smarttune_generate_plot` | Generate analysis chart as base64 PNG |
+| `smarttune_list_params` | **NEW v3.0** — List firmware parameters for a platform |
+| `smarttune_search_params` | **NEW v3.0** — Search parameters by keyword across platforms |
+| `smarttune_validate_param` | **NEW v3.0** — ⚠️ Validate param exists + value in range before recommending |
 
 All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`.
+
+**⚠️ Parameter validation is mandatory.** Before recommending ANY parameter change, call `smarttune_validate_param(param_name, value, platform)`. This prevents agents from suggesting parameters that don't exist in the target firmware — a critical issue because:
+- Betaflight 4.5+ renamed many parameters (`d_min_roll` → `d_max_roll`, `gyro_lowpass_hz` → `gyro_lpf1_static_hz`)
+- Parameter names differ between firmware versions
+- Some parameters have strict value ranges that must be respected
 
 **Security boundary:**
 
@@ -296,6 +311,30 @@ List all available platform adapters and their capabilities.
 ```bash
 stune platforms
 ```
+
+### `stune params` 🆕 v3.0
+
+Query and validate firmware parameter tables. Data scraped from official firmware source code.
+
+```bash
+# List all parameters for a platform
+stune params ap                      # ArduPilot (2,574 params)
+stune params bf                      # Betaflight (45 params, BF 4.5+ names)
+stune params px4                     # PX4 (20 params)
+
+# Show parameter details
+stune params ATC_RAT_RLL_P           # Auto-detects platform
+
+# ⚠️ Validate before recommending (exit 0 = valid, 1 = invalid)
+stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot
+stune params --validate p_roll 999 -p betaflight     # fails: exceeds max
+
+# Search and filter
+stune params --search notch          # Cross-platform search
+stune params --category pid -p betaflight
+```
+
+**Architecture**: Parameters stored in `smarttune/knowledge/params/<platform>.json`. Update JSON to refresh — no code changes needed. See [Knowledge Base](#knowledge-base).
 
 ---
 
@@ -575,10 +614,11 @@ stune analyze -i flight.bin
 | v1.x | ArduPilot full support | ✅ |
 | v2.0 Phase 1 | Multi-platform architecture | ✅ |
 | v2.0 Phase 2 | Betaflight BBL parser + analytics | ✅ |
-| **v2.1** | Platform-specific analyzers + Protocol constraints | ✅ |
-| **v2.2** | Full English docs, CLI --help, OpenClaw SKILL.md | ✅ |
-| v2.x | PX4 ULog adapter | 🔲 |
-| v3.0 | Tool-calling manifest, plugin system, web UI | 🔲 |
+| v2.1 | Platform-specific analyzers + Protocol constraints | ✅ |
+| v2.2 | Full English docs, CLI --help, OpenClaw SKILL.md | ✅ |
+| v2.4 | Technical debt cleanup + HTML report parity | ✅ |
+| **v3.0** | **Firmware parameter tables + MCP validation tools + knowledge base** | ✅ |
+| v3.x | PX4 ULog adapter, tool-calling manifest, web UI | 🔲 |
 
 ---
 
