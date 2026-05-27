@@ -44,6 +44,18 @@ stune platforms
 2. **Terminal output by default**: no `-o` flag → stdout only
 3. **Optional charts**: add `--visual` for matplotlib plots
 4. **Cleanup after analysis**: delete raw `.bin/.log/.bbl/.ulg` files after processing
+5. **⚠️ MANDATORY: Validate parameters before recommending**. After analysis generates tuning suggestions, you MUST verify each parameter exists in the target firmware by running:
+   ```bash
+   stune params --validate <PARAM_NAME> <VALUE> -p <platform>
+   ```
+   If validation fails (exit code 1), do NOT recommend that parameter — it may not exist in the firmware, or the value is out of valid range. Find an alternative or tell the user the parameter is not available.
+
+   This is critical because:
+   - Betaflight 4.5+ renamed many parameters (e.g., `d_min_roll` → `d_max_roll`, `gyro_lowpass_hz` → `gyro_lpf1_static_hz`)
+   - Parameter names differ between firmware versions
+   - Some parameters have strict value ranges that must be respected
+
+   **Never** blindly output parameter recommendations without validation.
 
 ⚠️ Analysis done = output results. No residual files needed.
 
@@ -88,6 +100,32 @@ stune analyze -i flight.bbl
 # Manual override
 stune analyze -i flight.bin --platform ardupilot
 ```
+
+### Parameter Validation Workflow (MANDATORY)
+
+After analysis produces recommendations, always validate:
+
+```bash
+# 1. Run analysis
+stune pid -i flight.bin -a roll
+# → Recommends: ATC_RAT_RLL_P: 0.12 → 0.15
+
+# 2. Validate the parameter exists and value is in range
+stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot
+# → ✓ ATC_RAT_RLL_P: 0.150 within [0.010, 1.000]
+# OK, proceed to recommend
+
+# 3. If validation fails
+stune params --validate XYZZY_PARAM 0.5 -p ardupilot
+# → ✗ XYZZY_PARAM: NOT FOUND in ArduPilot parameter table
+# DO NOT recommend — parameter doesn't exist in this firmware
+
+# 4. Also search to find correct param name if unsure
+stune params --search "feedforward" --platform betaflight
+# → Shows actual BF 4.5+ parameter names (f_roll, etc.)
+```
+
+**Rule: One `stune params --validate` call per recommended parameter before presenting results.**
 
 ## Command Reference
 
@@ -174,6 +212,35 @@ Magnetometer calibration analysis — Fitness assessment, hard/soft iron interfe
 ```bash
 stune magfit -i flight.bin
 ```
+
+### stune params
+
+Query and validate firmware parameter tables. Data sourced from official firmware repositories.
+
+```bash
+# List all parameters for a platform
+stune params ap                           # ArduPilot (2,574 params)
+stune params bf                           # Betaflight (45 params)
+stune params px4                          # PX4 (20 params)
+
+# Show detail for a specific parameter
+stune params ATC_RAT_RLL_P                # auto-detects platform
+stune params p_roll                       # Betaflight param
+
+# Search across all platforms
+stune params --search notch
+stune params --search roll --platform ardupilot
+
+# Filter by category
+stune params --category pid --platform betaflight
+
+# Validate a parameter recommendation (CRITICAL for agents)
+stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot   # exit 0 if valid
+stune params --validate XYZZY_PARAM 0.0 -p ardupilot       # exit 1 if not found
+stune params --validate p_roll 500 -p betaflight           # exit 1 if out of range
+```
+
+**Parameter tables are loaded from knowledge base JSON files** (`smarttune/knowledge/params/`). Update the JSON to refresh parameters without code changes. Parameters scraped from official firmware source code — ArduPilot from `@Param` annotations, Betaflight from `settings.c`, PX4 from YAML definitions.
 
 ## Platform Support Matrix
 

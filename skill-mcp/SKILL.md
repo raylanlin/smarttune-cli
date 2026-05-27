@@ -17,6 +17,7 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 * Do not modify logs, parameters, firmware, local files, or aircraft configuration.
 * Use only the SmartTune MCP tools listed below.
 * If these tools are unavailable, say SmartTune MCP is not connected and ask the operator to enable the MCP server.
+* **Parameter recommendations must be conservative**: MCP agents cannot validate parameters against firmware tables directly. If recommending parameter changes, note the parameter name comes from the analysis tool and should be verified against the actual firmware. The CLI-based `stune params --validate` command is the authoritative way to check parameter existence and value ranges.
 
 ## Available MCP Tools (10 total)
 
@@ -100,6 +101,7 @@ The tool returns both `image_base64` (data URL for inline display) and `file_pat
 * Explain the main fault signals in plain language.
 * Give conservative tuning advice and separate confidence from assumptions.
 * Recommend one change at a time and ask for a new log after changes.
+* **Parameter names**: Analysis tools output generic or platform-specific parameter names. These may differ between firmware versions (e.g., Betaflight 4.5+ renamed `d_min_roll` to `d_max_roll`). Using the CLI command `stune params --validate <name> <value> -p <platform>` is the authoritative way to verify a parameter exists before applying changes.
 * Do not claim an aircraft is safe to fly. Say what the log does and does not support.
 * Do not paste raw JSON unless the user asks for machine-readable output.
 
