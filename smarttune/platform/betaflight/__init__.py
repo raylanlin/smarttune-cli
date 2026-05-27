@@ -30,44 +30,60 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _PARAM_MAP_TO_PLATFORM = {
-    # PID gains
-    "pid.roll.p":    "pid_roll_p",
-    "pid.roll.i":    "pid_roll_i",
-    "pid.roll.d":    "pid_roll_d",
-    "pid.roll.ff":   "pid_roll_f",       # BF 4.x: feedforward
-    "pid.pitch.p":   "pid_pitch_p",
-    "pid.pitch.i":   "pid_pitch_i",
-    "pid.pitch.d":   "pid_pitch_d",
-    "pid.pitch.ff":  "pid_pitch_f",
-    "pid.yaw.p":     "pid_yaw_p",
-    "pid.yaw.i":     "pid_yaw_i",
-    "pid.yaw.d":     "pid_yaw_d",
-    "pid.yaw.ff":    "pid_yaw_f",
-    # Filters
-    "filter.gyro_lpf":      "gyro_lowpass_hz",
-    "filter.gyro_lpf2":     "gyro_lowpass2_hz",
-    "filter.accel_lpf":     "acc_lpf_hz",
-    "filter.dterm_lpf":     "dterm_lowpass_hz",
-    "filter.notch1.enable": "gyro_notch_hz",
+    # PID gains (BF 4.5+ parameter names)
+    "pid.roll.p":    "p_roll",
+    "pid.roll.i":    "i_roll",
+    "pid.roll.d":    "d_roll",
+    "pid.roll.ff":   "f_roll",
+    "pid.pitch.p":   "p_pitch",
+    "pid.pitch.i":   "i_pitch",
+    "pid.pitch.d":   "d_pitch",
+    "pid.pitch.ff":  "f_pitch",
+    "pid.yaw.p":     "p_yaw",
+    "pid.yaw.i":     "i_yaw",
+    "pid.yaw.d":     "d_yaw",
+    "pid.yaw.ff":    "f_yaw",
+    # BF-specific (BF 4.5+ renamed d_min → d_max)
+    "pid.roll.d_min":    "d_max_roll",
+    "pid.pitch.d_min":   "d_max_pitch",
+    "pid.yaw.d_min":     "d_max_yaw",
+    "pid.anti_gravity":  "anti_gravity_gain",
+    "pid.feedforward_trans": "feedforward_transition",
+    "pid.iterm_relax":   "iterm_relax_cutoff",
+    # Filters (BF 4.5+ naming: gyro_lowpass_hz → gyro_lpf1_static_hz)
+    "filter.gyro_lpf":      "gyro_lpf1_static_hz",
+    "filter.gyro_lpf2":     "gyro_lpf2_static_hz",
+    "filter.dterm_lpf":     "dterm_lpf1_static_hz",
+    "filter.dterm_lpf2":    "dterm_lpf2_static_hz",
     "filter.notch1.freq":   "gyro_notch1_hz",
     "filter.notch1.bw":     "gyro_notch1_cutoff",
-    "filter.notch1.att":    "gyro_notch1_q",
-    "filter.notch1.mode":   "gyro_notch1_type",
-    "filter.notch1.ref":    "gyro_notch1_ref",
-    "filter.notch1.hmc":    "gyro_notch1_harmonics",
-    "filter.notch2.enable": "gyro_notch2_hz",
     "filter.notch2.freq":   "gyro_notch2_hz",
     "filter.notch2.bw":     "gyro_notch2_cutoff",
-    "filter.notch2.att":    "gyro_notch2_q",
-    "filter.notch2.mode":   "gyro_notch2_type",
-    # Betaflight-specific
-    "pid.roll.d_min":    "d_min_roll",
-    "pid.pitch.d_min":   "d_min_pitch",
-    "pid.yaw.d_min":     "d_min_yaw",
-    "pid.anti_gravity":  "anti_gravity_gain",
+    # Dynamic notch / RPM filter
+    "filter.dyn_notch_count": "dyn_notch_count",
+    "filter.dyn_notch_q":    "dyn_notch_q",
+    "filter.dyn_notch_min":  "dyn_notch_min_hz",
+    "filter.dyn_notch_max":  "dyn_notch_max_hz",
+    "filter.rpm_harmonics":  "rpm_filter_harmonics",
+    "filter.rpm_min":        "rpm_filter_min_hz",
+}
+
+# Old-format fallback names (for reading logs with older BF firmware)
+_PARAM_MAP_TO_PLATFORM_LEGACY = {
+    "pid.roll.p": "pid_roll_p", "pid.roll.i": "pid_roll_i",
+    "pid.roll.d": "pid_roll_d", "pid.roll.ff": "pid_roll_f",
+    "pid.pitch.p": "pid_pitch_p", "pid.pitch.i": "pid_pitch_i",
+    "pid.pitch.d": "pid_pitch_d", "pid.pitch.ff": "pid_pitch_f",
+    "pid.yaw.p": "pid_yaw_p", "pid.yaw.i": "pid_yaw_i",
+    "pid.yaw.d": "pid_yaw_d", "pid.yaw.ff": "pid_yaw_f",
+    "filter.gyro_lpf": "gyro_lowpass_hz",
+    "filter.gyro_lpf2": "gyro_lowpass2_hz",
+    "filter.dterm_lpf": "dterm_lowpass_hz",
 }
 
 _PARAM_MAP_TO_GENERIC = {v: k for k, v in _PARAM_MAP_TO_PLATFORM.items()}
+# Merge legacy map into reverse for backward compat
+_PARAM_MAP_TO_GENERIC.update({v: k for k, v in _PARAM_MAP_TO_PLATFORM_LEGACY.items()})
 
 # Betaflight 模式映射
 _MODE_MAP = {

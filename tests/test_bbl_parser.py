@@ -737,12 +737,16 @@ class TestBBLParamMapping(unittest.TestCase):
             self.assertIn("pid_roll_p", fd.params)
             self.assertEqual(fd.params["pid_roll_p"], 45.0)
 
-            # 参数映射
-            generic = adapter.map_param_to_generic("pid_roll_p")
+            # 参数映射 — new names for BF 4.5+
+            generic = adapter.map_param_to_generic("p_roll")
             self.assertEqual(generic, "pid.roll.p")
 
             platform = adapter.map_param_to_platform("pid.roll.p")
-            self.assertEqual(platform, "pid_roll_p")
+            self.assertEqual(platform, "p_roll")
+
+            # 也支持旧参数名的反向查找
+            generic_old = adapter.map_param_to_generic("pid_roll_p")
+            self.assertEqual(generic_old, "pid.roll.p")
 
 
 class TestBBLMultiSegment(unittest.TestCase):

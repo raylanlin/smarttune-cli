@@ -38,19 +38,26 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     """
     从 Betaflight 参数构建近似滤波器描述（供 compute_filter_response 使用）。
 
-    BF 参数来源（BBL header properties）：
-        gyro_lowpass_hz        — 陀螺一阶 LPF
-        gyro_lowpass2_hz       — 陀螺二阶 LPF（取更低值作为等效 LPF）
-        gyro_notch1_hz         — 固定陷波中心频率
-        gyro_notch1_cutoff     — 陷波截止（近似带宽）
-        dterm_lowpass_hz       — D-term LPF（暂不渲染，仅记录）
+    支持 BF 4.3 旧参数名和 BF 4.5+ 新参数名（兼容不同版本的 BBL 日志）。
+
+    BF 4.5+ 参数名:
+        gyro_lpf1_static_hz   — 陀螺一阶 LPF（替代 gyro_lowpass_hz）
+        gyro_lpf2_static_hz   — 陀螺二阶 LPF（替代 gyro_lowpass2_hz）
+        dterm_lpf1_static_hz  — D-term LPF（替代 dterm_lowpass_hz）
+        gyro_notch1_hz        — 固定陷波中心频率
+        gyro_notch1_cutoff    — 陷波截止（近似带宽）
 
     Returns
     -------
     Dict with keys: gyro_lpf, notch_filters, config_summary, _bf_raw
     """
-    lpf1 = float(params.get("gyro_lowpass_hz",  0.0))
-    lpf2 = float(params.get("gyro_lowpass2_hz", 0.0))
+    # Support both old (BF <4.5) and new (BF 4.5+) param names
+    lpf1 = float(params.get("gyro_lpf1_static_hz",
+                           params.get("gyro_lowpass_hz", 0.0)))
+    lpf2 = float(params.get("gyro_lpf2_static_hz",
+                           params.get("gyro_lowpass2_hz", 0.0)))
+    dterm_lpf = float(params.get("dterm_lpf1_static_hz",
+                               params.get("dterm_lowpass_hz", 0.0)))
 
     # 等效 LPF：取两级中的较低（更保守）截止频率
     effective_lpf = min(f for f in [lpf1, lpf2] if f > 0) if any(f > 0 for f in [lpf1, lpf2]) else 0.0
@@ -75,7 +82,12 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     if not parts:
         parts.append("(no filters parsed)")
 
-    # 构造近似 notch_filters 列表（供 _to_ap_notch_params 使用）
+    # Use original names found in params for display
+    display_lpf1 = "gyro_lpf1_static_hz" if "gyro_lpf1_static_hz" in params else "gyro_lowpass_hz"
+    display_lpf2 = "gyro_lpf2_static_hz" if "gyro_lpf2_static_hz" in params else "gyro_lowpass2_hz"
+    display_dlpf = "dterm_lpf1_static_hz" if "dterm_lpf1_static_hz" in params else "dterm_lowpass_hz"
+
+    # 构造近似 notch_filters 列表
     notch_filters_approx = []
     if notch1_hz > 0:
         notch_filters_approx.append({
@@ -93,11 +105,11 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
         "notch_filters_approx": notch_filters_approx,
         "config_summary": ", ".join(parts),
         "_bf_raw": {
-            "gyro_lowpass_hz":  lpf1,
-            "gyro_lowpass2_hz": lpf2,
+            display_lpf1:  lpf1,
+            display_lpf2: lpf2,
             "notch1_hz": notch1_hz, "notch1_bw": notch1_bw,
             "notch2_hz": notch2_hz, "notch2_bw": notch2_bw,
-            "dterm_lowpass_hz": float(params.get("dterm_lowpass_hz", 0.0)),
+            display_dlpf: dterm_lpf,
         },
     }
 
@@ -152,21 +164,26 @@ def simulate_filtered_spectrum(
 def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
     """
     构建 CLI 显示用的 BF 滤波器配置文本行。
-
-    显示 BF 原生参数名（gyro_lowpass_hz 等），而非 AP 格式。
+    支持 BF 4.3 旧名和 BF 4.5+ 新名。
     """
     lines: List[str] = []
 
-    lpf1 = params.get("gyro_lowpass_hz",  0.0)
-    lpf2 = params.get("gyro_lowpass2_hz", 0.0)
-    if lpf1 > 0:
-        lines.append(f"  Gyro LPF1: gyro_lowpass_hz = {lpf1:.0f} Hz")
-    if lpf2 > 0:
-        lines.append(f"  Gyro LPF2: gyro_lowpass2_hz = {lpf2:.0f} Hz")
+    # Try new names first, fall back to old names
+    lpf1 = params.get("gyro_lpf1_static_hz", params.get("gyro_lowpass_hz", 0.0))
+    lpf2 = params.get("gyro_lpf2_static_hz", params.get("gyro_lowpass2_hz", 0.0))
+    dterm_lpf = params.get("dterm_lpf1_static_hz", params.get("dterm_lowpass_hz", 0.0))
 
-    dterm_lpf = params.get("dterm_lowpass_hz", 0.0)
+    lpf1_name = "gyro_lpf1_static_hz" if "gyro_lpf1_static_hz" in params else "gyro_lowpass_hz"
+    lpf2_name = "gyro_lpf2_static_hz" if "gyro_lpf2_static_hz" in params else "gyro_lowpass2_hz"
+    dlpf_name = "dterm_lpf1_static_hz" if "dterm_lpf1_static_hz" in params else "dterm_lowpass_hz"
+
+    if lpf1 > 0:
+        lines.append(f"  Gyro LPF1: {lpf1_name} = {lpf1:.0f} Hz")
+    if lpf2 > 0:
+        lines.append(f"  Gyro LPF2: {lpf2_name} = {lpf2:.0f} Hz")
+
     if dterm_lpf > 0:
-        lines.append(f"  D-term LPF: dterm_lowpass_hz = {dterm_lpf:.0f} Hz")
+        lines.append(f"  D-term LPF: {dlpf_name} = {dterm_lpf:.0f} Hz")
 
     for idx in [1, 2]:
         hz  = params.get(f"gyro_notch{idx}_hz",     0.0)
@@ -185,9 +202,9 @@ def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
 
 
 def get_fallback_gyro_filter_hz(params: Dict[str, float]) -> float:
-    """返回有效的 LPF 截止频率（取两级最低非零值）。"""
-    lpf1 = float(params.get("gyro_lowpass_hz",  0.0))
-    lpf2 = float(params.get("gyro_lowpass2_hz", 0.0))
+    """返回有效的 LPF 截止频率（取两级最低非零值，兼容新旧参数名）。"""
+    lpf1 = float(params.get("gyro_lpf1_static_hz", params.get("gyro_lowpass_hz", 0.0)))
+    lpf2 = float(params.get("gyro_lpf2_static_hz", params.get("gyro_lowpass2_hz", 0.0)))
     valid = [f for f in [lpf1, lpf2] if f > 0]
     return min(valid) if valid else 0.0
 

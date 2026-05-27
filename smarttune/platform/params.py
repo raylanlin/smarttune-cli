@@ -112,7 +112,15 @@ class ParamTable:
             return False, f"{display_name}: {value:.3f} below min {pd.min:.3f}"
         if pd.max is not None and value > pd.max:
             return False, f"{display_name}: {value:.3f} exceeds max {pd.max:.3f}"
-        return True, f"{display_name}: {value:.3f} within [{pd.min:.3f}, {pd.max:.3f}]"
+
+        range_str = ""
+        if pd.min is not None and pd.max is not None:
+            range_str = f" within [{pd.min:.3f}, {pd.max:.3f}]"
+        elif pd.min is not None:
+            range_str = f" >= {pd.min:.3f}"
+        elif pd.max is not None:
+            range_str = f" <= {pd.max:.3f}"
+        return True, f"{display_name}: {value:.3f}{range_str}"
 
     def categories(self) -> List[str]:
         return sorted({p.category for p in self._params})

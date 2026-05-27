@@ -158,7 +158,7 @@ class TestParamMapIntegration:
         assert ap.map_param_to_platform(ref.generic_name) == "ATC_RAT_RLL_P"
 
         bf = get_adapter("betaflight")
-        assert bf.map_param_to_platform(ref.generic_name) == "pid_roll_p"
+        assert bf.map_param_to_platform(ref.generic_name) == "p_roll"
 
         px4 = get_adapter("px4")
         assert px4.map_param_to_platform(ref.generic_name) == "MC_ROLLRATE_P"

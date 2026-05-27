@@ -92,7 +92,7 @@ class TestPlatformRegistry:
         assert generic == "pid.roll.p"
 
         bf = get_adapter("betaflight")
-        assert bf.map_param_to_platform("pid.roll.p") == "pid_roll_p"
+        assert bf.map_param_to_platform("pid.roll.p") == "p_roll"
 
 
 class TestKnowledgeBase:

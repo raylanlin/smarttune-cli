@@ -73,7 +73,7 @@ class TestParamTranslation:
         fmt.format_pid(pid_result)
 
         output = buf.getvalue()
-        assert "pid_roll_p" in output
+        assert "p_roll" in output
 
     def test_px4_translation(self):
         adapter = get_adapter("px4")
