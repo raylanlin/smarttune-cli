@@ -363,8 +363,14 @@ mcp = FastMCP(
         "  smarttune_analyze_sysid    — ARX system identification\n"
         "  smarttune_analyze_filter   — Filter transfer function (Bode plot)\n"
         "  smarttune_analyze_hardware — Hardware configuration report\n"
-        "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n\n"
+        "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n"
+        "  smarttune_list_params      — List firmware parameters for a platform\n"
+        "  smarttune_search_params    — Search parameters by keyword\n"
+        "  smarttune_validate_param   — Validate a parameter name + value before recommending\n\n"
         "Recommended workflow: list_platforms → log_quality → analyze_log (or individual tools)\n"
+        "Parameter validation: BEFORE recommending parameter changes, ALWAYS call\n"
+        "  smarttune_validate_param to check the parameter exists and the value is within range.\n"
+        "  This prevents suggesting parameters that don't exist in the target firmware.\n"
         "For visual reports: analyze first, then generate_plot for the relevant chart type."
     ),
 )
@@ -709,6 +715,186 @@ def smarttune_generate_plot(
         generate_plot, log_path,
         platform=platform, plot_type=plot_type, axis=axis, theme=theme,
     )
+
+
+# ── 11. List Parameters ─────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_list_params(
+    platform: str = "ardupilot",
+    category: str = "all",
+) -> str:
+    """List all known parameters for a flight controller platform.
+
+    Returns parameters loaded from SmartTune's knowledge base (scraped from
+    official firmware source code). Each entry includes name, category, type,
+    default value, valid range, unit, and description.
+
+    Use this to discover available parameters before making tuning recommendations.
+    Critical for agents that need to verify a parameter exists in the target firmware.
+
+    Args:
+        platform: Platform name — "ardupilot", "betaflight", or "px4".
+        category: Filter by category — "pid", "filter", "rate", "mag", "misc", or "all".
+    """
+    from smarttune.platform.params import ParamTable
+
+    platform = platform.lower()
+    available = ParamTable.available_platforms()
+    if platform not in available:
+        return json.dumps({
+            "error": f"Unknown platform: {platform!r}. Available: {available}"
+        }, ensure_ascii=False, indent=2)
+
+    tbl = ParamTable.from_knowledge(platform)
+    params = tbl.list_all() if category == "all" else tbl.list_by_category(category)
+
+    result = []
+    for p in sorted(params, key=lambda x: (x.category, x.name)):
+        entry = {
+            "name": p.name,
+            "category": p.category,
+            "type": p.type,
+            "default": p.default,
+        }
+        if p.min is not None:
+            entry["min"] = p.min
+        if p.max is not None:
+            entry["max"] = p.max
+        if p.unit:
+            entry["unit"] = p.unit
+        if p.description:
+            entry["description"] = p.description
+        result.append(entry)
+
+    return json.dumps({
+        "platform": tbl.platform,
+        "count": len(result),
+        "category": category,
+        "categories": tbl.categories(),
+        "parameters": result,
+    }, ensure_ascii=False, indent=2)
+
+
+# ── 12. Search Parameters ────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_search_params(
+    keyword: str,
+    platform: str = "all",
+) -> str:
+    """Search for parameters by keyword across one or all platforms.
+
+    Case-insensitive search across parameter names, categories, and descriptions.
+    Useful when you know a parameter's purpose but not its exact name.
+    For example, searching "notch" finds INS_HNTCH_*, gyro_notch*, dyn_notch* params.
+
+    Args:
+        keyword: Search term (case-insensitive). E.g., "roll rate", "notch", "lpf".
+        platform: Platform to search — "ardupilot", "betaflight", "px4", or "all".
+    """
+    from smarttune.platform.params import ParamTable
+
+    targets = ParamTable.available_platforms() if platform == "all" else [platform.lower()]
+
+    all_results = {}
+    total = 0
+    for plat in targets:
+        try:
+            tbl = ParamTable.from_knowledge(plat)
+        except FileNotFoundError:
+            continue
+        hits = tbl.search(keyword)
+        if hits:
+            result = []
+            for p in hits:
+                entry = {
+                    "name": p.name,
+                    "category": p.category,
+                    "type": p.type,
+                    "description": p.description or "",
+                }
+                if p.min is not None:
+                    entry["min"] = p.min
+                if p.max is not None:
+                    entry["max"] = p.max
+                if p.unit:
+                    entry["unit"] = p.unit
+                result.append(entry)
+            all_results[plat] = {"platform": tbl.platform, "matches": len(result), "parameters": result}
+            total += len(result)
+
+    return json.dumps({
+        "keyword": keyword,
+        "total_matches": total,
+        "platforms": all_results,
+    }, ensure_ascii=False, indent=2)
+
+
+# ── 13. Validate Parameter ───────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_validate_param(
+    param_name: str,
+    param_value: float,
+    platform: str,
+) -> str:
+    """Validate whether a parameter exists and its value is within valid range.
+
+    This is the CRITICAL safeguard against recommending parameters that don't exist
+    in the target firmware. Always call this before suggesting parameter changes.
+
+    Checks:
+      1. Parameter name exists in the platform's parameter table
+      2. Value is within the parameter's valid [min, max] range
+
+    Returns valid=True with a confirmation message, or valid=False with the reason.
+
+    Args:
+        param_name: The firmware parameter name to validate. E.g., "ATC_RAT_RLL_P", "p_roll".
+        param_value: The proposed value to check. E.g., 0.15.
+        platform: Target platform — "ardupilot", "betaflight", or "px4".
+    """
+    from smarttune.platform.params import ParamTable
+
+    platform = platform.lower()
+    available = ParamTable.available_platforms()
+    if platform not in available:
+        return json.dumps({
+            "valid": False,
+            "error": f"Unknown platform: {platform!r}. Available: {available}",
+        }, ensure_ascii=False, indent=2)
+
+    tbl = ParamTable.from_knowledge(platform)
+    ok, msg = tbl.validate(param_name, param_value)
+
+    # Also return the full parameter definition if found
+    pd = tbl.query(param_name)
+    param_info = None
+    if pd:
+        param_info = {
+            "name": pd.name,
+            "category": pd.category,
+            "type": pd.type,
+            "default": pd.default,
+        }
+        if pd.min is not None:
+            param_info["min"] = pd.min
+        if pd.max is not None:
+            param_info["max"] = pd.max
+        if pd.unit:
+            param_info["unit"] = pd.unit
+        if pd.description:
+            param_info["description"] = pd.description
+
+    return json.dumps({
+        "valid": ok,
+        "message": msg,
+        "param_name": param_name,
+        "param_value": param_value,
+        "platform": tbl.platform,
+        "parameter": param_info,
+    }, ensure_ascii=False, indent=2)
 
 
 # ---------------------------------------------------------------------------

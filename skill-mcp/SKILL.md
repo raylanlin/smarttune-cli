@@ -17,9 +17,9 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 * Do not modify logs, parameters, firmware, local files, or aircraft configuration.
 * Use only the SmartTune MCP tools listed below.
 * If these tools are unavailable, say SmartTune MCP is not connected and ask the operator to enable the MCP server.
-* **Parameter recommendations must be conservative**: MCP agents cannot validate parameters against firmware tables directly. If recommending parameter changes, note the parameter name comes from the analysis tool and should be verified against the actual firmware. The CLI-based `stune params --validate` command is the authoritative way to check parameter existence and value ranges.
+* **MANDATORY: Validate every parameter recommendation.** Before suggesting any parameter change, call `smarttune_validate_param` with the exact parameter name, proposed value, and platform. Never recommend a parameter that fails validation — search for alternatives with `smarttune_search_params`.
 
-## Available MCP Tools (10 total)
+## Available MCP Tools (13 total)
 
 ### Core Tools
 
@@ -29,22 +29,30 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 | 2 | `smarttune_log_quality` | `stune quality` | 4-dimension quality assessment (data completeness, duration, excitation, sample rate consistency). Returns score 0–100, rating (EXCELLENT/GOOD/MARGINAL/POOR), and detailed breakdown. |
 | 3 | `smarttune_analyze_log` | `stune analyze` | Comprehensive analysis: PID + FFT + magfit + hardware + filter + sysid. Use `include_modules` to select. Returns JSON or Markdown. |
 
+### Parameter Validation Tools (USE BEFORE RECOMMENDING)
+
+| # | Tool | CLI Equivalent | Description |
+|---|------|----------------|-------------|
+| 4 | `smarttune_validate_param` | `stune params --validate` | ⚠️ **MANDATORY before recommending.** Validate a parameter name exists and value is within valid range. Returns valid=true/false with reason. Prevents agents from suggesting parameters that don't exist in the firmware. |
+| 5 | `smarttune_list_params` | `stune params <platform>` | List all known parameters for a platform. Filter by category. Each entry includes name, type, range, default, and description. |
+| 6 | `smarttune_search_params` | `stune params --search` | Search parameters by keyword across all platforms. Case-insensitive. Useful when you know a parameter's purpose but not the exact name. |
+
 ### Individual Analysis Tools
 
 | # | Tool | CLI Equivalent | Description | Key Parameters |
 |---|------|----------------|-------------|----------------|
-| 4 | `smarttune_analyze_pid` | `stune pid` | PID step response analysis per axis. Detects step windows, computes rise time, overshoot, settling time. | `axis` (all/roll/pitch/yaw), `max_recommendations` |
-| 5 | `smarttune_analyze_fft` | `stune fft` | FFT vibration spectrum analysis. Identifies vibration peaks, noise floor, source guess (motor/prop/frame), and notch filter recommendations. | `max_recommendations` |
-| 6 | `smarttune_analyze_magfit` | `stune magfit` | Magnetometer calibration analysis. Returns fitness (mGauss), offsets, assessment. | `max_recommendations` |
-| 7 | `smarttune_analyze_sysid` | `stune sysid` | ARX system identification. Estimates natural frequency, damping ratio, suggests PID bandwidth/gains. | `axis`, `na` (1-10, default 3), `nb` (1-10, default 2) |
-| 8 | `smarttune_analyze_filter` | `stune filter` | Filter transfer function analysis. Returns Bode plot data (key freq response points, -3dB cutoff, config summary). Supports auto-derive from log params or manual override. | `gyro_filter_hz`, `notch_freq_hz`, `auto_derive` |
-| 9 | `smarttune_analyze_hardware` | `stune hardware` | Hardware configuration report. IMU setup, filter config, PID params, battery report, firmware/board info. | — |
+| 7 | `smarttune_analyze_pid` | `stune pid` | PID step response analysis per axis. Detects step windows, computes rise time, overshoot, settling time. | `axis` (all/roll/pitch/yaw), `max_recommendations` |
+| 8 | `smarttune_analyze_fft` | `stune fft` | FFT vibration spectrum analysis. Identifies vibration peaks, noise floor, source guess (motor/prop/frame), and notch filter recommendations. | `max_recommendations` |
+| 9 | `smarttune_analyze_magfit` | `stune magfit` | Magnetometer calibration analysis. Returns fitness (mGauss), offsets, assessment. | `max_recommendations` |
+| 10 | `smarttune_analyze_sysid` | `stune sysid` | ARX system identification. Estimates natural frequency, damping ratio, suggests PID bandwidth/gains. | `axis`, `na` (1-10, default 3), `nb` (1-10, default 2) |
+| 11 | `smarttune_analyze_filter` | `stune filter` | Filter transfer function analysis. Returns Bode plot data (key freq response points, -3dB cutoff, config summary). Supports auto-derive from log params or manual override. | `gyro_filter_hz`, `notch_freq_hz`, `auto_derive` |
+| 12 | `smarttune_analyze_hardware` | `stune hardware` | Hardware configuration report. IMU setup, filter config, PID params, battery report, firmware/board info. | — |
 
 ### Chart Generation Tool
 
 | # | Tool | CLI Equivalent | Description |
 |---|------|----------------|-------------|
-| 10 | `smarttune_generate_plot` | `stune pid/fft/filter --visual` | Generate analysis chart as **base64 PNG image**. Returns `image_base64` (data:image/png;base64,...) and `file_path` (saved to `/tmp/smarttune-plots/`). |
+| 13 | `smarttune_generate_plot` | `stune pid/fft/filter --visual` | Generate analysis chart as **base64 PNG image**. Returns `image_base64` (data:image/png;base64,...) and `file_path` (saved to `/tmp/smarttune-plots/`). |
 
 **Plot types:**
 
@@ -76,6 +84,29 @@ The tool returns both `image_base64` (data URL for inline display) and `file_pat
 2. Call `smarttune_log_quality(log_path)` — always check quality first.
 3. If score ≥ 55, call `smarttune_analyze_log(log_path, response_format="markdown")` for a full report.
 4. If quality is MARGINAL/POOR, explain what data is missing and how to improve (e.g., enable motor logging, fly more aggressive stick inputs).
+
+### Parameter Validation (MANDATORY)
+**Before presenting any parameter change recommendation:**
+
+1. For each recommended parameter, call `smarttune_validate_param`:
+   ```
+   smarttune_validate_param(param_name="ATC_RAT_RLL_P", param_value=0.15, platform="ardupilot")
+   ```
+   - If `valid: true` → proceed to recommend
+   - If `valid: false` with "NOT FOUND" → the parameter doesn't exist in this firmware. Search for alternatives:
+     ```
+     smarttune_search_params(keyword="roll rate", platform="ardupilot")
+     ```
+   - If `valid: false` with "below min" or "exceeds max" → adjust the value to within range
+
+2. If unsure about a parameter name, use `smarttune_search_params` to find the correct name.
+
+3. If you need to see all available parameters, use `smarttune_list_params`.
+
+**This step prevents recommending parameters that don't exist in the target firmware** — a critical issue because:
+- Betaflight 4.5+ renamed many parameters (e.g., `d_min_roll` → `d_max_roll`, `gyro_lowpass_hz` → `gyro_lpf1_static_hz`)
+- Parameter names differ between firmware versions
+- Some parameters have strict value ranges
 
 ### Detailed Single-Topic Analysis
 5. For a narrow topic, call the specific tool:
