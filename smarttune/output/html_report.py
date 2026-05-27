@@ -61,6 +61,9 @@ def generate_html_report(
     pid_results=None,
     fft_results=None,
     magfit_results=None,
+    filter_results=None,
+    sysid_results=None,
+    hardware_report=None,
     log_path: str = "",
     pid_plot_fig=None,
     fft_plot_fig=None,
@@ -72,10 +75,16 @@ def generate_html_report(
     ----------
     pid_results : PIDAnalysisResult | Dict | None
         PID 分析结果（支持新 dataclass 和旧 dict 格式）。
-    fft_results : Dict | None
-        FFT 分析结果。
+    fft_results : FFTANalysisResult | Dict | None
+        FFT 振动分析结果。
     magfit_results : MagFitResult | Dict | None
         磁力计分析结果。
+    filter_results : FilterAnalysisResult | None
+        滤波器传递函数分析结果。
+    sysid_results : List[SysIDResult] | None
+        系统辨识结果列表（每轴一条）。
+    hardware_report : HardwareReport | None
+        硬件配置报告。
     log_path : str
         原始日志文件路径（用于显示）。
     pid_plot_fig, fft_plot_fig :
@@ -113,6 +122,15 @@ def generate_html_report(
 
     # ── 磁力计部分 HTML ───────────────────────────────────────────────────
     magfit_html = _build_magfit_html(magfit_results)
+
+    # ── 滤波器部分 HTML ───────────────────────────────────────────────────
+    filter_html = _build_filter_html(filter_results)
+
+    # ── 系统辨识部分 HTML ─────────────────────────────────────────────────
+    sysid_html = _build_sysid_html(sysid_results)
+
+    # ── 硬件报告部分 HTML ─────────────────────────────────────────────────
+    hardware_html = _build_hardware_html(hardware_report)
 
     # ── 组装 ──────────────────────────────────────────────────────────────
     return f"""<!DOCTYPE html>
@@ -183,6 +201,9 @@ def generate_html_report(
   {pid_html}
   {fft_html}
   {magfit_html}
+  {filter_html}
+  {sysid_html}
+  {hardware_html}
 
   {"" if not pid_img_tag else f'<div class="section"><div class="section-title">📈 PID 阶跃响应图表</div>{pid_img_tag}</div>'}
   {"" if not fft_img_tag else f'<div class="section"><div class="section-title">📊 FFT 频谱图表</div>{fft_img_tag}</div>'}
@@ -405,6 +426,239 @@ def _build_magfit_html(results) -> str:
         params_html = f'<table class="param-table"><tbody>{ofs_rows}</tbody></table>'
 
     return f'<div class="section"><div class="section-title">🧭 Magnetometer Calibration</div>{fitness_html}{params_html}</div>'
+
+
+def _build_filter_html(results) -> str:
+    """滤波器传递函数分析 section。"""
+    if not results:
+        return ""
+
+    # support both dataclass and dict
+    cutoff = getattr(results, "cutoff_3db_hz", None)
+    if cutoff is None and hasattr(results, "get"):
+        cutoff = results.get("cutoff_3db_hz")
+    config = (getattr(results, "config_summary", "") or
+              (results.get("config_summary", "") if hasattr(results, "get") else ""))
+    recs = getattr(results, "recommendations", [])
+    if not recs and hasattr(results, "get"):
+        recs = results.get("recommendations", [])
+
+    cutoff_html = ""
+    if cutoff is not None:
+        cutoff_html = f"""
+    <div>
+      <span style="color:#94a3b8;font-size:0.85rem">-3dB Cutoff</span><br>
+      <span style="font-size:1.2rem;font-weight:600">{cutoff:.1f} Hz</span>
+    </div>"""
+
+    config_html = ""
+    if config:
+        config_html = f"""
+    <div>
+      <span style="color:#94a3b8;font-size:0.85rem">Filter Chain</span><br>
+      <span style="color:#93c5fd;font-family:monospace;font-size:0.85rem">{config}</span>
+    </div>"""
+
+    # filter recommendations
+    rec_html = ""
+    if recs:
+        items = ""
+        for r in recs:
+            param = r.param.generic_name if hasattr(r, "param") and hasattr(r.param, "generic_name") else (r.get("param", "?") if hasattr(r, "get") else str(r))
+            cur = r.current if hasattr(r, "current") else r.get("current", 0)
+            sug = r.suggested if hasattr(r, "suggested") else r.get("suggested", r.get("recommended", cur))
+            reason = r.reason if hasattr(r, "reason") else r.get("reason", "")
+            conf = (r.confidence.value if hasattr(r.confidence, "value")
+                    else (r.get("confidence", "medium") if hasattr(r, "get") else "medium"))
+            direction = "↑" if sug > cur else "↓"
+            if cur > 0:
+                delta = f"{direction}{abs(sug - cur) / cur * 100:.1f}%"
+            else:
+                delta = direction
+            conf_color = _assessment_color("EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR"))
+            items += (
+                f'<li class="rec-item"><span class="rec-param">{param}</span>'
+                f'<span class="rec-arrow"> {cur:.4g} → {sug:.4g} </span>'
+                f'<span class="badge" style="background:{conf_color}">{delta}</span>'
+                f'<div class="rec-reason">{reason} · Confidence: <span class="confidence-{conf}">{conf}</span></div></li>'
+            )
+        rec_html = f'<ul class="rec-list">{items}</ul>'
+
+    return f"""<div class="section">
+  <div class="section-title">🔧 滤波器传递函数分析</div>
+  <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+    {cutoff_html}
+    {config_html}
+  </div>
+  {rec_html}
+</div>"""
+
+
+def _build_sysid_html(results) -> str:
+    """系统辨识（ARX 模型）section。"""
+    if not results:
+        return ""
+
+    # results may be a single SysIDResult or a list
+    items = results if isinstance(results, list) else [results]
+    if not items:
+        return ""
+
+    rows = ""
+    for r in items:
+        axis = getattr(r, "axis", "unknown")
+        if hasattr(r, "get") and not hasattr(r, "axis"):
+            axis = r.get("axis", "?")
+        nf = getattr(r, "natural_freq_hz", 0) or (r.get("natural_freq_hz", 0) if hasattr(r, "get") else 0)
+        dr = getattr(r, "damping_ratio", 0) or (r.get("damping_ratio", 0) if hasattr(r, "get") else 0)
+        bw = getattr(r, "bandwidth_hz", 0) or (r.get("bandwidth_hz", 0) if hasattr(r, "get") else 0)
+        order = getattr(r, "model_order", "") or (r.get("model_order", "") if hasattr(r, "get") else "")
+        fit = getattr(r, "fit_quality", 0) or (r.get("fit_quality", 0) if hasattr(r, "get") else 0)
+        fit_color = _assessment_color("EXCELLENT" if fit > 0.9 else ("GOOD" if fit > 0.7 else ("MARGINAL" if fit > 0.5 else "POOR")))
+        damping_assess = ("Under-damped" if dr < 0.7 else ("Good" if dr < 1.0 else "Over-damped"))
+        if dr == 0:
+            damping_assess = "—"
+        rows += f"""<tr>
+    <td style="font-weight:600;color:#e2e8f0">{axis.capitalize()}</td>
+    <td>{nf:.1f} Hz</td>
+    <td>{dr:.3f} <span style="color:#64748b;font-size:0.8rem">{damping_assess}</span></td>
+    <td>{bw:.1f} Hz</td>
+    <td style="font-family:monospace;color:#93c5fd;font-size:0.82rem">{order}</td>
+    <td><span class="badge" style="background:{fit_color}">{fit:.3f}</span></td>
+  </tr>"""
+
+    return f"""<div class="section">
+  <div class="section-title">🧪 系统辨识（ARX 模型）</div>
+  <p style="color:#64748b;font-size:0.82rem;margin-bottom:12px">
+    System identification via ARX model fitting. Natural frequency and damping ratio
+    are used to validate whether current PID gains match the airframe dynamics.
+  </p>
+  <table class="peak-table">
+    <thead><tr>
+      <th>Axis</th><th>Natural Freq</th><th>Damping</th><th>Bandwidth</th><th>Model</th><th>Fit (R²)</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>"""
+
+
+def _build_hardware_html(results) -> str:
+    """硬件配置报告 section。"""
+    if not results:
+        return ""
+
+    # support both dataclass and dict
+    firmware = getattr(results, "firmware_version", "") or (results.get("firmware_version", "") if hasattr(results, "get") else "")
+    board = getattr(results, "board_name", "") or (results.get("board_name", "") if hasattr(results, "get") else "")
+
+    imus = getattr(results, "imu_configs", None)
+    if imus is None and hasattr(results, "get"):
+        imus = results.get("imu_configs", [])
+    imus = imus or []
+
+    compass = getattr(results, "compass_configs", None)
+    if compass is None and hasattr(results, "get"):
+        compass = results.get("compass_configs", [])
+    compass = compass or []
+
+    pid_params = getattr(results, "pid_params", None)
+    if pid_params is None and hasattr(results, "get"):
+        pid_params = results.get("pid_params", {})
+    pid_params = pid_params or {}
+
+    issues = getattr(results, "integrity_issues", None)
+    if issues is None and hasattr(results, "get"):
+        issues = results.get("integrity_issues", [])
+    issues = issues or []
+
+    # Firmware + Board header
+    header_parts = []
+    if firmware:
+        header_parts.append(f'<span style="color:#93c5fd;font-family:monospace">{firmware}</span>')
+    if board:
+        header_parts.append(f'<span style="color:#64748b">on</span> <span style="color:#e2e8f0">{board}</span>')
+
+    # IMU table
+    imu_rows = ""
+    if imus:
+        for imu in imus:
+            name = imu.get("name", "?") if isinstance(imu, dict) else getattr(imu, "name", "?")
+            rate = imu.get("sample_rate_hz", "?") if isinstance(imu, dict) else getattr(imu, "sample_rate_hz", "?")
+            health = imu.get("health", "?") if isinstance(imu, dict) else getattr(imu, "health", "?")
+            health_color = "#22c55e" if str(health).upper() in ("OK", "GOOD", "HEALTHY") else "#fbbf24"
+            imu_rows += f"""<tr>
+    <td style="font-family:monospace;color:#93c5fd">{name}</td>
+    <td>{rate} Hz</td>
+    <td><span style="color:{health_color}">{health}</span></td>
+  </tr>"""
+
+    imu_section = ""
+    if imu_rows:
+        imu_section = f"""
+  <div style="margin-top:10px">
+    <div style="color:#64748b;font-size:0.82rem;margin-bottom:6px">IMU / Gyro Configuration</div>
+    <table class="peak-table">
+      <thead><tr><th>Sensor</th><th>Sample Rate</th><th>Health</th></tr></thead>
+      <tbody>{imu_rows}</tbody>
+    </table>
+  </div>"""
+
+    # Compass table
+    comp_rows = ""
+    if compass:
+        for c in compass:
+            name = c.get("name", "?") if isinstance(c, dict) else getattr(c, "name", "?")
+            ext = "✓" if (c.get("external", False) if isinstance(c, dict) else getattr(c, "external", False)) else "—"
+            comp_rows += f'<tr><td style="font-family:monospace;color:#93c5fd">{name}</td><td>{ext}</td></tr>'
+
+    comp_section = ""
+    if comp_rows:
+        comp_section = f"""
+  <div style="margin-top:10px">
+    <div style="color:#64748b;font-size:0.82rem;margin-bottom:6px">Compass / Magnetometer</div>
+    <table class="peak-table">
+      <thead><tr><th>Sensor</th><th>External</th></tr></thead>
+      <tbody>{comp_rows}</tbody>
+    </table>
+  </div>"""
+
+    # PID params summary
+    pid_rows = ""
+    if pid_params:
+        for axis in ["roll", "pitch", "yaw"]:
+            if axis in pid_params:
+                p = pid_params[axis].get("P", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "P", 0)
+                i = pid_params[axis].get("I", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "I", 0)
+                d = pid_params[axis].get("D", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "D", 0)
+                pid_rows += f'<tr><td style="font-weight:600;color:#e2e8f0">{axis.capitalize()}</td><td>{p:.4f}</td><td>{i:.4f}</td><td>{d:.4f}</td></tr>'
+        if pid_rows:
+            pid_rows = f"""
+  <div style="margin-top:10px">
+    <div style="color:#64748b;font-size:0.82rem;margin-bottom:6px">PID Gains</div>
+    <table class="peak-table">
+      <thead><tr><th>Axis</th><th>P</th><th>I</th><th>D</th></tr></thead>
+      <tbody>{pid_rows}</tbody>
+    </table>
+  </div>"""
+
+    # Integrity issues
+    issue_section = ""
+    if issues:
+        items = "".join(f"<li>{w}</li>" for w in issues)
+        issue_section = f'<div class="safety-block"><div class="s-title">⚠ 完整性警告</div><ul>{items}</ul></div>'
+
+    header_str = " · ".join(header_parts) if header_parts else '<span style="color:#64748b">No hardware info</span>'
+
+    return f"""<div class="section">
+  <div class="section-title">💻 硬件配置</div>
+  <div style="margin-bottom:10px">
+    {header_str}
+  </div>
+  {imu_section}
+  {comp_section}
+  {pid_rows}
+  {issue_section}
+</div>"""
 
 
 def save_html_report(

@@ -245,50 +245,20 @@ def phase_scale(phases: List[np.ndarray], wrap: bool = True) -> List[np.ndarray]
 
 
 # ---------------------------------------------------------------------------
-# 从日志参数自动推导滤波器
-# ---------------------------------------------------------------------------
-
-def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
-    """从 PARM 字典构建滤波器对象链。"""
-    gyro_hz = params.get("INS_GYRO_FILTER", 20.0)
-    lpf = DigitalBiquadFilter(gyro_hz)
-    notches = []
-    for pfx in ["INS_HNTCH_", "INS_HNTC2_"]:
-        en = int(params.get(f"{pfx}ENABLE", 0))
-        hnf = HarmonicNotchFilter(
-            enable=en, freq=params.get(f"{pfx}FREQ", 80.0),
-            bandwidth=params.get(f"{pfx}BW", 40.0),
-            attenuation=params.get(f"{pfx}ATT", 40.0),
-            harmonics=int(params.get(f"{pfx}HMNCS", 3)),
-            options=int(params.get(f"{pfx}OPTS", 0)),
-            min_ratio=params.get(f"{pfx}FM_RAT", 1.0),
-            mode=int(params.get(f"{pfx}MODE", 1)),
-            ref=params.get(f"{pfx}REF", 0.0),
-        )
-        notches.append(hnf)
-    parts = [f"LPF={gyro_hz:.0f}Hz"]
-    for i, nf in enumerate(notches):
-        if nf.enabled:
-            parts.append(f"Notch{i+1}={nf.freq:.0f}Hz")
-    return {"gyro_lpf": lpf, "notch_filters": notches, "config_summary": ", ".join(parts)}
-
-
-# ---------------------------------------------------------------------------
 # 计算完整传递函数
 # ---------------------------------------------------------------------------
 
-def compute_filter_response(
+def _apply_filter_chain(
     freqs: np.ndarray,
     sample_rate: float,
-    gyro_filter_hz: float = 0.0,
-    notch_params: Optional[Dict[str, Any]] = None,
-    params: Optional[Dict[str, float]] = None,
+    gyro_lpf: Optional[DigitalBiquadFilter] = None,
+    notch_filters: Optional[List] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    计算滤波器幅度 (dB) + 相位 (度)。
+    应用滤波器对象链，返回 (mag_db, phase_deg)。
 
-    支持手动模式（gyro_filter_hz + notch_params）和
-    自动模式（params 字典）。
+    平台无关的低级函数。各平台的 compute_filter_response 在解析完
+    固件参数后调用此函数执行实际数学计算。
     """
     Z_r, Z_i = exp_jw(freqs, sample_rate)
     Z1_r, Z1_i = _cinv(Z_r, Z_i)
@@ -298,23 +268,12 @@ def compute_filter_response(
     Hn_r, Hn_i = np.ones(n), np.zeros(n)
     Hd_r, Hd_i = np.ones(n), np.zeros(n)
 
-    if params is not None:
-        cfg = derive_filters_from_params(params)
-        cfg["gyro_lpf"].transfer(Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
-        for nf in cfg["notch_filters"]:
-            if nf.enabled:
+    if gyro_lpf is not None:
+        gyro_lpf.transfer(Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
+    if notch_filters:
+        for nf in notch_filters:
+            if getattr(nf, "enabled", True):
                 nf.transfer_static(Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
-    else:
-        if gyro_filter_hz > 0:
-            DigitalBiquadFilter(gyro_filter_hz).transfer(
-                Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
-        if notch_params:
-            HarmonicNotchFilter(
-                enable=1, freq=notch_params.get("center_hz", 80.0),
-                bandwidth=notch_params.get("bandwidth_hz", 40.0),
-                attenuation=notch_params.get("attenuation_db", 40.0),
-                harmonics=notch_params.get("harmonics", 3),
-            ).transfer_static(Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
 
     H_r, H_i = _cdiv(Hn_r, Hn_i, Hd_r, Hd_i)
     mag = np.sqrt(H_r ** 2 + H_i ** 2)
@@ -324,11 +283,44 @@ def compute_filter_response(
     return mag_db, phase_deg
 
 
+def compute_filter_response(
+    freqs: np.ndarray,
+    sample_rate: float,
+    gyro_filter_hz: float = 0.0,
+    notch_params: Optional[Dict[str, Any]] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    计算滤波器幅度 (dB) + 相位 (度)。
+
+    平台无关的纯数学函数。参数解析（含固件参数名映射）由各平台模块负责。
+
+    Parameters
+    ----------
+    freqs : np.ndarray
+        频率数组 (Hz)
+    sample_rate : float
+        采样率 (Hz)
+    gyro_filter_hz : float
+        LPF 截止频率 (Hz)，0 = 禁用
+    notch_params : Dict | None
+        {center_hz, bandwidth_hz, attenuation_db, harmonics} 或 None
+    """
+    lpf = DigitalBiquadFilter(gyro_filter_hz) if gyro_filter_hz > 0 else None
+    notches = None
+    if notch_params:
+        notches = [HarmonicNotchFilter(
+            enable=1, freq=notch_params.get("center_hz", 80.0),
+            bandwidth=notch_params.get("bandwidth_hz", 40.0),
+            attenuation=notch_params.get("attenuation_db", 40.0),
+            harmonics=notch_params.get("harmonics", 3),
+        )]
+    return _apply_filter_chain(freqs, sample_rate, lpf, notches)
+
+
 def simulate_filtered_spectrum(
     freqs: np.ndarray, magnitudes: np.ndarray, sample_rate: float,
     gyro_filter_hz: float = 0.0, notch_params: Optional[Dict[str, Any]] = None,
-    params: Optional[Dict[str, float]] = None,
 ) -> np.ndarray:
-    """模拟滤波后的频谱（dB 域相加）。"""
-    mag_db, _ = compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params, params)
+    """模拟滤波后的频谱（dB 域相加）。平台无关。"""
+    mag_db, _ = compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params)
     return magnitudes + mag_db

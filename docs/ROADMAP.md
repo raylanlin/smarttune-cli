@@ -26,7 +26,7 @@
 - [x] `OutputFormatter` — terminal (Rich) + Markdown output
 - [x] ParamRef → platform parameter name translation (via `adapter.map_param_to_platform()`)
 - [x] `FullAnalysisResult` — combined result container + summary
-- [ ] HTML Report — self-contained HTML report (old code available for reference, needs new result type adaptation)
+- [x] HTML Report — self-contained HTML report with PID/FFT/MagFit/Filter/SysID/Hardware sections (v2.4.2)
 
 #### CLI
 - [x] `stune analyze` — comprehensive analysis (PID + FFT + MagFit)
@@ -110,9 +110,9 @@
 
 ### Technical Debt
 
-- [ ] HTML Report adaptation for new result types (`smarttune/output/html_report.py`)
-- [ ] `derive_filters_from_params()` in `filter_transfer.py` has hardcoded ArduPilot parameter names — needs generalization
-- [ ] Old visualization (matplotlib plot) code in `_legacy_formatter.py` — move to new output layer
+- [x] HTML Report adaptation for new result types — added Filter, SysID, Hardware sections (v2.4.2)
+- [x] `derive_filters_from_params()` — moved AP-specific logic to platform/ardupilot/, core layer now platform-agnostic (v2.4.2)
+- [x] Old visualization (matplotlib plot) code in `_legacy_formatter.py` — file already removed, ROADMAP entry stale (v2.4.2)
 - [x] Clean up residual `ap_tune` references in arx_model.py / wmm.py docstrings (2026-05-03)
 - [x] Rename `ap-tune` → `SmartTune CLI` in html_report.py (2026-05-03)
 - [ ] CI/CD setup (GitHub Actions: lint + test + build)

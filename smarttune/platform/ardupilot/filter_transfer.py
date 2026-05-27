@@ -17,13 +17,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-# 重用通用滤波器数学，避免复制
+# 重用通用滤波器数学
 from smarttune.analyzers.filter_transfer import (
     DigitalBiquadFilter,
     HarmonicNotchFilter,
+    _apply_filter_chain,
     compute_filter_response as _compute_filter_response,
-    simulate_filtered_spectrum as _simulate_filtered_spectrum,
-    derive_filters_from_params as _derive_filters_from_params,
 )
 
 
@@ -32,9 +31,28 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     从 ArduPilot PARM 参数构建滤波器对象链。
 
     读取 INS_GYRO_FILTER, INS_HNTCH_*, INS_HNTC2_*。
-    返回值与 filter_transfer.derive_filters_from_params 完全一致。
     """
-    return _derive_filters_from_params(params)
+    gyro_hz = params.get("INS_GYRO_FILTER", 20.0)
+    lpf = DigitalBiquadFilter(gyro_hz)
+    notches = []
+    for pfx in ["INS_HNTCH_", "INS_HNTC2_"]:
+        en = int(params.get(f"{pfx}ENABLE", 0))
+        hnf = HarmonicNotchFilter(
+            enable=en, freq=params.get(f"{pfx}FREQ", 80.0),
+            bandwidth=params.get(f"{pfx}BW", 40.0),
+            attenuation=params.get(f"{pfx}ATT", 40.0),
+            harmonics=int(params.get(f"{pfx}HMNCS", 3)),
+            options=int(params.get(f"{pfx}OPTS", 0)),
+            min_ratio=params.get(f"{pfx}FM_RAT", 1.0),
+            mode=int(params.get(f"{pfx}MODE", 1)),
+            ref=params.get(f"{pfx}REF", 0.0),
+        )
+        notches.append(hnf)
+    parts = [f"LPF={gyro_hz:.0f}Hz"]
+    for i, nf in enumerate(notches):
+        if nf.enabled:
+            parts.append(f"Notch{i+1}={nf.freq:.0f}Hz")
+    return {"gyro_lpf": lpf, "notch_filters": notches, "config_summary": ", ".join(parts)}
 
 
 def compute_filter_response(
@@ -47,10 +65,15 @@ def compute_filter_response(
     """
     计算 ArduPilot 滤波器幅度 (dB) + 相位 (度)。
 
-    与 analyzers/filter_transfer.compute_filter_response 相同，
-    此处作为平台分派入口显式暴露。
+    支持两种模式：
+    1. 手动模式：gyro_filter_hz + notch_params → 走核心 compute_filter_response
+    2. 参数模式：params (INS_GYRO_FILTER, INS_HNTCH_* 等) →
+       解析为滤波器对象链，走核心 _apply_filter_chain
     """
-    return _compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params, params)
+    if params is not None:
+        cfg = derive_filters_from_params(params)
+        return _apply_filter_chain(freqs, sample_rate, cfg["gyro_lpf"], cfg["notch_filters"])
+    return _compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params)
 
 
 def simulate_filtered_spectrum(
@@ -62,7 +85,8 @@ def simulate_filtered_spectrum(
     params: Optional[Dict[str, float]] = None,
 ) -> np.ndarray:
     """模拟 ArduPilot 滤波后的频谱（dB 域相加）。"""
-    return _simulate_filtered_spectrum(freqs, magnitudes, sample_rate, gyro_filter_hz, notch_params, params)
+    mag_db, _ = compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params, params)
+    return magnitudes + mag_db
 
 
 def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
