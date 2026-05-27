@@ -519,3 +519,7 @@ class BetaflightAdapter(PlatformAdapter):
 
     def capabilities(self) -> Set[str]:
         return {"pid", "fft", "filter", "hardware", "quality"}
+
+    def param_table(self):
+        from smarttune.platform.params import ParamTable
+        return ParamTable.from_knowledge("betaflight")

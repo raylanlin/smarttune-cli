@@ -1,0 +1,29 @@
+{
+  "platform": "PX4",
+  "version": "main",
+  "generated_at": "2026-05-27",
+  "source": "PX4-Autopilot YAML parameter definitions (mc_rate_control, mc_att_control, imu_gyro)",
+  "count": 20,
+  "parameters": [
+    {"name": "MC_ROLLRATE_P", "category": "pid", "type": "float", "default": 0.15, "min": 0.01, "max": 0.5, "unit": "", "description": "Roll rate P gain"},
+    {"name": "MC_ROLLRATE_I", "category": "pid", "type": "float", "default": 0.2, "min": 0.0, "max": 10.0, "unit": "", "description": "Roll rate I gain"},
+    {"name": "MC_ROLLRATE_D", "category": "pid", "type": "float", "default": 0.003, "min": 0.0, "max": 0.01, "unit": "", "description": "Roll rate D gain"},
+    {"name": "MC_ROLLRATE_FF", "category": "pid", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "unit": "", "description": "Roll rate feedforward"},
+    {"name": "MC_PITCHRATE_P", "category": "pid", "type": "float", "default": 0.15, "min": 0.01, "max": 0.6, "unit": "", "description": "Pitch rate P gain"},
+    {"name": "MC_PITCHRATE_I", "category": "pid", "type": "float", "default": 0.2, "min": 0.0, "max": 10.0, "unit": "", "description": "Pitch rate I gain"},
+    {"name": "MC_PITCHRATE_D", "category": "pid", "type": "float", "default": 0.003, "min": 0.0, "max": 10.0, "unit": "", "description": "Pitch rate D gain"},
+    {"name": "MC_PITCHRATE_FF", "category": "pid", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "unit": "", "description": "Pitch rate feedforward"},
+    {"name": "MC_YAWRATE_P", "category": "pid", "type": "float", "default": 0.2, "min": 0.0, "max": 0.6, "unit": "", "description": "Yaw rate P gain"},
+    {"name": "MC_YAWRATE_I", "category": "pid", "type": "float", "default": 0.1, "min": 0.0, "max": 10.0, "unit": "", "description": "Yaw rate I gain"},
+    {"name": "MC_YAWRATE_D", "category": "pid", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "unit": "", "description": "Yaw rate D gain"},
+    {"name": "MC_YAWRATE_FF", "category": "pid", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "unit": "", "description": "Yaw rate feedforward"},
+    {"name": "MC_ROLLRATE_MAX", "category": "rate", "type": "float", "default": 220.0, "min": 0.0, "max": 1800.0, "unit": "deg/s", "description": "Max roll rate"},
+    {"name": "MC_PITCHRATE_MAX", "category": "rate", "type": "float", "default": 220.0, "min": 0.0, "max": 1800.0, "unit": "deg/s", "description": "Max pitch rate"},
+    {"name": "MC_YAWRATE_MAX", "category": "rate", "type": "float", "default": 200.0, "min": 0.0, "max": 1800.0, "unit": "deg/s", "description": "Max yaw rate"},
+    {"name": "MC_ROLL_P", "category": "pid", "type": "float", "default": 4.0, "min": 0.0, "max": 12.0, "unit": "", "description": "Roll P gain (angle controller)"},
+    {"name": "MC_PITCH_P", "category": "pid", "type": "float", "default": 4.0, "min": 0.0, "max": 12.0, "unit": "", "description": "Pitch P gain (angle controller)"},
+    {"name": "MC_YAW_P", "category": "pid", "type": "float", "default": 2.8, "min": 0.0, "max": 5.0, "unit": "", "description": "Yaw P gain (angle controller)"},
+    {"name": "IMU_GYRO_CUTOFF", "category": "filter", "type": "float", "default": 40.0, "min": 0.0, "max": 1000.0, "unit": "Hz", "description": "Low pass filter cutoff frequency for gyro"},
+    {"name": "IMU_DGYRO_CUTOFF", "category": "filter", "type": "float", "default": 20.0, "min": 0.0, "max": 1000.0, "unit": "Hz", "description": "Cutoff frequency for angular acceleration (D-Term filter)"}
+  ]
+}

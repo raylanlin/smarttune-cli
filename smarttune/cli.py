@@ -66,6 +66,14 @@ def main():
       sysid     ARX system identification
       hardware  Hardware configuration report
       magfit    Magnetometer calibration analysis
+      params    Query/validate firmware parameter tables
+
+    \b
+    Parameter query examples:
+      stune params ap                  # List all ArduPilot parameters
+      stune params ATC_RAT_RLL_P       # Show param details
+      stune params --search notch       # Search across platforms
+      stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot
 
     \b
     The platform is auto-detected from the log file format.
@@ -920,6 +928,194 @@ def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
+@main.command()
+@click.argument("query", required=False)
+@click.option("--platform", "-p", default=None, help="Target platform: ardupilot, betaflight, px4")
+@click.option("--search", "-s", "search_term", default=None, help="Search keyword across all platforms")
+@click.option("--category", "-c", default="all", help="Filter by category")
+@click.option("--validate", "-v", "validate_pair", nargs=2, default=None, metavar="NAME VALUE",
+              help="Validate a parameter name and value")
+def params(query, platform, search_term, category, validate_pair):
+    """Query and validate flight controller parameters.
+
+    \b
+    Query parameter tables loaded from knowledge base JSON files
+    (smarttune/knowledge/params/). Data scraped from official firmware repos.
+
+    \b
+    Examples:
+      stune params ap                  # List all ArduPilot parameters
+      stune params bf                  # List all Betaflight parameters
+      stune params px4                 # List all PX4 parameters
+      stune params ATC_RAT_RLL_P       # Show detail for a specific param
+      stune params --search notch       # Search for "notch" across all platforms
+      stune params --validate ATC_RAT_RLL_P 0.15 --platform ardupilot
+      stune params --category pid --platform betaflight
+    """
+    from smarttune.platform.params import ParamTable
+    from rich.table import Table
+    from rich.panel import Panel
+    import json
+
+    _PLATFORM_ALIASES = {
+        "ap": "ardupilot", "ardupilot": "ardupilot",
+        "bf": "betaflight", "betaflight": "betaflight",
+        "px4": "px4",
+    }
+
+    # ── validate mode ──────────────────────────────────────
+    if validate_pair:
+        name, val_str = validate_pair
+        try:
+            value = float(val_str)
+        except ValueError:
+            _console.print(f"[red]Invalid value: {val_str}[/red]")
+            sys.exit(1)
+
+        if not platform:
+            _console.print("[red]--platform required for --validate[/red]")
+            sys.exit(1)
+
+        platform = _PLATFORM_ALIASES.get(platform, platform)
+        try:
+            tbl = ParamTable.from_knowledge(platform)
+        except FileNotFoundError as e:
+            _console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+
+        ok, msg = tbl.validate(name, value)
+        if ok:
+            _console.print(f"[green]✓ {msg}[/green]")
+            sys.exit(0)
+        else:
+            _console.print(f"[red]✗ {msg}[/red]")
+            sys.exit(1)
+
+    # ── search mode ────────────────────────────────────────
+    if search_term:
+        available = ParamTable.available_platforms()
+        if platform:
+            platform = _PLATFORM_ALIASES.get(platform, platform)
+            available = [platform] if platform in available else []
+
+        if not available:
+            _console.print("[red]No platforms available[/red]")
+            sys.exit(1)
+
+        total = 0
+        for plat in available:
+            tbl = ParamTable.from_knowledge(plat)
+            results = tbl.search(search_term)
+            if not results:
+                continue
+            total += len(results)
+            _console.print(f"\n[bold cyan]{tbl.platform}[/bold cyan] — {len(results)} match(es)")
+            t = Table(show_header=True, box=None)
+            t.add_column("Parameter", style="cyan")
+            t.add_column("Category")
+            t.add_column("Type")
+            t.add_column("Range")
+            t.add_column("Description")
+            for r in results:
+                rng = ""
+                if r.min is not None or r.max is not None:
+                    rng = f"[{r.min}, {r.max}]"
+                if r.unit:
+                    rng += f" {r.unit}"
+                t.add_row(r.name, r.category, r.type, rng, r.description[:60])
+            _console.print(t)
+
+        if total == 0:
+            _console.print(f"[yellow]No parameters matching '{search_term}'[/yellow]")
+        return
+
+    # ── query mode (specific param or platform list) ───────
+    if query:
+        # Try as platform alias first
+        plat_guess = _PLATFORM_ALIASES.get(query.lower())
+        if plat_guess:
+            # List all for this platform
+            platform = plat_guess
+        else:
+            # Treat as parameter name — try all platforms
+            available = ParamTable.available_platforms()
+            found = []
+            for plat in available:
+                tbl = ParamTable.from_knowledge(plat)
+                pd = tbl.query(query)
+                if pd:
+                    found.append((plat, pd))
+
+            if found:
+                for plat, pd in found:
+                    _console.print(Panel.fit(
+                        f"[bold cyan]{pd.name}[/bold cyan]\n"
+                        f"[dim]Platform:[/dim] {plat}  |  "
+                        f"[dim]Category:[/dim] {pd.category}  |  "
+                        f"[dim]Type:[/dim] {pd.type}\n"
+                        f"[dim]Default:[/dim] {pd.default}\n"
+                        f"[dim]Range:[/dim] [{pd.min}, {pd.max}]"
+                        + (f" {pd.unit}" if pd.unit else "") + "\n"
+                        f"[dim]Description:[/dim] {pd.description or '—'}",
+                        title=f"Parameter: {pd.name}"
+                    ))
+                return
+            else:
+                _console.print(f"[yellow]Parameter '{query}' not found in any platform[/yellow]")
+                _console.print(f"[dim]Try --search for partial matches[/dim]")
+                sys.exit(1)
+
+    # ── list mode (platform specified or no args) ──────────
+    if not platform:
+        # No args at all — show available platforms
+        available = ParamTable.available_platforms()
+        if not available:
+            _console.print("[yellow]No parameter tables found in knowledge base[/yellow]")
+            return
+        _console.print("[bold]Available parameter tables:[/bold]")
+        for plat in available:
+            tbl = ParamTable.from_knowledge(plat)
+            cats = ", ".join(tbl.categories())
+            _console.print(f"  [cyan]{tbl.platform}[/cyan] — {len(tbl)} params ({cats})")
+        _console.print("\n[dim]Usage: stune params ap | stune params bf | stune params px4[/dim]")
+        return
+
+    platform = _PLATFORM_ALIASES.get(platform, platform)
+    try:
+        tbl = ParamTable.from_knowledge(platform)
+    except FileNotFoundError as e:
+        _console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    params_list = tbl.list_all()
+    if category != "all":
+        params_list = tbl.list_by_category(category)
+
+    cat_counts = {}
+    for p in params_list:
+        cat_counts[p.category] = cat_counts.get(p.category, 0) + 1
+
+    _console.print(f"\n[bold]{tbl.platform}[/bold] — {len(params_list)} parameters"
+                   + (f" (category: {category})" if category != "all" else "")
+                   + (f"  [dim]categories: {', '.join(f'{k}({v})' for k,v in sorted(cat_counts.items()))}[/dim]" if category == "all" else ""))
+
+    t = Table(show_header=True, box=None)
+    t.add_column("Parameter", style="cyan")
+    t.add_column("Category")
+    t.add_column("Type")
+    t.add_column("Default")
+    t.add_column("Range")
+    t.add_column("Description")
+    for p in sorted(params_list, key=lambda x: (x.category, x.name)):
+        rng = ""
+        if p.min is not None or p.max is not None:
+            rng = f"[{p.min}, {p.max}]"
+        if p.unit:
+            rng += f" {p.unit}"
+        t.add_row(p.name, p.category, p.type, str(p.default), rng, (p.description or "")[:80])
+    _console.print(t)
+
 
 if __name__ == "__main__":
     main()

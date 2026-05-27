@@ -93,3 +93,7 @@ class PX4Adapter(PlatformAdapter):
 
     def capabilities(self) -> Set[str]:
         return {"pid", "fft", "filter", "magfit", "hardware", "quality"}
+
+    def param_table(self):
+        from smarttune.platform.params import ParamTable
+        return ParamTable.from_knowledge("px4")

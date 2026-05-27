@@ -135,6 +135,13 @@ class PlatformAdapter(ABC):
         PX4:        {"pid", "fft", "filter", "magfit", "hardware", "quality"}
         """
 
+    # ── 参数表 ──────────────────────────────────────────────
+
+    @abstractmethod
+    def param_table(self) -> "ParamTable":
+        """返回该平台的参数定义表。"""
+        ...
+
     # ── 平台特有分析器注册（可选）────────────────────────────
 
     def extra_analyzers(self) -> list:
