@@ -1753,7 +1753,7 @@
       "min": 0.0,
       "max": 500.0,
       "unit": "",
-      "description": "maximum angular rate in deg/s allowed during autotune maneuvers"
+      "description": "Maximum angular rate in deg/s allowed during autotune maneuvers."
     },
     {
       "name": "ACC_P_NSE",
@@ -7763,7 +7763,7 @@
       "min": 0.0,
       "max": 5.0,
       "unit": "deg",
-      "description": "This parameter determines when the feature that uses forward throttle instead of forward tilt is used. The amount of forward throttle is controlled by the Q_FWD_THR_GAIN parameter. The maximum amount of forward pitch allowed is controlled by the Q_FWD_PIT_LIM parameter. Q_FWD_THR_USE = 0 disables the feature. Q_FWD_THR_USE = 1 enables the feature in all position controlled modes such as QLOITER, QLAND, QRTL and VTOL TAKEOFF. Q_FWD_THR_USE = 2 enables the feature in all Q modes except QAUTOTUNE and QACRO. When enabling the feature, the legacy method of controlling forward throttle use via velocity controller error should be disabled by setting Q_VFWD_GAIN to 0. Do not use this feature with tailsitters."
+      "description": "Forward throttle gain during autotune."
     },
     {
       "name": "FWD_THR_USE",
@@ -8033,7 +8033,7 @@
       "min": 1.0,
       "max": 4000.0,
       "unit": "",
-      "description": "maximum angular acceleration in deg/s/s allowed during autotune maneuvers"
+      "description": "Maximum angular acceleration allowed during autotune maneuvers."
     },
     {
       "name": "GOV_COMP",
@@ -9657,23 +9657,23 @@
     },
     {
       "name": "H_RSC_RAMP_TIME",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0.1,
+      "max": 10,
+      "unit": "s",
+      "description": "Rotor Speed Controller ramp time. When exiting autorotation in a bailout manoeuvre, time in seconds for the throttle output (HeliRSC servo) to ramp from idle to flight throttle."
     },
     {
       "name": "H_RSC_RUNUP_TIME",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 1,
+      "max": 60,
+      "unit": "s",
+      "description": "Rotor Speed Controller runup time. Expected time in seconds for the main rotor to reach full speed after motor interlock is enabled. Must be at least one second longer than H_RSC_RAMP_TIME."
     },
     {
       "name": "H_RSC_SETPOINT",
@@ -9697,103 +9697,103 @@
     },
     {
       "name": "H_RSC_THRCRV_0",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Rotor Speed Controller throttle curve at 0% collective input."
     },
     {
       "name": "H_RSC_THRCRV_100",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Rotor Speed Controller throttle curve at 100% collective input."
     },
     {
       "name": "H_RSC_THRCRV_25",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Rotor Speed Controller throttle curve at 25% collective input."
     },
     {
       "name": "H_RSC_THRCRV_50",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Rotor Speed Controller throttle curve at 50% collective input."
     },
     {
       "name": "H_RSC_THRCRV_75",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Rotor Speed Controller throttle curve at 75% collective input."
     },
     {
       "name": "H_SW2_COL_DIR",
-      "category": "unknown",
-      "type": "float",
+      "category": "heli",
+      "type": "int",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": -1,
+      "max": 1,
       "unit": "",
-      "description": ""
+      "description": "Helicopter swashplate 2 collective direction. 1=Normal, -1=Reversed."
     },
     {
       "name": "H_SW2_H3_PHANG",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": -90,
+      "max": 90,
+      "unit": "deg",
+      "description": "Helicopter swashplate 2 H3 phase angle in degrees."
     },
     {
       "name": "H_SW2_H3_SV1_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter swashplate 2 servo 1 angular position in degrees."
     },
     {
       "name": "H_SW2_H3_SV2_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter swashplate 2 servo 2 angular position in degrees."
     },
     {
       "name": "H_SW2_H3_SV3_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter swashplate 2 servo 3 angular position in degrees."
     },
     {
       "name": "H_SW2_TYPE",
@@ -9807,53 +9807,53 @@
     },
     {
       "name": "H_SW_COL_DIR",
-      "category": "unknown",
-      "type": "float",
+      "category": "heli",
+      "type": "int",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": -1,
+      "max": 1,
       "unit": "",
-      "description": ""
+      "description": "Helicopter swashplate collective direction. 1=Normal, -1=Reversed."
     },
     {
       "name": "H_SW_H3_PHANG",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": -90,
+      "max": 90,
+      "unit": "deg",
+      "description": "Helicopter H3 swashplate phase angle in degrees."
     },
     {
       "name": "H_SW_H3_SV1_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter H3 swashplate servo 1 angular position in degrees."
     },
     {
       "name": "H_SW_H3_SV2_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter H3 swashplate servo 2 angular position in degrees."
     },
     {
       "name": "H_SW_H3_SV3_POS",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Helicopter H3 swashplate servo 3 angular position in degrees."
     },
     {
       "name": "H_SW_TYPE",
@@ -10067,43 +10067,43 @@
     },
     {
       "name": "IM_STB_COL_1",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Stabilize collective minimum. Collective pitch at 0% stick input in stabilize mode."
     },
     {
       "name": "IM_STB_COL_2",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Stabilize collective at low stick. Collective pitch at ~25% stick input in stabilize mode."
     },
     {
       "name": "IM_STB_COL_3",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Stabilize collective at mid stick. Collective pitch at ~50% stick input in stabilize mode."
     },
     {
       "name": "IM_STB_COL_4",
-      "category": "unknown",
+      "category": "heli",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "description": "Stabilize collective at high stick. Collective pitch at ~75% stick input in stabilize mode."
     },
     {
       "name": "INCL_HOME",
@@ -10483,7 +10483,7 @@
       "min": 0.0,
       "max": 15.0,
       "unit": "",
-      "description": "Degrees of down pitch added when throttle is below TRIM_THROTTLE in FBWA and AUTOTUNE modes. Scales linearly so full value is added when THR_MIN is reached. Helps to keep airspeed higher in glides or landing approaches and prevents accidental stalls. 2 degrees recommended for most planes."
+      "description": "Rudder mix value during autotune in FBWA mode."
     },
     {
       "name": "KFF_THR2PTCH",
@@ -12773,7 +12773,7 @@
       "min": 0,
       "max": 65535,
       "unit": "",
-      "description": "1-byte bitmap of axes to autotune"
+      "description": "Bitmap of axes to autotune in one-shot mode."
     },
     {
       "name": "ONOFF_PIN",
@@ -14307,83 +14307,83 @@
     },
     {
       "name": "PRX1_IGN_ANG1",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle region 1 start. Angular region where proximity readings are ignored."
     },
     {
       "name": "PRX1_IGN_ANG2",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle region 2 start."
     },
     {
       "name": "PRX1_IGN_ANG3",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle region 3 start."
     },
     {
       "name": "PRX1_IGN_ANG4",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 360,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle region 4 start."
     },
     {
       "name": "PRX1_IGN_WID1",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 180,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle width 1. Width of angular region to ignore."
     },
     {
       "name": "PRX1_IGN_WID2",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 180,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle width 2."
     },
     {
       "name": "PRX1_IGN_WID3",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 180,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle width 3."
     },
     {
       "name": "PRX1_IGN_WID4",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0,
+      "max": 180,
+      "unit": "deg",
+      "description": "Proximity sensor ignore angle width 4."
     },
     {
       "name": "PRX1_MAX",
@@ -14427,23 +14427,23 @@
     },
     {
       "name": "PRX1_YAW_CORR",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": -180,
+      "max": 180,
+      "unit": "deg",
+      "description": "Proximity sensor yaw correction angle. Used to align sensor orientation with vehicle."
     },
     {
       "name": "PSC_ACCZ_D",
-      "category": "unknown",
+      "category": "pid",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": 0.0,
+      "max": 0.5,
       "unit": "",
-      "description": ""
+      "description": "Position controller Z-axis acceleration D gain. Dampens vertical acceleration changes."
     },
     {
       "name": "PSC_ACCZ_FLTE",
@@ -14457,13 +14457,13 @@
     },
     {
       "name": "PSC_ACCZ_I",
-      "category": "unknown",
+      "category": "pid",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": 0.01,
+      "max": 2.0,
       "unit": "",
-      "description": ""
+      "description": "Position controller Z-axis acceleration I gain. Corrects steady-state vertical acceleration error."
     },
     {
       "name": "PSC_ACCZ_IMAX",
@@ -14477,13 +14477,13 @@
     },
     {
       "name": "PSC_ACCZ_P",
-      "category": "unknown",
+      "category": "pid",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": 0.1,
+      "max": 5.0,
       "unit": "",
-      "description": ""
+      "description": "Position controller Z-axis acceleration P gain. Controls vertical acceleration response to altitude error."
     },
     {
       "name": "PSC_POSXY_P",
@@ -14553,7 +14553,7 @@
       "min": 0.0,
       "max": 500.0,
       "unit": "",
-      "description": "maximum angular rate in deg/s allowed during autotune maneuvers"
+      "description": "Position controller velocity XY P gain. Controls horizontal velocity response to position error."
     },
     {
       "name": "PSC_VELZ_P",
@@ -14993,7 +14993,7 @@
       "min": 0.0,
       "max": 500.0,
       "unit": "",
-      "description": "maximum angular rate in deg/s allowed during autotune maneuvers"
+      "description": "Maximum angular rate allowed during autotune maneuvers."
     },
     {
       "name": "RAT_PIT_D",
@@ -19873,7 +19873,7 @@
       "min": 0.0,
       "max": 500.0,
       "unit": "",
-      "description": "maximum angular rate in deg/s allowed during autotune maneuvers"
+      "description": "Velocity XY P gain for position hold during autotune."
     },
     {
       "name": "VELYAW_D",
@@ -23687,13 +23687,13 @@
     },
     {
       "name": "_OVERRIDE_TIME",
-      "category": "unknown",
+      "category": "misc",
       "type": "float",
       "default": 0.0,
-      "min": null,
-      "max": null,
-      "unit": "",
-      "description": ""
+      "min": 0.5,
+      "max": 120,
+      "unit": "s",
+      "description": "RC override timeout in seconds. Time after which manual RC override is automatically disengaged."
     },
     {
       "name": "_PASS1",
@@ -23967,13 +23967,13 @@
     },
     {
       "name": "_PROTOCOLS",
-      "category": "unknown",
-      "type": "float",
+      "category": "misc",
+      "type": "int",
       "default": 0.0,
-      "min": null,
-      "max": null,
+      "min": 0,
+      "max": 65535,
       "unit": "",
-      "description": ""
+      "description": "IOMCU serial protocol bitmask. Selects active protocols for the IO co-processor."
     },
     {
       "name": "_QUAL_MIN",
