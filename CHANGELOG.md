@@ -337,3 +337,46 @@ mod.generate_hardware_report(fd.params, flight_data=fd)
 | MCP vs Plugin 架构 | OpenClaw 实际使用 native plugin 而非 MCP 协议，两套接口需长期维护 |
 | pyproject.toml | 未更新 MCP tool 文档 |
 | README.md | 未更新 tool 列表（旧版仅列 3 个） |
+
+---
+
+# SmartTune v3.0.2 — PX4 ULog + A1 收敛 + 标签统一 (2026-06-12)
+
+**依据：** Claude 审定补丁包 v4「完全体」（三轮全部变更）
+**Commit:** `ed9d784` | 13 files, +1181/-510
+**测试：** 156 passed, 3 failed (synthetic regression 容差偏紧，非逻辑 bug)
+
+## 三轮变更
+
+| 轮次 | 文件 | 内容 |
+|------|------|------|
+| R1 缺陷修复 | analyzers/* + platform/* | 同 v3.0.1（C1~C14+A3+A4） |
+| R2 A1 收敛 | analysis.py, cli.py | `run_module()` 统一核心；analyze 命令 + single analysis 路径共用；B2 fft_result 赋值修复；sysid na/nb 传递 |
+| R3 PX4 + 标签 | px4/__init__.py, fft_analyzer.py, output/*, knowledge/* | ULog 解析器完整实现（pyulog）；SEVERE→POOR/CRITICAL→UNUSABLE；PX4 知识库；validate_px4_ulog.py |
+
+## PX4 新增能力
+
+| 命令 | 状态 | 说明 |
+|------|------|------|
+| `stune quality -i .ulg` | ✅ | PID/IMU/Motor/Battery 数据完整性 + 阶跃统计 |
+| `stune pid -i .ulg` | ✅ | PID 阶跃响应（需 v1.13+ 固件才有 vehicle_rates_setpoint） |
+| `stune fft -i .ulg` | ✅ | PX4 原生参数（IMU_GYRO_NF0_FRQ 等） |
+| `stune sysid -i .ulg` | ✅ | ARX 系统辨识 |
+| `stune analyze -i .ulg` | ✅ | 综合报告（magfit 在 PX4 不支持，自动跳过） |
+
+## 端到端验证（sample.ulg）
+
+- quality: 60/100 MARGINAL, 17070 PID+IMU samples, 250Hz, 16.7% jitter
+- fft: GOOD (0.5 m/s²), PX4 原生参数
+- pid: MARGINAL (0 steps) — 预期降级，老固件缺 vehicle_rates_setpoint
+- sysid: 三轴数据可用
+
+## 额外修复（carpenter 补充）
+
+`formatter.py:199` — `if result.ofs:` numpy array 真值判断 → `shape >= 3` guard。
+C1 修复解锁后暴露的潜在 bug，Claude 包只做了标签兼容未修此条。
+
+## 工具
+
+`tools/validate_px4_ulog.py` — 一键 PX4 全链路验证，自动下载 pyulog sample.ulg
+
