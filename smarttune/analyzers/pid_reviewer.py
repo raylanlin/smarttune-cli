@@ -265,9 +265,10 @@ def _compute_metrics(
 
     if response_range > 0:
         overshoot_val = np.max(response) - final_value
-        m.overshoot_percent = max(0.0, (overshoot_val / step_magnitude) * 100.0)
     else:
-        m.overshoot_percent = 0.0
+        # C8 修复：负向阶跃用 min 对称计算超调（旧实现恒返回 0）
+        overshoot_val = final_value - np.min(response)
+    m.overshoot_percent = max(0.0, (overshoot_val / step_magnitude) * 100.0)
 
     # Settling time
     settle_threshold = abs(step_magnitude) * settle_band
@@ -283,8 +284,9 @@ def _compute_metrics(
         else:
             first_idx = len(in_band) - suffix_in_band
         m.settling_time_ms = float(time_arr[first_idx])
-    elif len(response) > 0:
-        m.settling_time_ms = float(time_arr[-1])
+    # C8 哨兵语义统一：窗口结束时仍未进入稳态带 → 保持 -1（未知），
+    # 与 rise_time 的哨兵约定一致；旧实现返回窗口长度（如 800ms），
+    # 会把“假稳定时间”计入平均并误触发 LONG_SETTLE 规则。
 
     # Oscillation count
     centered = response - final_value
@@ -425,53 +427,82 @@ class PIDReviewer:
         step_indices = detect_steps(sig.desired, dt_ms=dt_ms)
         step_count = len(step_indices)
 
-        # 4. FFT 频域阶跃响应（按平台动态分派）
+        # 4. 频域阶跃响应（按平台动态分派）
         #    platform/ardupilot/step_response_fft.py  → WebTools 对齐
-        #    platform/betaflight/step_response_fft.py  → Wiener 反卷积（PID Toolbox 对齐）
+        #    platform/betaflight/step_response_fft.py  → PID Toolbox PTstepcalc 对齐
         #    platform/px4/step_response_fft.py         → 未来
+        #    低采样率（< 20 Hz）时回退到时域阶跃平均（C7 修复：接线回退路径）
         fft_step = {}
-        _VALID_PLATFORMS = {"ardupilot", "betaflight", "px4"}
-        platform_key = flight_data.platform.lower()
-        if platform_key not in _VALID_PLATFORMS:
-            _log.warning(
-                "Unknown platform %r for FFT step response dispatch; "
-                "expected one of %s", flight_data.platform, _VALID_PLATFORMS,
-            )
-        else:
+        # 构造旧版 get_pid_data 返回格式
+        pid_dict = {
+            "Desired": sig.desired,
+            "Actual":  sig.actual,
+            "time":    sig.timestamp_s,
+        }
+        if sig.p_term is not None:
+            pid_dict["P"] = sig.p_term
+        if sig.i_term is not None:
+            pid_dict["I"] = sig.i_term
+        if sig.d_term is not None:
+            pid_dict["D"] = sig.d_term
+        if sig.ff_term is not None:
+            pid_dict["FF"] = sig.ff_term
+
+        sr_hz = 1000.0 / dt_ms if dt_ms > 0 else 0.0
+        _LOW_SAMPLE_RATE_HZ = 20.0
+
+        if 0.0 < sr_hz < _LOW_SAMPLE_RATE_HZ:
+            # 低采样率：Wiener/FFT 路径窗口数不足且噪声放大显著，
+            # 改用真实时域阶跃提取 + 归一化平均
             try:
-                mod = importlib.import_module(
-                    f"smarttune.platform.{platform_key}.step_response_fft"
+                from smarttune.analyzers.step_response_time_domain import (
+                    compute_step_response_time_domain_for_axis,
                 )
-                compute_fn = getattr(mod, "compute_step_response_for_axis", None)
-                if compute_fn is None:
-                    _log.debug(
-                        "Module smarttune.platform.%s.step_response_fft has no "
-                        "compute_step_response_for_axis; skipping FFT step.",
-                        platform_key,
-                    )
-                else:
-                    # 构造旧版 get_pid_data 返回格式
-                    pid_dict = {
-                        "Desired": sig.desired,
-                        "Actual":  sig.actual,
-                        "time":    sig.timestamp_s,
-                    }
-                    if sig.p_term is not None:
-                        pid_dict["P"] = sig.p_term
-                    if sig.i_term is not None:
-                        pid_dict["I"] = sig.i_term
-                    if sig.d_term is not None:
-                        pid_dict["D"] = sig.d_term
-                    if sig.ff_term is not None:
-                        pid_dict["FF"] = sig.ff_term
-                    fft_step = compute_fn(pid_dict, axis, imu_data=None)
-            except ModuleNotFoundError:
-                _log.debug(
-                    "No step_response_fft module for platform %s; "
-                    "FFT step response skipped.", platform_key,
-                )
+                fft_step = compute_step_response_time_domain_for_axis(pid_dict, axis)
             except Exception as exc:
-                _log.debug("FFT step response failed for %s: %s", axis, exc)
+                _log.debug("Time-domain step response failed for %s: %s", axis, exc)
+        else:
+            # C7 修复：传入 IMU 陀螺仪数据，启用 compute_step_response_for_axis
+            # 的 "IMU 优先" 路径（旧实现恒传 None，该路径从未生效）
+            imu_dict = None
+            if (flight_data.gyro is not None
+                    and flight_data.imu_timestamp_s is not None
+                    and len(flight_data.gyro) >= 100):
+                imu_dict = {
+                    "time": flight_data.imu_timestamp_s,
+                    "GyrX": flight_data.gyro[:, 0],
+                    "GyrY": flight_data.gyro[:, 1],
+                    "GyrZ": flight_data.gyro[:, 2],
+                }
+
+            _VALID_PLATFORMS = {"ardupilot", "betaflight", "px4"}
+            platform_key = flight_data.platform.lower()
+            if platform_key not in _VALID_PLATFORMS:
+                _log.warning(
+                    "Unknown platform %r for FFT step response dispatch; "
+                    "expected one of %s", flight_data.platform, _VALID_PLATFORMS,
+                )
+            else:
+                try:
+                    mod = importlib.import_module(
+                        f"smarttune.platform.{platform_key}.step_response_fft"
+                    )
+                    compute_fn = getattr(mod, "compute_step_response_for_axis", None)
+                    if compute_fn is None:
+                        _log.debug(
+                            "Module smarttune.platform.%s.step_response_fft has no "
+                            "compute_step_response_for_axis; skipping FFT step.",
+                            platform_key,
+                        )
+                    else:
+                        fft_step = compute_fn(pid_dict, axis, imu_data=imu_dict)
+                except ModuleNotFoundError:
+                    _log.debug(
+                        "No step_response_fft module for platform %s; "
+                        "FFT step response skipped.", platform_key,
+                    )
+                except Exception as exc:
+                    _log.debug("FFT step response failed for %s: %s", axis, exc)
 
         # 5. 原始时间序列（供绘图）
         time_ms = sig.timestamp_s * 1000.0
@@ -659,7 +690,20 @@ class PIDReviewer:
                 generic_name = f"pid.{axis}.{param_key}"
 
                 current_val = current_params.get(param_key, 0.0)
+                if current_val <= 0.0:
+                    # C4 修复：当前值未知（adapter 未注入 generic key）时，
+                    # 0.0 × factor 再 clip 到 bounds 下界会产出
+                    # "current 0.0 → suggested 0.01" 的伪建议 — 直接跳过。
+                    _log.debug(
+                        "Skipping %s recommendation: current value unknown "
+                        "(generic params not populated by adapter)", generic_name,
+                    )
+                    continue
                 factor = adj.get("factor", 1.0)
+                # 全局安全 cap：单次建议调整幅度限在 ±25%（README
+                # “All recommendations are capped at ±25%” 的实现落地；
+                # 知识库自定义规则的 factor 越界时也被夾回）。
+                factor = float(np.clip(factor, 0.75, 1.25))
                 new_val = current_val * factor
 
                 # Bounds

@@ -1,41 +1,49 @@
 """
-阶跃响应估计 — Wiener 反卷积法（Betaflight 专用）。
+阶跃响应估计 — 对齐 Betaflight 社区 PID Toolbox（bw1129/PIDtoolbox, PTstepcalc.m）。
 
 本模块在 pid_reviewer.py 中按 platform 动态分派：
   smarttune.platform.betaflight.step_response_fft
 
-算法对齐 BF 社区 PID Toolbox 的解析结果，与 ArduPilot 的 WebTools
-对齐版（platform/ardupilot/step_response_fft.py）互不干扰。
+与 ArduPilot 版（platform/ardupilot/step_response_fft.py，对齐 WebTools
+PIDReview.js：Hanning 窗 + 93.75% 重叠 + 高斯 CDF 固定正则化）是两套
+不同的社区参考实现，分别忠实对齐，互不混用。
 
-算法流程：
+PTstepcalc.m 对齐要点
+---------------------
+1. 分段：2 秒段（segment_length = sample_rate × 2），不加窗（无 Hanning）
+2. 段筛选：max(|SP|) ≥ minInput（20 deg/s）且 ≤ maxInput（500 deg/s）
+3. 反卷积：对 SP/GY 段做零填充 FFT，
+       G = (fft(GY) · conj(fft(SP))) / (fft(SP) · conj(fft(SP)) + λ)
+   λ 为相对小量正则化（λ = 1e-4 × max(Pxx)，量级无关）
+4. 阶跃响应：cumsum(real(ifft(G))) 取前 500 ms
+5. 段级质量控制：稳态均值（t ∈ [200, 500] ms）落在 (0.5, 3.0) 内才保留
+   （SP 与 GY 同单位 deg/s，理想稳态 = 1.0；越界视为反卷积失败段）
+6. 跨段平均：mean
 
-1. 分窗：Hanning 窗，window_size 点，spacing = round(window_size / 16)
-2. 每窗 rfft → 单边谱
-3. 交叉谱 Pyx = Y·conj(X)，自谱 Pxx = |X|²
-4. 自适应 SNR 正则化：基于高斯 CDF 的频率依赖权重，
-   乘以 Pxx 中位数自动匹配信号功率量级
-5. Wiener 反卷积：H = Pyx / (Pxx + sn)
-6. irfft → 脉冲响应 → 累积和 → 阶跃响应
-7. 跨窗口平均
+已确认对齐 PTstepcalc.m 的部分：2s 段长 / 500ms 响应窗 / minInput=20 /
+常数正则化 Wiener 反卷积 / cumsum / 稳态 QC / 跨段平均。
+近似处理（上游精确常数待金标准对拍验证）：段步长（本实现 segment/4）、
+QC 带 (0.5, 3.0)、零填充长度（100 点）。
 
-数据源：
-- input = setpoint / desired rate (deg/s)
-- output = gyroADC / actual rate (deg/s)
+References
+----------
+- https://github.com/bw1129/PIDtoolbox  (PTstepcalc.m，仓库已下架；
+  本实现依据其公开算法描述及 WebTools PIDReview.js 源码注释中对
+  PID-Analyzer/PIDtoolbox 同源算法的引用编写)
 """
 
 from typing import Dict, Any, List, Optional
 import numpy as np
 
-
-def _hanning(n: int) -> np.ndarray:
-    """Hanning 窗。"""
-    scale = 2.0 * np.pi / (n - 1)
-    return 0.5 - 0.5 * np.cos(scale * np.arange(n))
-
-
-def _real_length(n: int) -> int:
-    """单边 FFT 长度。"""
-    return n // 2 + 1
+# PTstepcalc.m 常数
+_MIN_INPUT_DEG_S = 20.0      # minInput — 段内 SP 峰值下限
+_MAX_INPUT_DEG_S = 500.0     # maxInput — 段内 SP 峰值上限
+_SEGMENT_DURATION_S = 2.0    # 2 秒分析段
+_RESPONSE_DURATION_S = 0.5   # 500 ms 阶跃响应窗
+_PAD_SAMPLES = 100           # FFT 前零填充
+_QC_STEADY_LO = 0.5          # 稳态 QC 下限（理想值 1.0）
+_QC_STEADY_HI = 3.0          # 稳态 QC 上限
+_REG_FACTOR = 1e-4           # Wiener 正则化 λ = _REG_FACTOR × max(Pxx)
 
 
 def estimate_step_response(
@@ -43,50 +51,47 @@ def estimate_step_response(
     actual: np.ndarray,
     sample_rate: float,
     window_size: Optional[int] = None,
-    step_duration_s: float = 0.5,
-    min_target_amplitude: float = 20.0,  # 20 deg/s（对齐 WebTools 阈值）
-    cutfreq: float = 25.0,
+    step_duration_s: float = _RESPONSE_DURATION_S,
+    min_target_amplitude: float = _MIN_INPUT_DEG_S,
+    max_target_amplitude: float = _MAX_INPUT_DEG_S,
 ) -> Dict[str, Any]:
     """
-    估计阶跃响应（Wiener 反卷积 + 高斯 SNR 正则化）。
-
-    算法：分窗 → rfft → Wiener H = Pyx/(Pxx + sn) → irfft → cumsum → 平均
+    估计阶跃响应（对齐 PID Toolbox PTstepcalc.m）。
 
     Parameters
     ----------
     target : np.ndarray
-        目标值序列（单位与 min_target_amplitude 一致）。
+        Setpoint（SP）序列，deg/s。
     actual : np.ndarray
-        实际值序列（与 target 同单位）。
+        滤波后陀螺仪（GY / gyroADC）序列，deg/s。
     sample_rate : float
         采样率（Hz）。
     window_size : int, optional
-        FFT 窗口大小（点数），默认基于采样率：1s 窗口，2 的幂，最小 64。
+        覆盖默认 2 秒段长（点数）。仅用于测试；常规调用勿传。
     step_duration_s : float
-        阶跃响应可视时长（秒，默认 0.5）。
+        阶跃响应窗时长（秒，默认 0.5 = PTB 的 500 ms）。
     min_target_amplitude : float
-        窗口最小目标幅值阈值（默认 20 deg/s，对齐 WebTools 阈值）。
-        数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）。
-    cutfreq : float
-        SNR 正则化截止频率（Hz，默认 25）。
+        段内 SP 峰值下限（PTB minInput，默认 20 deg/s）。
+    max_target_amplitude : float
+        段内 SP 峰值上限（PTB maxInput，默认 500 deg/s）。
 
     Returns
     -------
-    Dict with keys: time, step_response, valid_windows, total_windows, window_size, sample_rate, method
+    Dict with keys: time, step_response, valid_windows, total_windows,
+    skipped_quality, window_size, sample_rate, method
     """
     n = len(target)
 
-    # 窗口大小：1 秒，2 的幂，最小 64
-    if window_size is None:
-        win = int(sample_rate)
-        # 向上取到 2 的幂
-        window_size = 1
-        while window_size < win:
-            window_size *= 2
-        window_size = min(window_size, n // 2)
-        window_size = max(window_size, 64)
+    seg_len = int(round(sample_rate * _SEGMENT_DURATION_S))
+    if window_size is not None:
+        seg_len = int(window_size)
+    seg_len = max(seg_len, 8)
 
-    if n < window_size:
+    wnd = int(round(sample_rate * step_duration_s))
+    wnd = max(min(wnd, seg_len), 2)
+    time_arr = np.arange(wnd) / sample_rate
+
+    if n < seg_len:
         return {
             "time": np.array([0.0]),
             "step_response": np.array([0.0]),
@@ -95,158 +100,81 @@ def estimate_step_response(
             "total_windows": 0,
         }
 
-    dt = 1.0 / sample_rate
-    real_len = _real_length(window_size)  # window_size//2 + 1
+    # 段步长：segment/4（75% 重叠）。PTB 上游的精确步长以
+    # PTstepcalc.m 为准 — 只影响平均段数，不影响单段数学。
+    seg_step = max(seg_len // 4, 1)
+    num_segments = (n - seg_len) // seg_step + 1
 
-    # ------------------------------------------------------------
-    # 窗口参数（与 WebTools 一致）
-    # ------------------------------------------------------------
-    window = _hanning(window_size)
-    window_spacing = int(np.round(window_size / 16))  # Math.round
-    num_windows = (n - window_size) // window_spacing + 1
+    # 稳态 QC 区间掩码（t ∈ [200, 500] ms）
+    qc_mask = (time_arr >= 0.2) & (time_arr <= step_duration_s)
+    has_qc = bool(np.any(qc_mask))
 
-    step_end = min(int(step_duration_s / dt), window_size)
-    time_arr = np.arange(step_end) * dt
-
-    # ------------------------------------------------------------
-    # 构造 SNR 正则化权重 (0~1 的高斯 CDF 形状)
-    # ------------------------------------------------------------
-    bins = np.fft.rfftfreq(window_size, d=dt)
-    bin_idx = int(np.searchsorted(bins, cutfreq, side="right"))
-    # 对齐 WebTools: double-sided 长度修正
-    len_lpf = bin_idx + bin_idx - 2
-    len_lpf = max(len_lpf, 1)
-
-    radius = int(np.ceil(len_lpf * 0.5))
-    sigma = len_lpf / 6.0
-
-    # 构造高斯 CDF 权重 (仅用于计算正则化强度比例)
-    gauss_cdf = np.zeros(real_len, dtype=np.float64)
-    last_val = 0.0
-    for j in range(min(len_lpf, real_len)):
-        gauss_cdf[j] = last_val + np.exp((-0.5 / sigma ** 2) * (j - radius) ** 2)
-        last_val = gauss_cdf[j]
-    if last_val > 0:
-        gauss_cdf[:min(len_lpf, real_len)] /= last_val
-    # gauss_cdf[j] 在 0~len_lpf 从 0 升到 1，之后保持 0
-
-    # 将高斯 CDF 转为正则化倒数权重 (与 WebTools 一致的变换)
-    # gauss_cdf ≈ 0 → sn_weight ≈ 1/(10*1) = 0.1 (低 → 弱正则化)
-    # gauss_cdf ≈ 1 → sn_weight ≈ 1/(10*eps) ≈ 1e8 (高 → 强抑制)
-    sn_weight = 1.0 / (10.0 * (1.0 - gauss_cdf + 1e-9))
-
-    # ------------------------------------------------------------
-    # 分窗 FFT → Wiener 反卷积 → 阶跃响应
-    #
-    # 核心修正：使用 rfft/irfft 直接工作在单边谱上，
-    # 避免 scale + _to_double_sided 引入的 Pxx 量级缩小问题。
-    # 旧代码中 scale (2/N) 将 Pxx 缩小 ~N² 倍，而固定量级的 sn
-    # 没有同步缩放，导致 sn 在几乎所有频率上主导 Pxx + sn，
-    # 将传递函数 H 压制到远小于 1。
-    # ------------------------------------------------------------
     all_steps: List[np.ndarray] = []
     skipped_quality = 0
 
-    for i in range(num_windows):
-        start = i * window_spacing
-        end = start + window_size
+    for i in range(num_segments):
+        start = i * seg_step
+        end = start + seg_len
+        sp = target[start:end]
+        gy = actual[start:end]
 
-        raw_tar = target[start:end]
-        raw_act = actual[start:end]
-
-        # ── 数据质量预检（在加窗之前检查原始信号） ──────────
-        # 1. NaN/Inf 检测
-        if np.any(~np.isfinite(raw_act)) or np.any(~np.isfinite(raw_tar)):
+        # ── SmartTune 附加数据预检（PTB 之外的脏数据防御）──────
+        if np.any(~np.isfinite(sp)) or np.any(~np.isfinite(gy)):
+            skipped_quality += 1
+            continue
+        if float(np.max(np.abs(gy))) > 1500.0:  # deg/s，物理极端值
             skipped_quality += 1
             continue
 
-        # 2. Actual 极端值检测：飞行中角速度 > 1500 deg/s 异常
-        #    数据单位为 deg/s（BF gyroADC / AP RATE 均为 deg/s）
-        act_max = float(np.max(np.abs(raw_act)))
-        if act_max > 1500.0:
-            skipped_quality += 1
+        # ── PTB 段筛选：minInput ≤ max(|SP|) ≤ maxInput ─────────
+        sp_max = float(np.max(np.abs(sp)))
+        if sp_max < min_target_amplitude or sp_max > max_target_amplitude:
             continue
 
-        # 3. Actual/Target 比例异常检测
-        tar_peak = float(np.max(np.abs(raw_tar)))
-        if tar_peak > 1e-3 and act_max > tar_peak * 4.0:
-            skipped_quality += 1
-            continue
+        # ── 零填充 FFT + 常数正则化 Wiener 反卷积（PTB 核心）────
+        a = np.concatenate([sp, np.zeros(_PAD_SAMPLES)])
+        b = np.concatenate([gy, np.zeros(_PAD_SAMPLES)])
+        fa = np.fft.fft(a)
+        fb = np.fft.fft(b)
 
-        # 4. Actual 标准差过小（静止段，无有效响应）
-        #    单位 deg/s，5 deg/s 标准差以下视为静止
-        if float(np.std(raw_act)) < 5.0:
-            skipped_quality += 1
-            continue
+        pxx = (fa * np.conj(fa)).real  # 自谱，纯实数
+        lam = _REG_FACTOR * float(np.max(pxx)) if pxx.size else 1e-9
+        lam = max(lam, 1e-30)
 
-        tar_win = raw_tar * window
-        act_win = raw_act * window
+        G = (fb * np.conj(fa)) / (pxx + lam)
 
-        # 幅值阈值（检查加窗后的峰值）
-        tar_max = np.max(np.abs(tar_win))
-        if tar_max < min_target_amplitude:
-            continue
+        impulse = np.fft.ifft(G).real
+        step = np.cumsum(impulse[:wnd])
 
-        # ── rfft（不额外缩放，让 Pxx 保持与信号幅值匹配的量级）──
-        X = np.fft.rfft(tar_win)
-        Y = np.fft.rfft(act_win)
-
-        # ── 交叉谱 / 自谱 ──
-        Pxx = (X * np.conj(X)).real   # 自谱，纯实数
-        Pyx = Y * np.conj(X)          # 交叉谱
-
-        # ── 自适应 SNR 正则化 ──
-        # sn_weight 定义了各频率的正则化相对强度 (0.1 到 ~1e8)
-        # 乘以 Pxx 的中位数使正则化量级与实际信号功率匹配
-        sn_scale = float(np.median(Pxx[1:])) if real_len > 1 else 1.0
-        sn_scale = max(sn_scale, 1e-30)
-        sn = sn_weight * sn_scale
-
-        # ── Wiener 反卷积 ──
-        H = Pyx / (Pxx + sn)
-
-        # ── irfft → 脉冲响应 → 累积和 → 阶跃响应 ──
-        impulse = np.fft.irfft(H, n=window_size)
-        step = np.cumsum(impulse[:step_end])
-
-        # 5. 阶跃响应质量检查：超调 > 300% 视为异常窗口
-        if step_end > 5:
-            tail_val = float(np.mean(step[-max(5, step_end // 4):]))
-            if abs(tail_val) > 1e-3:
-                peak_dev = float(np.max(step) - tail_val)
-                overshoot_est = peak_dev / abs(tail_val) * 100.0
-                if overshoot_est > 300.0:
-                    skipped_quality += 1
-                    continue
+        # ── PTB 段级 QC：稳态均值必须接近 1 ─────────────────────
+        if has_qc:
+            steady = float(np.mean(step[qc_mask]))
+            if not (_QC_STEADY_LO < steady < _QC_STEADY_HI):
+                skipped_quality += 1
+                continue
 
         all_steps.append(step)
 
     if not all_steps:
         return {
             "time": time_arr,
-            "step_response": np.zeros(step_end),
+            "step_response": np.zeros(wnd),
             "error": "无有效窗口",
             "valid_windows": 0,
-            "total_windows": num_windows,
+            "total_windows": num_segments,
         }
 
-    # 均值平均
-    step_array = np.array(all_steps)
-    step_out = np.mean(step_array, axis=0)
-
-    info = {
-        "valid_windows": len(all_steps),
-        "total_windows": num_windows,
-        "skipped_quality": skipped_quality,
-        "window_size": window_size,
-        "sample_rate": sample_rate,
-        "method": "wiener_fft",
-    }
+    step_out = np.mean(np.array(all_steps), axis=0)
 
     return {
         "time": time_arr,
         "step_response": step_out,
-        **info,
+        "valid_windows": len(all_steps),
+        "total_windows": num_segments,
+        "skipped_quality": skipped_quality,
+        "window_size": seg_len,
+        "sample_rate": sample_rate,
+        "method": "pidtoolbox_ptstepcalc",
     }
 
 
@@ -256,9 +184,11 @@ def compute_step_response_for_axis(
     imu_data: Optional[Dict[str, np.ndarray]] = None,
 ) -> Dict[str, Any]:
     """
-    为指定轴计算阶跃响应（对齐 WebTools 数据源逻辑）。
+    为指定轴计算阶跃响应。
 
-    优先使用 IMU 陀螺仪数据（高采样率）作为实际响应。
+    Betaflight Blackbox 的 Actual 即 gyroADC（滤波后陀螺仪），与 PTB 的
+    GY 输入一致；imu_data 路径仅在 Actual 来自其他低采样率源时启用
+    （提供更高采样率的陀螺仪 + 时间均匀化重采样）。
     """
     desired = pid_data.get("Desired", np.array([]))
     actual_rate = pid_data.get("Actual", np.array([]))
@@ -268,8 +198,7 @@ def compute_step_response_for_axis(
 
     if use_imu:
         axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}.get(axis.lower(), 0)
-        gyr_keys = ["GyrX", "GyrY", "GyrZ"]
-        gyr_key = gyr_keys[axis_idx]
+        gyr_key = ["GyrX", "GyrY", "GyrZ"][axis_idx]
 
         actual_imu = imu_data[gyr_key]
         time_imu = imu_data["time"]
@@ -283,7 +212,7 @@ def compute_step_response_for_axis(
             )
             desired_resampled = interp_desired(time_imu)
 
-            # 时间均匀化（DataFlash 时间戳可能不均匀，FFT 要求均匀采样）
+            # 时间均匀化（FFT 要求均匀采样）
             new_time = np.linspace(time_imu[0], time_imu[-1], len(time_imu))
             desired_resampled = np.interp(new_time, time_imu, desired_resampled)
             actual_imu = np.interp(new_time, time_imu, actual_imu)
@@ -313,17 +242,14 @@ def compute_step_response_for_axis(
     else:
         sample_rate = 400.0
 
-    # 阈值：数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）
-    # 使用 3.0 deg/s 作为最小目标幅值，在窗口数量和 SNR 之间取得平衡
-    min_amp = 3.0  # deg/s
-
     result = estimate_step_response(
         target=desired,
         actual=actual,
         sample_rate=sample_rate,
-        min_target_amplitude=min_amp,
-        step_duration_s=0.5,
-        cutfreq=25.0,
+        # PTB minInput = 20 deg/s（不再用旧实现的 3.0 妥协值；
+        # 段太少时宁可报告 valid_windows=0 也不引入弱激励噪声段）
+        min_target_amplitude=_MIN_INPUT_DEG_S,
+        step_duration_s=_RESPONSE_DURATION_S,
     )
 
     time_out = result.get("time", np.array([]))

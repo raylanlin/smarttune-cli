@@ -4,7 +4,9 @@
 本模块在 pid_reviewer.py 中按 platform 动态分派：
   smarttune.platform.ardupilot.step_response_fft
 
-算法流程（完全复现 WebTools redraw_step + Libraries/Array_Math.js + Libraries/fft.js）：
+算法流程（完全复现 WebTools redraw_step + Libraries/Array_Math.js + Libraries/fft.js；
+2026-06-11 已对照上游真实源码逐项核验：hanning / 缩放 / TarMax≥20（加窗后）/
+spacing=N/16 / 高斯 CDF 正则化 / to_double_sided / Wiener / cumsum 全部一致）：
 
 1. 分窗：Hanning 窗，window_size 点，spacing = round(window_size / 16)
 2. 每窗做 fft.js realTransform（单边 FFT，DC/Nyquist 乘 1/N，其余乘 2/N）
@@ -38,16 +40,19 @@ def _to_double_sided(single: np.ndarray) -> np.ndarray:
     """
     单边复谱转双边复谱（复现 WebTools to_double_sided）。
 
-    single: complex64 ndarray, shape (real_len,)
+    single: complex ndarray, shape (real_len,)
         rfft 结果（已缩放：DC/Nyq *1/N, 其余 *2/N）
-    returns: complex64 ndarray, shape (2*real_len - 2,)
+    returns: complex128 ndarray, shape (2*real_len - 2,)
         full_len = 2 * (real_len - 1)
         DC / Nyquist 原样保留
         正频率 *0.5；负频率位置存放正频率的共轭 *0.5
+
+        精度说明：JS 的 Number 是 float64，这里用 complex128（双 float64）
+        保持与 WebTools 同精度；旧实现用 complex64 反而低于参考实现。
     """
     real_len = len(single)
     full_len = 2 * (real_len - 1)
-    ret = np.zeros(full_len, dtype=np.complex64)
+    ret = np.zeros(full_len, dtype=np.complex128)
 
     # DC
     ret[0] = single[0]
@@ -159,7 +164,9 @@ def estimate_step_response(
     window_spacing = int(np.round(window_size / 16))  # Math.round
     num_windows = (n - window_size) // window_spacing + 1
 
-    step_end = min(int(step_duration_s / dt), window_size)
+    # WebTools: Math.min(Math.ceil(0.5 / sample_time), window_size)
+    # （源码核对 2026-06-11：用 ceil 而非 floor）
+    step_end = min(int(np.ceil(step_duration_s / dt)), window_size)
     time_arr = np.arange(step_end) * dt
     full_len = 2 * (real_len - 1)  # 双边谱长度
 
@@ -386,9 +393,10 @@ def compute_step_response_for_axis(
     else:
         sample_rate = 400.0
 
-    # 阈值：数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）
-    # 使用 3.0 deg/s 作为最小目标幅值，在窗口数量和 SNR 之间取得平衡
-    min_amp = 3.0  # deg/s
+    # 阈值：对齐 WebTools PIDReview 的 TarMax < 20 窗口筛选（deg/s）。
+    # 旧实现用 3.0 增加窗口数，但会把弱激励的噪声窗口平均进来，
+    # 与参考实现偏离 — 现恢复 20.0 严格对齐。
+    min_amp = 20.0  # deg/s
 
     result = estimate_step_response(
         target=desired,

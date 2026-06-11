@@ -129,29 +129,28 @@ def get_log_quality(
         issues.append(f"Log duration {duration_min:.1f} min — adequate for basic analysis")
 
     # ── 3. Excitation (step response windows) ─────────────────
+    # C9 fix: use the same detect_steps() as PIDReviewer so the
+    # "step window" counts shown by `stune quality` and `stune pid`
+    # can no longer contradict each other (old code used an ad-hoc
+    # std-based threshold here vs. max-based threshold in the analyzer).
     step_counts: Dict[str, int] = {}
     if has_pid and n_pid > 10:
         try:
+            from smarttune.analyzers.pid_reviewer import detect_steps
+
             for ax in fd.axes:
                 sig = fd.pid.get(ax)
-                if sig is None:
+                if sig is None or sig.desired is None or len(sig.desired) <= 10:
                     step_counts[ax] = 0
                     continue
-                desired = sig.desired
-                if desired is not None and len(desired) > 10:
-                    diff = np.abs(np.diff(desired))
-                    threshold = np.std(desired) * 0.5 if np.std(desired) > 0 else 1.0
-                    step_indices = np.where(diff > threshold)[0]
-                    if len(step_indices) > 0:
-                        groups = 1
-                        for j in range(1, len(step_indices)):
-                            if step_indices[j] - step_indices[j - 1] > 10:
-                                groups += 1
-                        step_counts[ax] = groups
-                    else:
-                        step_counts[ax] = 0
-                else:
-                    step_counts[ax] = 0
+                dt_ms = 4.0
+                t = sig.timestamp_s
+                if t is not None and len(t) > 1:
+                    dts = np.diff(t)
+                    dts_valid = dts[dts > 1e-6]
+                    if len(dts_valid) > 0:
+                        dt_ms = max(float(np.median(dts_valid)) * 1000.0, 0.1)
+                step_counts[ax] = len(detect_steps(sig.desired, dt_ms=dt_ms))
         except Exception:
             pass
 

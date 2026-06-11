@@ -13,9 +13,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Set
+from typing import Set, TYPE_CHECKING
 
 from smarttune.models.flight_data import FlightData
+
+if TYPE_CHECKING:
+    from smarttune.platform.params import ParamTable
 
 
 class PlatformAdapter(ABC):

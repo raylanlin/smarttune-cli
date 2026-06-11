@@ -49,7 +49,7 @@ class FitError(MAGFitError):
 
 # 尝试使用 WMM 精确模型；fallback 到简化 IGRF 近似
 try:
-    from smarttune.analyzers.wmm import get_earth_field_ned_ut, get_earth_field
+    from smarttune.analyzers.wmm import get_earth_field
     _HAS_WMM = True
 except ImportError:
     _HAS_WMM = False
@@ -60,18 +60,31 @@ except ImportError:
 TYPICAL_FIELD_UT = 50.0  # μT → 换算 1 mGauss = 0.1 μT
 
 
-def earth_field_ned(lat_deg: float, lon_deg: float, alt_m: float) -> np.ndarray:
+def earth_field_ned(
+    lat_deg: float, lon_deg: float, alt_m: float, has_position: bool = True,
+) -> np.ndarray:
     """
-    根据经纬度返回 NED 地磁场向量 (μT)。
+    根据经纬度返回 NED 地磁场向量 (mGauss)。
 
-    优先使用 WMM 查表；无模块时 fallback 到 IGRF 近似。
+    单位约定（C2 修复）：FlightData.mag 为 mGauss（ArduPilot MAG 消息原生单位），
+    因此期望磁场也统一为 mGauss，残差直接以 mGauss 计算，不再做 μT→mGauss 换算。
+
+    优先使用 WMM 查表（vector 字段本身就是 mGauss）；无模块时 fallback 到
+    IGRF 近似（μT × 10 → mGauss）。
+
+    Parameters
+    ----------
+    has_position : bool
+        是否有真实位置源（GPS / 参数表）。False 时跳过 WMM 查表，
+        直接用 IGRF 近似。旧实现用 ``lat==0 and lon==0`` 判断，会误伤
+        赤道原点附近的真实飞行。
     """
-    if _HAS_WMM and lat_deg != 0.0 and lon_deg != 0.0:
-        result = get_earth_field_ned_ut(lat_deg, lon_deg)
+    if _HAS_WMM and has_position:
+        result = get_earth_field(lat_deg, lon_deg)
         if result is not None:
-            return result
-    # fallback
-    return igrf_approximation(lat_deg, alt_m)
+            return np.array(result["vector"], dtype=np.float64)  # 已是 mGauss
+    # fallback: igrf_approximation 返回 μT，×10 → mGauss
+    return igrf_approximation(lat_deg, alt_m) * 10.0
 
 
 def igrf_approximation(lat_deg: float, alt_m: float) -> np.ndarray:
@@ -144,6 +157,49 @@ def ned_to_body(ned: np.ndarray, q: np.ndarray) -> np.ndarray:
     body[1] = 2*(ab + wc) * nx + (ww - aa + bb - cc) * ny + 2*(bc - wa) * nz
     body[2] = 2*(ac - wb) * nx + 2*(bc + wa) * ny + (ww - aa - bb + cc) * nz
     return body
+
+
+def _apply_compass_compensation(
+    mag: np.ndarray,
+    ofs: np.ndarray,
+    dia: np.ndarray,
+    odi: np.ndarray,
+    mot: np.ndarray,
+    thr: np.ndarray,
+) -> np.ndarray:
+    """
+    按 ArduPilot 补偿模型计算校正后磁场（C6 修复）。
+
+    ArduPilot 软铁补偿是对称矩阵作用于 (raw + OFS)：
+
+        M = [[DIA_X, ODI_X, ODI_Y],
+             [ODI_X, DIA_Y, ODI_Z],
+             [ODI_Y, ODI_Z, DIA_Z]]
+        corrected = M · (raw + OFS) + MOT · throttle
+
+    即 ODI_X = xy 耦合、ODI_Y = xz 耦合、ODI_Z = yz 耦合。
+    旧实现是 (mag+ofs)*dia 后叠加基于原始 mag 的逐轴耦合项，
+    与固件模型不一致 — 拟出的 ODI 不能直接写回 COMPASS_ODI_*。
+
+    Parameters
+    ----------
+    mag : np.ndarray, shape (N, 3)
+        原始磁力计读数 (mGauss)。
+    ofs, dia, odi, mot : np.ndarray, shape (3,)
+        补偿参数。odi = [ODI_X(xy), ODI_Y(xz), ODI_Z(yz)]。
+    thr : np.ndarray, shape (N,)
+        归一化油门/电流。
+
+    Returns
+    -------
+    np.ndarray, shape (N, 3)
+        校正后磁场 (mGauss)。
+    """
+    raw = mag + ofs
+    cx = dia[0] * raw[:, 0] + odi[0] * raw[:, 1] + odi[1] * raw[:, 2]
+    cy = odi[0] * raw[:, 0] + dia[1] * raw[:, 1] + odi[2] * raw[:, 2]
+    cz = odi[1] * raw[:, 0] + odi[2] * raw[:, 1] + dia[2] * raw[:, 2]
+    return np.stack([cx, cy, cz], axis=1) + np.outer(thr, mot)
 
 
 # ---------------------------------------------------------------------------
@@ -397,19 +453,44 @@ class MAGFit:
             "time": np.array([]), "Roll": np.array([]), "Pitch": np.array([]), "Yaw": np.array([]),
         })
 
-        # GPS 位置
+        # GPS 位置（C6 配套修复：记录位置来源，无真实位置时显式警告，
+        # 不再静默用默认坐标（深圳）拟合其他地区的日志）
         gps = flight_data.extras.get("gps_position", {})
+        self._position_warnings: List[str] = []
         if gps:
+            self._has_position = True
             self._lat = gps.get("lat", self._params.get("GPS_LAT", 22.5))
             self._lon = gps.get("lon", self._params.get("GPS_LON", 114.0))
             self._alt_m = gps.get("alt", self._params.get("ALT_M", 50.0))
+        elif "GPS_LAT" in self._params and "GPS_LON" in self._params:
+            self._has_position = True
+            self._lat = float(self._params["GPS_LAT"])
+            self._lon = float(self._params["GPS_LON"])
+            self._alt_m = float(self._params.get("ALT_M", 50.0))
         else:
-            self._lat = self._params.get("GPS_LAT", 22.5)
-            self._lon = self._params.get("GPS_LON", 114.0)
-            self._alt_m = self._params.get("ALT_M", 50.0)
+            self._has_position = False
+            self._lat = 22.5
+            self._lon = 114.0
+            self._alt_m = 50.0
+            self._position_warnings.append(
+                "[警告] 日志无 GPS 位置，期望磁场使用 IGRF 中纬度近似代替 WMM 查表；"
+                "拟合的 OFS/DIA 可参考，fitness 绝对值偏差可能较大。"
+            )
 
         # AHR2 四元数姿态（如果 adapter 放到了 extras 里）
         self._ahr2_data = flight_data.extras.get("ahr2_data", None)
+
+        # 当前 COMPASS_OFS / COMPASS_MOT（C1 修复）：
+        # 优先从 extras["compass_raw"]（逐样本 OfsX/MOfsX 列）取中位数，
+        # 回退到参数表 COMPASS_OFS_* / COMPASS_MOT_*，最后回退 0。
+        # 旧实现读 self._mag_data["OfsX"]，但 _load_data 从未填充该键 → 必然 KeyError。
+        compass_raw = flight_data.extras.get("compass_raw") or []
+        self._ofs_current = self._extract_current_vec(
+            compass_raw, ("OfsX", "OfsY", "OfsZ"),
+            ("COMPASS_OFS_X", "COMPASS_OFS_Y", "COMPASS_OFS_Z"))
+        self._mot_current = self._extract_current_vec(
+            compass_raw, ("MOfsX", "MOfsY", "MOfsZ"),
+            ("COMPASS_MOT_X", "COMPASS_MOT_Y", "COMPASS_MOT_Z"))
 
         # 电池电流数据
         self._bat_data = None
@@ -489,17 +570,6 @@ class MAGFit:
         self._roll       = roll
         self._pitch      = pitch
         self._yaw        = yaw
-        self._ofs_current = np.array([
-            float(np.median(self._mag_data["OfsX"])),
-            float(np.median(self._mag_data["OfsY"])),
-            float(np.median(self._mag_data["OfsZ"])),
-        ], dtype=np.float64)
-
-        self._mot_current = np.array([
-            float(np.median(self._mag_data["MOfsX"])),
-            float(np.median(self._mag_data["MOfsY"])),
-            float(np.median(self._mag_data["MOfsZ"])),
-        ], dtype=np.float64)
 
         # 油门/电机补偿：优先用电池电流，fallback 到伪油门
         if self._bat_data is not None and self._bat_data["Curr"].size > 50:
@@ -521,10 +591,17 @@ class MAGFit:
             self._throttle = throttle
         else:
             # throttle fallback: ATT 伪油门 — 需要用独立 clip 防止越界
-            idx_att2 = np.clip(idx_att, 1, len(self._att_data["time"]) - 1)
-            throttle = np.abs(self._att_data["PitchIn"][idx_att2 - 1]) + \
-                       np.abs(self._att_data["RollIn"][idx_att2 - 1])
-            throttle = throttle / (np.max(throttle) + 1e-9)
+            # C5 修复：attitude extras 不保证含 PitchIn/RollIn，缺失时 MOT 项
+            # 不可观测，置零油门（MOT 保持初值，不参与拟合方向）。
+            att = self._att_data
+            att_time = att.get("time", np.array([]))
+            if "PitchIn" in att and "RollIn" in att and len(att_time) > 1:
+                idx_att2 = np.clip(idx_att, 1, len(att_time) - 1)
+                throttle = np.abs(att["PitchIn"][idx_att2 - 1]) + \
+                           np.abs(att["RollIn"][idx_att2 - 1])
+                throttle = throttle / (np.max(throttle) + 1e-9)
+            else:
+                throttle = np.zeros(mag_time.size, dtype=np.float64)
             self._throttle = throttle
 
     # ------------------------------------------------------------------
@@ -542,8 +619,11 @@ class MAGFit:
         if self._mag_synced is None or not len(self._mag_synced):
             raise FitError("无有效样本，无法计算期望磁场。")
 
-        # 当地地磁场 NED 向量（μT）— 使用 WMM 或 IGRF
-        b_ned = earth_field_ned(self._lat, self._lon, self._alt_m)  # (3,)
+        # 当地地磁场 NED 向量（mGauss）— 有真实位置时用 WMM，否则 IGRF 近似
+        b_ned = earth_field_ned(
+            self._lat, self._lon, self._alt_m,
+            has_position=getattr(self, "_has_position", True),
+        )  # (3,)
 
         N = len(self._mag_synced)
         field_expected = np.empty((N, 3), dtype=np.float64)
@@ -552,9 +632,10 @@ class MAGFit:
             # R(q)ᵀ · b_ned  →  body 坐标系
             field_expected[i] = ned_to_body(b_ned, self._quat[i])
 
-        # 若当地磁场接近零（赤道附近特殊情况），使用测量值的中位数强度做归一化
+        # 若当地磁场接近零（异常查表结果），使用测量值的中位数强度做归一化
+        # 阈值 100 mGauss（地表场强通常 250~650 mGauss）
         b_ned_mag = np.linalg.norm(b_ned)
-        if b_ned_mag < 10.0:
+        if b_ned_mag < 100.0:
             measured_mag = np.linalg.norm(self._mag_synced, axis=1)
             field_expected = field_expected * (float(np.median(measured_mag)) / (b_ned_mag + 1e-9))
 
@@ -680,20 +761,23 @@ class MAGFit:
               200,   200,   200,   # MOT
         ], dtype=np.float64)
 
+        # x0 来自日志真实 OFS/MOT，可能越出边界 → least_squares 会拒绝 infeasible x0
+        x0 = np.clip(x0, bounds_lo, bounds_hi)
+
         def residuals(x: np.ndarray) -> np.ndarray:
             ofs = x[0:3]
             dia = x[3:6]
-            odi_vec = x[6:9]   # [ODI_X, ODI_Y, ODI_Z] per-axis coupling
+            odi_vec = x[6:9]   # [ODI_X(xy), ODI_Y(xz), ODI_Z(yz)]
             mot = x[9:12]
 
-            compensated = (mag + ofs) * dia
-            compensated[:, 0] += odi_vec[1] * mag[:, 1] + odi_vec[2] * mag[:, 2]
-            compensated[:, 1] += odi_vec[0] * mag[:, 0] + odi_vec[2] * mag[:, 2]
-            compensated[:, 2] += odi_vec[0] * mag[:, 0] + odi_vec[1] * mag[:, 1]
-            compensated += np.outer(thr, mot)
+            # C6 修复：使用 ArduPilot 对称软铁矩阵模型，
+            # 拟合出的 ODI 可直接写回 COMPASS_ODI_*
+            compensated = _apply_compass_compensation(
+                mag, ofs, dia, odi_vec, mot, thr,
+            )
 
-            # 加权残差（mGauss，1 μT = 10 mGauss）
-            raw_residual = (compensated - B_exp) * 10.0
+            # 加权残差 — mag 与 B_exp 均为 mGauss（C2 修复：去掉 ×10 换算）
+            raw_residual = compensated - B_exp
             return (raw_residual * sqrt_w_3d).ravel()
 
         try:
@@ -719,13 +803,10 @@ class MAGFit:
         scale_fit = float(np.median(dia_fit))
 
         # 计算 fitness（未加权 RMSE — 权重仅影响拟合方向，不影响报告误差）
-        raw_res = np.empty((len(mag), 3), dtype=np.float64)
-        compensated = (mag + ofs_fit) * dia_fit
-        compensated[:, 0] += odi_fit[1] * mag[:, 1] + odi_fit[2] * mag[:, 2]
-        compensated[:, 1] += odi_fit[0] * mag[:, 0] + odi_fit[2] * mag[:, 2]
-        compensated[:, 2] += odi_fit[0] * mag[:, 0] + odi_fit[1] * mag[:, 1]
-        compensated += np.outer(thr, mot_fit)
-        raw_res = (compensated - B_exp) * 10.0
+        compensated = _apply_compass_compensation(
+            mag, ofs_fit, dia_fit, odi_fit, mot_fit, thr,
+        )
+        raw_res = compensated - B_exp  # mGauss（C2 修复：去掉 ×10 换算）
         fitness = float(np.sqrt(np.mean(raw_res ** 2)))
 
         # 添加 bin 覆盖率到 coverage
@@ -760,8 +841,9 @@ class MAGFit:
             else:
                 assessment = "BAD"
 
-        # 诊断警告
-        warnings = self._diagnose(
+        # 诊断警告（位置源警告置顶）
+        warnings = list(getattr(self, "_position_warnings", []))
+        warnings += self._diagnose(
             ofs_fit, dia_fit, odi_fit, mot_fit,
             fitness, coverage,
         )
@@ -878,6 +960,28 @@ class MAGFit:
     # ------------------------------------------------------------------
     # 工具函数
     # ------------------------------------------------------------------
+
+    def _extract_current_vec(
+        self,
+        compass_raw: List[Dict[str, Any]],
+        raw_keys: Tuple[str, str, str],
+        param_keys: Tuple[str, str, str],
+    ) -> np.ndarray:
+        """提取当前 OFS/MOT 三轴值：extras["compass_raw"] 中位数 → 参数表 → 0。"""
+        if compass_raw:
+            try:
+                vals = []
+                for k in raw_keys:
+                    arr = np.asarray(
+                        [float(c.get(k, 0.0)) for c in compass_raw], dtype=np.float64
+                    )
+                    vals.append(float(np.median(arr)) if arr.size else 0.0)
+                return np.array(vals, dtype=np.float64)
+            except (TypeError, ValueError):
+                pass
+        return np.array(
+            [float(self._params.get(k, 0.0)) for k in param_keys], dtype=np.float64
+        )
 
     @staticmethod
     def _euler_to_quat(yaw: np.ndarray, pitch: np.ndarray, roll: np.ndarray) -> np.ndarray:

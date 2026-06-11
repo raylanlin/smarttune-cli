@@ -42,8 +42,10 @@ def estimate_delay(u: np.ndarray, y: np.ndarray, max_delay: int = 20) -> int:
     u_centered = u[:n] - np.mean(u[:n])
     y_centered = y[:n] - np.mean(y[:n])
 
-    # 互相关
-    corr = np.correlate(y_centered, u_centered, mode='full')
+    # 互相关（FFT 实现，O(N log N)；旧实现 np.correlate(mode='full')
+    # 为 O(N²)，10 万样本日志需秒级开销）
+    from scipy import signal as _signal
+    corr = _signal.fftconvolve(y_centered, u_centered[::-1], mode='full')
     lags = np.arange(-n + 1, n)
 
     # 找正半轴第一个峰值
@@ -64,7 +66,8 @@ def arx_identify(
     na: int = 2,
     nb: int = 2,
     d: int = 0,
-) -> Tuple[np.ndarray, np.ndarray]:
+    return_info: bool = False,
+):
     """
     ARX 模型辨识（最小二乘法）。
 
@@ -83,20 +86,41 @@ def arx_identify(
         外生输入阶数（B 多项式阶数）。
     d : int
         纯延迟（拍数）。
+    return_info : bool
+        True 时返回 (a, b, info)，info 含：
+          - ``is_fallback``: bool — 是否为占位默认模型（C14 修复：
+            下游据此拒绝产出 ωn/ζ 结论，不再把虚构系统当真）
+          - ``fallback_reason``: str | None
+          - ``cond``: float | None — 回归矩阵条件数
 
     Returns
     -------
-    Tuple[a, b]
+    (a, b) 或 (a, b, info)
         a: A 多项式系数 [1, a1, a2, ...]
         b: B 多项式系数 [b0, b1, ..., bm]
     """
+    _FALLBACK_A = np.array([1.0, -0.5, 0.0])
+    _FALLBACK_B = np.array([0.5, 0.0])
+
+    def _ret(a, b, info):
+        return (a, b, info) if return_info else (a, b)
+
     N = len(y)
     M = na + nb  # 待估参数数量
     start_idx = max(na, nb + d) + 1
 
     if N < start_idx + M:
         # 数据不足，返回默认模型
-        return np.array([1.0, -0.5, 0.0]), np.array([0.5, 0.0])
+        # C14 修复：显式告警 + info 标记 — 默认模型是虚构系统
+        _log.warning(
+            "ARX 辨识数据不足（N=%d < %d），返回默认占位模型；"
+            "下游自然频率/阻尼比结果不可信。", N, start_idx + M,
+        )
+        return _ret(_FALLBACK_A, _FALLBACK_B, {
+            "is_fallback": True,
+            "fallback_reason": f"insufficient_data (N={N} < {start_idx + M})",
+            "cond": None,
+        })
 
     # 构建回归矩阵
     Phi = np.zeros((N - start_idx, na + nb))
@@ -133,14 +157,27 @@ def arx_identify(
 
     try:
         theta, _residual, _rank, _sv = np.linalg.lstsq(Phi, Y, rcond=None)
-    except Exception:
+    except Exception as exc:
         # 求解失败，返回默认模型
-        return np.array([1.0, -0.5, 0.0]), np.array([0.5, 0.0])
+        # C14 修复：显式告警 + info 标记，不再静默吞掉
+        _log.warning(
+            "ARX 最小二乘求解失败（%s），返回默认占位模型；"
+            "下游自然频率/阻尼比结果不可信。", exc,
+        )
+        return _ret(_FALLBACK_A, _FALLBACK_B, {
+            "is_fallback": True,
+            "fallback_reason": f"lstsq_failed ({exc})",
+            "cond": cond,
+        })
 
     a = np.concatenate([[1.0], theta[:na]])
     b = theta[na:na + nb]
 
-    return a, b
+    return _ret(a, b, {
+        "is_fallback": False,
+        "fallback_reason": None,
+        "cond": cond,
+    })
 
 
 def arx_step_response(
@@ -261,8 +298,14 @@ def estimate_step_response_arx(
     # 估计延迟
     d = estimate_delay(u, y, max_delay=min(10, len(u) // 4))
 
-    # ARX 辨识
-    a, b = arx_identify(u, y, na, nb, d)
+    # ARX 辨识（C14：携带 fallback 标记）
+    a, b, arx_info = arx_identify(u, y, na, nb, d, return_info=True)
+
+    if arx_info["is_fallback"]:
+        return np.array([0.0]), np.array([0.0]), {
+            "error": f"ARX 辨识失败: {arx_info['fallback_reason']}",
+            "model_is_fallback": True,
+        }
 
     # 计算阶跃响应（过采样 10 倍使曲线平滑）
     step_resp = arx_step_response(a, b, d, N=N, oversample=10)
@@ -280,6 +323,8 @@ def estimate_step_response_arx(
         "b": b.tolist(),
         "na": na,
         "nb": nb,
+        "model_is_fallback": False,
+        "cond": arx_info.get("cond"),
     }
 
     return time_arr, step_resp, info

@@ -1,3 +1,86 @@
+# SmartTune v3.0.1 — 架构审查修复 (2026-06-11)
+
+**依据：** 《SmartTune 架构与算法审查报告.md》 14 处代码修复
+**范围：** 关键 Bug 修复（CRITICAL/HIGH）+ 算法对齐 WebTools 源码 + 数值/单位语义修正
+**测试：** 待 pytest 验证（见下）
+**部署形态：** 精准补丁包（10 个源文件覆盖），不破坏本地独有的 plot.py / step_response_protocol.py / PX4 适配器 / 5 个测试文件
+
+---
+
+## 1. Bug 修复（按文件）
+
+| 文件 | 缺陷编号 | 修复内容 |
+|------|---------|---------|
+| `smarttune/analyzers/magfit.py` | C1 | `_extract_current_vec()` 修复 KeyError；旧实现 100% 崩溃被 try/except 吞掉为 "skipped" |
+| `smarttune/analyzers/magfit.py` | C2 | 单位全链路统一 mGauss；`earth_field_ned()` 返回 mGauss；残差计算去掉 `×10` 换算 |
+| `smarttune/analyzers/magfit.py` | C5 | 伪油门回退加 `PitchIn/RollIn` 键存在性守卫 |
+| `smarttune/analyzers/magfit.py` | C6 | ODI 改为 ArduPilot 对称软铁矩阵 `M·(raw+OFS) + MOT·thr`；**数值与旧版不可比，旧 ODI 建议应作废** |
+| `smarttune/analyzers/magfit.py` | — | `earth_field_ned()` 新增 `has_position` 参数；GPS 缺失时输出显式警告（不再静默用深圳默认坐标） |
+| `smarttune/analyzers/fft_analyzer.py` | C3 | `INS_HNTCH_REF` 语义修正：mode 1→0；mode 2→0+警告（需用户设悬停油门参考值如 MOT_THST_HOVER）；mode 4→1.0；**防止错误参数写入飞控** |
+| `smarttune/analyzers/fft_analyzer.py` | C12 | `_identify_source()` 频带配置改为 `{**_defaults, **bands}` 合并 |
+| `smarttune/analyzers/pid_reviewer.py` | C4 | `current_val <= 0` 时跳过该参数建议（消除 "current 0.0 → suggested 0.01" 伪建议） |
+| `smarttune/analyzers/pid_reviewer.py` | C7 | `_analyze_axis()` 实际构造 imu_dict；采样率 <20Hz 切到时域回退 |
+| `smarttune/analyzers/pid_reviewer.py` | C8 | 负向阶跃超调用 `min` 对称计算；settling 未进带 → -1 哨兵（不再用窗口长度冒充） |
+| `smarttune/analyzers/pid_reviewer.py` | — | 建议调整幅度全局 cap `clip(factor, 0.75, 1.25)`（落实 README "±25% cap"） |
+| `smarttune/platform/betaflight/step_response_fft.py` | C10 | **整体重写** — 对齐 PID Toolbox PTstepcalc.m（2s 段、minInput=20/maxInput=500 deg/s、零填充 FFT、稳态 QC 0.5-3.0、跨段平均） |
+| `smarttune/platform/ardupilot/step_response_fft.py` | C10 | 窗口筛选阈值 3.0→20.0 deg/s（对齐 WebTools `TarMax<20`）；`step_end` floor→ceil；complex64→complex128 |
+| `smarttune/analyzers/arx_model.py` | C14 | `arx_identify(return_info=True)` 返回 fallback 标记；`estimate_delay()` 改用 `fftconvolve`（O(N log N)） |
+| `smarttune/analyzers/sysid_analyzer.py` | C14 | ARX fallback 抛 `AnalysisError`（调用方需 catch）；`discrete_to_second_order()` 修正过阻尼系统一阶近似 |
+| `smarttune/services/analysis.py` | C9 | quality 激励统计改用 `pid_reviewer.detect_steps()`（与 `stune pid` 阶跃窗口数不再矛盾） |
+| `smarttune/platform/registry.py` | A3 | 注册期捕获元数据快照 `_metadata`；`list_platforms()` 不再每次重新实例化适配器 |
+| `smarttune/platform/base.py` | A4 | `param_table()` 返回类型通过 `TYPE_CHECKING` 导入 |
+
+## 2. 已知行为变化
+
+| 变化 | 升级须知 |
+|------|---------|
+| magfit 从"静默跳过"变为正常工作 | 旧版因 C1 崩溃从不产出结果；升级后首次看到 magfit 输出属预期 |
+| **ODI 拟合值语义变化** | 现为 ArduPilot 软铁矩阵非对角元，与旧版数值不可比；旧 ODI 建议应作废 |
+| `INS_HNTCH_REF` mode 2 输出 0 + 警告 | 需用户自行填入悬停油门参考值（可取 MOT_THST_HOVER 学习值） |
+| BF 阶跃窗口可能变少 | 筛选阈值 3→20 deg/s（对齐上游）；弱激励日志会报 valid_windows=0 |
+| sysid 对坏数据直接报错 | 数据不足抛 `AnalysisError` 而非输出虚构 ωn/ζ；调用方需 catch |
+| `settling_time` 可能为 -1 | 表示窗口内未稳定（未知），不再用窗口长度冒充 |
+
+## 3. 接口兼容性
+
+- `arx_identify()` 默认仍返回 `(a, b)` 二元组，`return_info=True` 为可选参数 — 向后兼容
+- BF `estimate_step_response()` 移除 `cutfreq`、新增 `max_target_amplitude` — 仓库内无外部调用方
+- `earth_field_ned()` 新增可选参数 `has_position=True` — 向后兼容
+- `MAGFit` ODI 拟合结果语义变化 — 见上表
+- 其余公开 API 无签名变化
+
+## 4. 本次未涉及
+
+- A1：CLI 与 services 双轨实现收敛（cli.py 与 deploy 包同源，本次未触及）
+- 等级标签体系统一（FFT 的 SEVERE/CRITICAL vs Assessment 枚举）
+- README 中"测试徽章""PX4 口径"等文档修订 — deploy 包基于旧快照的误判，**未套用**
+- C2 fitness 量级、BF 阶跃曲线数值 — 代码已修，需真实日志验证
+
+## 5. 部署/验证（patch 模式）
+
+```bash
+# 1. 10 个源文件精准覆盖（已完成）
+cp <patch>/smarttune/analyzers/{magfit,fft_analyzer,pid_reviewer,arx_model,sysid_analyzer}.py \
+   <local>/smarttune/analyzers/
+cp <patch>/smarttune/services/analysis.py <local>/smarttune/services/
+cp <patch>/smarttune/platform/{registry,base}.py <local>/smarttune/platform/
+cp <patch>/smarttune/platform/{ardupilot,betaflight}/step_response_fft.py \
+   <local>/smarttune/platform/{ardupilot,betaflight}/
+
+# 2. 版本号更新
+#    smarttune/__init__.py: __version__ = "3.0.1"
+
+# 3. 验证
+pytest tests/ -v
+stune --version         # 应输出 3.0.1
+stune analyze <flight>.bin
+#    - magfit 不再 "skipped"
+#    - PID 建议中无 "current 0.0" 条目
+#    - 无 GPS 日志 magfit 警告区有 IGRF 提示
+```
+
+---
+
 # SmartTune MCP 能力对齐 — 变更文档
 
 **日期：** 2026-05-19

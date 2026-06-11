@@ -139,15 +139,25 @@ def discrete_to_second_order(
         s1 = (2.0 / dt) * (p1 - 1.0) / (p1 + 1.0)
         s2 = (2.0 / dt) * (p2 - 1.0) / (p2 + 1.0)
 
-        # ωn² = |s1 * conj(s2)|
-        wn_sq = float(np.abs(s1 * np.conj(s2)))
-        wn = float(np.sqrt(max(wn_sq, 1e-6)))
+        # 二阶等效仅对共轭复极点对成立：ωn² = s·conj(s) = |s|²。
+        # 两个不相关的实极点是两个独立一阶环节，套用公式会产生
+        # 物理上不存在的 ωn/ζ — 改用最慢（最主导）实极点的一阶近似。
+        is_conjugate_pair = (
+            abs(np.imag(s1)) > 1e-9
+            and np.isclose(np.real(s1), np.real(s2), rtol=1e-6, atol=1e-9)
+            and np.isclose(np.imag(s1), -np.imag(s2), rtol=1e-6, atol=1e-9)
+        )
 
-        # ζ = -Re(s1) / ωn
-        if wn > 0:
-            zeta = float(-np.real(s1) / wn)
+        if is_conjugate_pair:
+            # ωn² = |s1 * conj(s2)| = |s1|²
+            wn_sq = float(np.abs(s1 * np.conj(s2)))
+            wn = float(np.sqrt(max(wn_sq, 1e-6)))
+            zeta = float(-np.real(s1) / wn) if wn > 0 else 0.7
         else:
-            zeta = 0.7
+            # 两个实极点：取最接近虚轴（最慢）的极点做一阶近似
+            s_dom = s1 if abs(np.real(s1)) <= abs(np.real(s2)) else s2
+            wn = float(np.abs(s_dom))
+            zeta = 1.0  # 过阻尼/非振荡系统
 
     # 限制合理范围
     wn = float(np.clip(wn, 1.0, 500.0))
@@ -368,13 +378,25 @@ class SysIDAnalyzer:
         # 估计延迟
         d = estimate_delay(u, y, max_delay=min(20, len(u) // 4))
         
-        # ARX 辨识
+        # ARX 辨识（C14 修复：fallback 占位模型显式拒绝，不再产出
+        # 看似合理实则虚构的 ωn/ζ 结论）
         try:
-            a, b = arx_identify(u, y, self._na, self._nb, d)
+            a, b, arx_info = arx_identify(
+                u, y, self._na, self._nb, d, return_info=True,
+            )
         except Exception as exc:
             raise AnalysisError(
                 message=f"{axis} 轴 ARX 辨识失败: {exc}",
                 hint="数据质量可能不足，尝试使用更长的飞行记录",
+            )
+
+        if arx_info["is_fallback"]:
+            raise AnalysisError(
+                message=(
+                    f"{axis} 轴 ARX 辨识失败（{arx_info['fallback_reason']}），"
+                    "无法产出可信的系统参数"
+                ),
+                hint="增加采集时长或检查输入激励是否充分",
             )
         
         # 计算拟合质量

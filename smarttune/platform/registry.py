@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 _registry: Dict[str, Type[PlatformAdapter]] = {}
 
+# 注册期捕获的元数据快照（A3 修复：list_platforms 不再每次调用都
+# 重新实例化全部适配器；适配器构造函数应保持无副作用，因为
+# register() 仍需实例化一次以读取 property 形式的 name）
+_metadata: Dict[str, Dict[str, str]] = {}
+
 
 def register(adapter_cls: Type[PlatformAdapter]) -> Type[PlatformAdapter]:
     """注册一个平台适配器类。
@@ -41,12 +46,18 @@ def register(adapter_cls: Type[PlatformAdapter]) -> Type[PlatformAdapter]:
     Type[PlatformAdapter]
         原样返回，便于做装饰器
     """
-    # 实例化一次获取 name
+    # 实例化一次获取 name 及元数据快照（仅注册期这一次）
     instance = adapter_cls()
     name = instance.name
     if name in _registry:
         logger.warning("Platform %r already registered, overwriting", name)
     _registry[name] = adapter_cls
+    _metadata[name] = {
+        "name": instance.name,
+        "display_name": instance.display_name,
+        "extensions": ", ".join(instance.supported_extensions),
+        "capabilities": ", ".join(sorted(instance.capabilities())),
+    }
     logger.debug("Registered platform adapter: %s (%s)", name, adapter_cls.__name__)
     return adapter_cls
 
@@ -125,18 +136,10 @@ def list_platforms() -> List[Dict[str, str]]:
     Returns
     -------
     List[Dict[str, str]]
-        每个元素: {"name": ..., "display_name": ..., "extensions": ...}
+        每个元素: {"name": ..., "display_name": ..., "extensions": ..., "capabilities": ...}
     """
-    result = []
-    for name, adapter_cls in sorted(_registry.items()):
-        instance = adapter_cls()
-        result.append({
-            "name": instance.name,
-            "display_name": instance.display_name,
-            "extensions": ", ".join(instance.supported_extensions),
-            "capabilities": ", ".join(sorted(instance.capabilities())),
-        })
-    return result
+    # A3 修复：返回注册期快照，不再逐个重新实例化适配器
+    return [dict(_metadata[name]) for name in sorted(_metadata.keys())]
 
 
 def resolve_adapter(platform: str, log_path: Path) -> PlatformAdapter:

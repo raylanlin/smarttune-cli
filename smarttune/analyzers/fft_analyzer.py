@@ -67,7 +67,7 @@ def _identify_source(
         "high_freq_resonance": (500.0, 2000.0),
         "motor_low": (30.0, 60.0),
     }
-    b = bands if bands else _defaults
+    b = {**_defaults, **bands} if bands else _defaults  # C12 修复：KB 部分覆盖时用默认值补齐，避免 KeyError
     # 检查是否为已知基频的谐波（2x, 3x）
     if idx > 0:
         prev_freq = peaks[idx - 1]["freq"]
@@ -234,6 +234,13 @@ class FFTAnalyzer:
             ])
 
         recs = self._build_notch_recommendation(peaks, vib_level)
+
+        # C3 修复配套：mode 2 的 REF 必须由用户设为悬停油门值，本工具无法推断
+        if recs.get("filter.notch1.mode") == 2 and recs.get("filter.notch1.enable") == 1:
+            warnings.append(
+                "陷波建议使用油门跟踪模式 (mode 2)：INS_HNTCH_REF 需设为悬停油门参考值"
+                "（0~1，可取 MOT_THST_HOVER 学习值），未设置时陷波不会随油门跟踪。"
+            )
 
         # 如果有多个峰值且无谐波关系，建议进一步诊断
         if len(peaks) >= 2 and vib_level not in ("EXCELLENT", "GOOD"):
@@ -539,21 +546,28 @@ class FFTAnalyzer:
                 hmc = hmc_other
 
             # 多峰策略
+            # C3 修复：INS_HNTCH_REF 语义 ——
+            #   mode 1 (静态):      REF 无意义，置 0
+            #   mode 2 (油门跟踪):  REF = 悬停油门参考值 (0~1, 如 MOT_THST_HOVER)，
+            #                       无法从振动谱推断 → 置 0 并由 analyze() 追加警告
+            #   mode 4 (FFT 跟踪): REF 作缩放系数，常规值 1.0
+            # 旧实现把中心频率（如 93.7）写进 REF，越界且语义错误。
             if len(peaks) >= 3:
                 # 3+ 峰值 → FFT 跟踪模式（mode 4）
                 mode = 4
-                ref = freq
+                ref = 1.0
             elif len(peaks) == 2:
-                # 2 峰 → 固定 + HNTC2，或 mode 2/3
+                # 2 峰 → 油门跟踪 + 建议启用 notch2
                 mode = 2
-                ref = freq
+                ref = 0.0
             else:
                 # 单峰
                 if primary_src in ("motor", "prop_blade_pass"):
                     mode = 2  # 油门动态跟踪
-                    ref = freq
+                    ref = 0.0
                 else:
                     mode = 1  # 静态
+                    ref = 0.0
 
             # GYRO_FILTER 调整（按振动等级降档）
             # 从 KB 读取合法范围以进行 clamp
