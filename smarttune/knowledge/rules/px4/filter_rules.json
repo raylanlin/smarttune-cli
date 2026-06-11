@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "px4_version_min": "1.13",
+  "description": "PX4 滤波/陷波知识库 — IMU_GYRO_* 参数体系",
+
+  "notch_params": {
+    "IMU_GYRO_NF0_FRQ": {"min": 0, "max": 1000, "default": 0, "unit": "Hz",
+                         "note": "静态陷波 0 中心频率，0 = 禁用"},
+    "IMU_GYRO_NF0_BW":  {"min": 0, "max": 100,  "default": 20, "unit": "Hz"},
+    "IMU_GYRO_NF1_FRQ": {"min": 0, "max": 1000, "default": 0, "unit": "Hz",
+                         "note": "静态陷波 1（第二峰值用）"},
+    "IMU_GYRO_NF1_BW":  {"min": 0, "max": 100,  "default": 20, "unit": "Hz"},
+    "IMU_GYRO_CUTOFF":  {"min": 0, "max": 1000, "default": 40, "unit": "Hz",
+                         "note": "gyro 低通，0 = 禁用"},
+    "IMU_DGYRO_CUTOFF": {"min": 0, "max": 1000, "default": 30, "unit": "Hz",
+                         "note": "D 项专用低通"},
+    "IMU_ACCEL_CUTOFF": {"min": 5, "max": 1000, "default": 30, "unit": "Hz"}
+  },
+
+  "px4_notch_semantics": [
+    "PX4 静态陷波（IMU_GYRO_NF0/NF1）不跟踪油门或 FFT — 无 ArduPilot 的 mode/REF/HMC/ATT 概念",
+    "电机基频随油门漂移时，静态陷波需把 BW 设宽以覆盖漂移范围，或改用 ESC RPM 动态陷波",
+    "PX4 v1.14+ 支持 ESC RPM 动态陷波（DShot telemetry，参数组 IMU_GYRO_DNF_*），对电机噪声效果优于静态陷波"
+  ],
+
+  "gyro_filter_tuning_table": {
+    "minimum_gyro_filter": 10,
+    "maximum_gyro_filter": 120,
+    "note": "IMU_GYRO_CUTOFF 常用范围；竞速机可更高，大轴距应更低"
+  }
+}

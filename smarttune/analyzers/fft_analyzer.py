@@ -103,8 +103,18 @@ def _identify_source(
     return "unknown"
 
 
+# 内部 5 级标签 → 全库统一 Assessment 枚举值（models/analysis_result.py）
+_ASSESSMENT_MAP = {
+    "EXCELLENT": "EXCELLENT",
+    "GOOD":      "GOOD",
+    "MARGINAL":  "MARGINAL",
+    "SEVERE":    "POOR",
+    "CRITICAL":  "UNUSABLE",
+}
+
+
 def _vibration_level(value_mss: float, thresholds: List[Dict]) -> str:
-    """根据阈值表返回振动等级标签。"""
+    """根据阈值表返回振动等级标签（内部 5 级：含 SEVERE/CRITICAL）。"""
     if not thresholds:
         # 无阈值表时，用硬编码默认值
         if value_mss < 0.5:
@@ -172,6 +182,7 @@ class FFTAnalyzer:
     ) -> None:
         self._kb = knowledge or {}
         self._default_overlap = overlap
+        self._platform: str = ""    # analyze() 时从 FlightData.platform 填充
 
         # 内部状态（由 analyze() 填充）
         self._gyro_data: Optional[Dict[str, np.ndarray]] = None
@@ -206,6 +217,7 @@ class FFTAnalyzer:
             - ``warnings`` : List[str]
             - ``mechanical_checks_required`` : List[str]
         """
+        self._platform = getattr(flight_data, "platform", "") or ""
         self._load_from_flight_data(flight_data)
         self._compute_sample_rates()
         self._compute_vibration_level()
@@ -235,12 +247,18 @@ class FFTAnalyzer:
 
         recs = self._build_notch_recommendation(peaks, vib_level)
 
-        # C3 修复配套：mode 2 的 REF 必须由用户设为悬停油门值，本工具无法推断
-        if recs.get("filter.notch1.mode") == 2 and recs.get("filter.notch1.enable") == 1:
-            warnings.append(
-                "陷波建议使用油门跟踪模式 (mode 2)：INS_HNTCH_REF 需设为悬停油门参考值"
-                "（0~1，可取 MOT_THST_HOVER 学习值），未设置时陷波不会随油门跟踪。"
-            )
+        # 平台分支：PX4 静态陷波无 mode/REF/HMC/ATT 概念，
+        # 输出只保留 PX4 可表达的参数并转换语义。
+        if self._platform == "px4":
+            recs = self._adapt_recommendation_px4(recs, peaks, warnings)
+        else:
+            # C3 修复配套（仅 ArduPilot 语义）：mode 2 的 REF 必须由用户
+            # 设为悬停油门值，本工具无法推断
+            if recs.get("filter.notch1.mode") == 2 and recs.get("filter.notch1.enable") == 1:
+                warnings.append(
+                    "陷波建议使用油门跟踪模式 (mode 2)：INS_HNTCH_REF 需设为悬停油门参考值"
+                    "（0~1，可取 MOT_THST_HOVER 学习值），未设置时陷波不会随油门跟踪。"
+                )
 
         # 如果有多个峰值且无谐波关系，建议进一步诊断
         if len(peaks) >= 2 and vib_level not in ("EXCELLENT", "GOOD"):
@@ -250,7 +268,11 @@ class FFTAnalyzer:
             )
 
         return {
-            "vibration_level": vib_level,
+            # 等级标签统一：对外输出映射到全库 Assessment 枚举值
+            # （SEVERE→POOR、CRITICAL→UNUSABLE），原始 5 级标签保留在
+            # vibration_level_raw 供阈值调试/知识库规则引用。
+            "vibration_level": _ASSESSMENT_MAP.get(vib_level, vib_level),
+            "vibration_level_raw": vib_level,
             "vibration_value_mss": round(self._vibration_mss, 3),
             "peak_frequencies": peaks,
             "recommendations": recs,
@@ -597,6 +619,51 @@ class FFTAnalyzer:
             "filter.accel_lpf": accel_filt,
         }
 
+    def _adapt_recommendation_px4(
+        self,
+        recs: Dict[str, Any],
+        peaks: List[Dict[str, Any]],
+        warnings: List[str],
+    ) -> Dict[str, Any]:
+        """把 AP 语义的陷波建议转换为 PX4 可表达的参数集。
+
+        PX4 静态陷波（IMU_GYRO_NF0/NF1）只有中心频率 + 带宽：
+        - mode/REF/HMC/ATT 无对应概念 → 从输出中移除
+        - 陷波启用 = freq > 0（无独立 enable 参数，保留 generic
+          enable 键供上层判断，但映射层不会输出它）
+        - 第二峰值 → filter.notch2.*（IMU_GYRO_NF1_*）
+        - 电机噪声需要跟踪时输出警告推荐 ESC RPM 动态陷波
+        """
+        out: Dict[str, Any] = {
+            "filter.notch1.enable": recs.get("filter.notch1.enable", 0),
+            "filter.notch1.freq": recs.get("filter.notch1.freq", 0.0),
+            "filter.notch1.bw": recs.get("filter.notch1.bw", 0.0),
+            "filter.gyro_lpf": recs.get("filter.gyro_lpf", 40),
+            "filter.accel_lpf": recs.get("filter.accel_lpf", 30),
+        }
+
+        # 第二峰值（非谐波）→ NF1
+        if len(peaks) >= 2:
+            sorted_peaks = sorted(peaks, key=lambda p: -p["magnitude_db"])
+            second = next(
+                (p for p in sorted_peaks[1:] if not p.get("is_harmonic")), None,
+            )
+            if second is not None:
+                out["filter.notch2.enable"] = 1
+                out["filter.notch2.freq"] = round(second["freq"], 1)
+                out["filter.notch2.bw"] = round(max(5.0, second["freq"] / 2.0), 1)
+
+        # 动态跟踪需求警告：静态陷波不随油门漂移
+        motor_peaks = [p for p in peaks if p.get("source") in ("motor", "prop_blade_pass")]
+        if motor_peaks and out["filter.notch1.enable"]:
+            warnings.append(
+                "PX4 静态陷波（IMU_GYRO_NF0）不随油门跟踪电机基频漂移："
+                "建议把 BW 设宽以覆盖巡航~满油门频段，或升级 PX4 v1.14+ "
+                "启用 ESC RPM 动态陷波（DShot telemetry + IMU_GYRO_DNF_*）。"
+            )
+
+        return out
+
     def get_spectrum_data(self) -> Dict[str, Any]:
         """
         返回完整的频谱数据（供可视化使用）。
@@ -614,15 +681,17 @@ class FFTAnalyzer:
             - ``vibration_value_mss`` : float
         """
         peaks = self._find_peak_frequencies()
+        _raw_level = _vibration_level(
+            self._vibration_mss,
+            self._kb.get("vibration_thresholds", {}).get("levels") or self._kb.get("vibration_thresholds", {}).get("fallback_levels", []),
+        )
         return {
             "freqs":            self._freqs.tolist() if self._freqs is not None else [],
             "magnitudes":       self._magnitudes.tolist() if self._magnitudes is not None else [],
             "sample_rate":     self._gyro_sample_rate,
             "peaks":           peaks,
-            "vibration_level": _vibration_level(
-                self._vibration_mss,
-                self._kb.get("vibration_thresholds", {}).get("levels") or self._kb.get("vibration_thresholds", {}).get("fallback_levels", []),
-            ),
+            "vibration_level": _ASSESSMENT_MAP.get(_raw_level, _raw_level),
+            "vibration_level_raw": _raw_level,
             "vibration_value_mss": round(self._vibration_mss, 3),
         }
 

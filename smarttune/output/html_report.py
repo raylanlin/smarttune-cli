@@ -48,6 +48,9 @@ def _vib_color(level: str) -> str:
         "EXCELLENT": "#22c55e",
         "GOOD":      "#86efac",
         "MARGINAL":  "#fbbf24",
+        "POOR":      "#f97316",
+        "UNUSABLE":  "#ef4444",
+        # 旧 5 级标签向后兼容（vibration_level_raw / 旧报告）
         "SEVERE":    "#f97316",
         "CRITICAL":  "#ef4444",
     }.get(level.upper() if level else "", "#94a3b8")

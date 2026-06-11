@@ -126,8 +126,11 @@ class OutputFormatter:
 
         vib_level = result.get("vibration_level", "UNKNOWN")
         vib_mss = result.get("vibration_value_mss", 0)
-        color = {"EXCELLENT": "green", "GOOD": "green", "MODERATE": "yellow",
-                 "HIGH": "yellow", "SEVERE": "red", "CRITICAL": "bold red"}.get(vib_level, "white")
+        # 统一 Assessment 标签（POOR/UNUSABLE）+ 旧标签向后兼容
+        color = {"EXCELLENT": "green", "GOOD": "green", "MARGINAL": "yellow",
+                 "MODERATE": "yellow", "HIGH": "yellow", "POOR": "red",
+                 "SEVERE": "red", "UNUSABLE": "bold red",
+                 "CRITICAL": "bold red"}.get(vib_level, "white")
         self._console.print(f"  Vibration: [{color}]{vib_level}[/{color}] ({vib_mss:.1f} m/s²)")
 
         peaks = result.get("peak_frequencies", [])
@@ -196,7 +199,7 @@ class OutputFormatter:
         self._console.print(f"  Fitness: {fitness:.1f} mGauss")
         self._console.print(f"  Assessment: {assessment}")
 
-        if hasattr(result, 'ofs') and result.ofs:
+        if hasattr(result, 'ofs') and result.ofs is not None and getattr(result.ofs, 'shape', (0,))[0] >= 3:
             for i, axis in enumerate(["X", "Y", "Z"]):
                 native = self._platform_param(f"mag.ofs.{axis.lower()}")
                 self._console.print(f"    {native}: {result.ofs[i]:.1f}")

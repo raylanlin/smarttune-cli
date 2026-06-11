@@ -243,6 +243,116 @@ def get_log_quality(
 
 
 # ---------------------------------------------------------------------------
+# Shared module runner — single source of truth for analyzer wiring (A1 fix)
+#
+# Both the CLI (Rich rendering) and this services layer (JSON serialization)
+# call run_module(); analyzer instantiation / knowledge wiring / capability
+# and data guards live ONLY here, so the two entry points can no longer drift.
+# ---------------------------------------------------------------------------
+
+_MODULE_ERROR_CODES = {
+    "pid":      ("E5010", "E5011"),
+    "fft":      ("E5020", "E5021"),
+    "magfit":   ("E5030", "E5031"),
+    "sysid":    ("E5040", "E5041"),
+    "filter":   ("E5050", "E5051"),
+    "hardware": ("E5060", "E5061"),
+}
+
+
+def _require_capability(module: str, adapter: PlatformAdapter) -> None:
+    if module not in adapter.capabilities():
+        cap_code = _MODULE_ERROR_CODES.get(module, ("E5000",))[0]
+        raise SmartTuneError(
+            message=f"{module} analysis is not supported on {adapter.display_name}",
+            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
+            code=cap_code,
+        )
+
+
+def run_module(
+    module: str,
+    adapter: PlatformAdapter,
+    fd: FlightData,
+    kb: Optional[KnowledgeBase] = None,
+    axis: str = "all",
+    na: int = 3,
+    nb: int = 2,
+) -> Any:
+    """Run ONE analysis module on already-parsed FlightData.
+
+    Returns the RAW result object (PIDAnalysisResult / FFTAnalysisResult /
+    MagFitResult / sysid list / hardware dict) — callers decide whether to
+    serialize (services) or render (CLI).
+
+    Raises SmartTuneError on missing capability or missing required data.
+    """
+    _require_capability(module, adapter)
+    data_code = _MODULE_ERROR_CODES.get(module, ("E5000", "E5001"))[1]
+    _axis = axis if axis != "all" else None
+    if kb is None:
+        kb = KnowledgeBase(platform=adapter.name)
+
+    if module == "pid":
+        if not fd.pid:
+            raise SmartTuneError(
+                message="No PID data found in log",
+                hint="The log may lack RATE or PID controller data",
+                code=data_code,
+            )
+        from smarttune.analyzers.pid_reviewer import PIDReviewer
+        reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
+        return reviewer.analyze(fd, axis=_axis)
+
+    if module == "fft":
+        if fd.gyro is None or len(fd.gyro) == 0:
+            raise SmartTuneError(
+                message="No gyro data found in log",
+                hint="FFT analysis requires gyroscope data",
+                code=data_code,
+            )
+        from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+        analyzer = FFTAnalyzer(knowledge=kb.get("filter_rules", {}))
+        return analyzer.analyze(fd)
+
+    if module == "magfit":
+        if not fd.has_mag:
+            raise SmartTuneError(
+                message="No magnetometer data found in log",
+                hint="MagFit analysis requires compass data",
+                code=data_code,
+            )
+        from smarttune.analyzers.magfit import MAGFit
+        magfit = MAGFit(knowledge=kb.get("magfit_rules", {}))
+        return magfit.analyze(fd)
+
+    if module == "sysid":
+        if not fd.pid:
+            raise SmartTuneError(
+                message="No PID data found in log",
+                hint="System identification requires PID rate data",
+                code=data_code,
+            )
+        from smarttune.analyzers.sysid_analyzer import SysIDAnalyzer
+        analyzer = SysIDAnalyzer(na=na, nb=nb)
+        return analyzer.analyze(fd, axis=_axis)
+
+    if module == "hardware":
+        try:
+            _hr_mod = importlib.import_module(
+                f"smarttune.platform.{adapter.name}.hardware_report"
+            )
+        except ImportError:
+            raise SmartTuneError(
+                message=f"Hardware report module not available for {adapter.display_name}",
+                code=data_code,
+            )
+        return _hr_mod.generate_hardware_report(fd.params, flight_data=fd)
+
+    raise ValueError(f"Unknown analysis module: {module!r}")
+
+
+# ---------------------------------------------------------------------------
 # Individual analysis functions (matching each CLI command)
 # ---------------------------------------------------------------------------
 
@@ -255,24 +365,7 @@ def analyze_pid(
     """Run PID step response analysis. Matches ``stune pid``."""
     _lp = Path(log_path) if isinstance(log_path, str) else log_path
     adapter, fd = load_flight_data(_lp, platform)
-
-    if "pid" not in adapter.capabilities():
-        raise SmartTuneError(
-            message=f"PID analysis is not supported on {adapter.display_name}",
-            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
-            code="E5010",
-        )
-    if not fd.pid:
-        raise SmartTuneError(
-            message="No PID data found in log",
-            hint="The log may lack RATE or PID controller data",
-            code="E5011",
-        )
-
-    from smarttune.analyzers.pid_reviewer import PIDReviewer
-    kb = KnowledgeBase(platform=adapter.name)
-    reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
-    result = reviewer.analyze(fd, axis=axis if axis != "all" else None)
+    result = run_module("pid", adapter, fd, axis=axis)
 
     return {
         "platform": adapter.name,
@@ -291,24 +384,7 @@ def analyze_fft(
     """Run FFT vibration spectrum analysis. Matches ``stune fft``."""
     _lp = Path(log_path) if isinstance(log_path, str) else log_path
     adapter, fd = load_flight_data(_lp, platform)
-
-    if "fft" not in adapter.capabilities():
-        raise SmartTuneError(
-            message=f"FFT analysis is not supported on {adapter.display_name}",
-            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
-            code="E5020",
-        )
-    if fd.gyro is None or len(fd.gyro) == 0:
-        raise SmartTuneError(
-            message="No gyro data found in log",
-            hint="FFT analysis requires gyroscope data",
-            code="E5021",
-        )
-
-    from smarttune.analyzers.fft_analyzer import FFTAnalyzer
-    kb = KnowledgeBase(platform=adapter.name)
-    analyzer = FFTAnalyzer(knowledge=kb.get("filter_rules", {}))
-    result = analyzer.analyze(fd)
+    result = run_module("fft", adapter, fd)
 
     return {
         "platform": adapter.name,
@@ -327,24 +403,7 @@ def analyze_magfit(
     """Run magnetometer calibration analysis. Matches ``stune magfit``."""
     _lp = Path(log_path) if isinstance(log_path, str) else log_path
     adapter, fd = load_flight_data(_lp, platform)
-
-    if "magfit" not in adapter.capabilities():
-        raise SmartTuneError(
-            message=f"Magnetometer analysis is not supported on {adapter.display_name}",
-            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
-            code="E5030",
-        )
-    if not fd.has_mag:
-        raise SmartTuneError(
-            message="No magnetometer data found in log",
-            hint="MagFit analysis requires compass data",
-            code="E5031",
-        )
-
-    from smarttune.analyzers.magfit import MAGFit
-    kb = KnowledgeBase(platform=adapter.name)
-    magfit = MAGFit(knowledge=kb.get("magfit_rules", {}))
-    result = magfit.analyze(fd)
+    result = run_module("magfit", adapter, fd)
 
     return {
         "platform": adapter.name,
@@ -365,23 +424,7 @@ def analyze_sysid(
     """Run ARX system identification. Matches ``stune sysid``."""
     _lp = Path(log_path) if isinstance(log_path, str) else log_path
     adapter, fd = load_flight_data(_lp, platform)
-
-    if "sysid" not in adapter.capabilities():
-        raise SmartTuneError(
-            message=f"System identification is not supported on {adapter.display_name}",
-            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
-            code="E5040",
-        )
-    if not fd.pid:
-        raise SmartTuneError(
-            message="No PID data found in log",
-            hint="System identification requires PID rate data",
-            code="E5041",
-        )
-
-    from smarttune.analyzers.sysid_analyzer import SysIDAnalyzer
-    analyzer = SysIDAnalyzer(na=na, nb=nb)
-    results = analyzer.analyze(fd, axis=axis if axis != "all" else None)
+    results = run_module("sysid", adapter, fd, axis=axis, na=na, nb=nb)
 
     if not results:
         raise SmartTuneError(
@@ -523,24 +566,7 @@ def analyze_hardware(
     """Run hardware configuration report. Matches ``stune hardware``."""
     _lp = Path(log_path) if isinstance(log_path, str) else log_path
     adapter, fd = load_flight_data(_lp, platform)
-
-    if "hardware" not in adapter.capabilities():
-        raise SmartTuneError(
-            message=f"Hardware report is not supported on {adapter.display_name}",
-            hint=f"Supported capabilities: {', '.join(sorted(adapter.capabilities()))}",
-            code="E5060",
-        )
-
-    try:
-        _hr_mod = importlib.import_module(
-            f"smarttune.platform.{adapter.name}.hardware_report"
-        )
-        report = _hr_mod.generate_hardware_report(fd.params, flight_data=fd)
-    except ImportError:
-        raise SmartTuneError(
-            message=f"Hardware report module not available for {adapter.display_name}",
-            code="E5061",
-        )
+    report = run_module("hardware", adapter, fd)
 
     return {
         "platform": adapter.name,
@@ -602,10 +628,7 @@ def analyze_log(
     # --- PID ---
     if "pid" in requested and "pid" in capabilities and fd.pid:
         try:
-            from smarttune.analyzers.pid_reviewer import PIDReviewer
-            reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
-            pid_result = reviewer.analyze(fd, axis=axis if axis != "all" else None)
-            full_result.pid = pid_result
+            full_result.pid = run_module("pid", adapter, fd, kb=kb, axis=axis)
         except Exception as exc:
             logger.warning("PID analysis failed: %s", exc)
             module_failures.append({"module": "pid", "error": str(exc)})
@@ -613,10 +636,7 @@ def analyze_log(
     # --- FFT ---
     if "fft" in requested and "fft" in capabilities and fd.gyro is not None:
         try:
-            from smarttune.analyzers.fft_analyzer import FFTAnalyzer
-            fft_analyzer = FFTAnalyzer(knowledge=kb.get("filter_rules", {}))
-            fft_result = fft_analyzer.analyze(fd)
-            full_result.fft = fft_result
+            full_result.fft = run_module("fft", adapter, fd, kb=kb)
         except Exception as exc:
             logger.warning("FFT analysis failed: %s", exc)
             module_failures.append({"module": "fft", "error": str(exc)})
@@ -624,10 +644,7 @@ def analyze_log(
     # --- MagFit ---
     if "magfit" in requested and "magfit" in capabilities and fd.has_mag:
         try:
-            from smarttune.analyzers.magfit import MAGFit
-            magfit = MAGFit(knowledge=kb.get("magfit_rules", {}))
-            magfit_result = magfit.analyze(fd)
-            full_result.magfit = magfit_result
+            full_result.magfit = run_module("magfit", adapter, fd, kb=kb)
         except Exception as exc:
             logger.warning("MagFit analysis failed: %s", exc)
             module_failures.append({"module": "magfit", "error": str(exc)})
@@ -636,10 +653,7 @@ def analyze_log(
     hw_dict = None
     if "hardware" in requested and "hardware" in capabilities:
         try:
-            _hr_mod = importlib.import_module(
-                f"smarttune.platform.{adapter.name}.hardware_report"
-            )
-            hw_dict = _hr_mod.generate_hardware_report(fd.params, flight_data=fd)
+            hw_dict = run_module("hardware", adapter, fd, kb=kb)
         except Exception as exc:
             logger.warning("Hardware report failed: %s", exc)
             module_failures.append({"module": "hardware", "error": str(exc)})
@@ -648,9 +662,7 @@ def analyze_log(
     sysid_dict = None
     if "sysid" in requested and "sysid" in capabilities and fd.pid:
         try:
-            from smarttune.analyzers.sysid_analyzer import SysIDAnalyzer
-            sysid_analyzer = SysIDAnalyzer()
-            sysid_results = sysid_analyzer.analyze(fd, axis=axis if axis != "all" else None)
+            sysid_results = run_module("sysid", adapter, fd, kb=kb, axis=axis)
             if sysid_results:
                 sysid_dict = serialize_sysid_results(sysid_results)
         except Exception as exc:

@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "px4_version_min": "1.13",
+  "description": "PX4 多旋翼 Rate PID 调参知识库 — MC_*RATE_* 参数体系",
+
+  "axis": ["roll", "pitch", "yaw"],
+
+  "pid_bounds": {
+    "p":  [0.01, 0.5],
+    "i":  [0.01, 0.6],
+    "d":  [0.0, 0.01],
+    "ff": [0.0, 1.0]
+  },
+
+  "settle_band": 0.10,
+
+  "thresholds": {
+    "rise_time_ms": {
+      "roll":  {"ideal": [60, 110], "acceptable": [40, 160], "unit": "ms"},
+      "pitch": {"ideal": [60, 110], "acceptable": [40, 160], "unit": "ms"},
+      "yaw":   {"ideal": [100, 200], "acceptable": [80, 300], "unit": "ms"}
+    },
+    "overshoot_percent": {
+      "ideal": [0, 10],
+      "acceptable": [0, 15],
+      "marginal": [15, 25],
+      "critical": [25, 100],
+      "unit": "%"
+    },
+    "settling_time_ms": {
+      "ideal": [150, 350],
+      "acceptable": [100, 600],
+      "marginal": [600, 1000],
+      "critical": [1000],
+      "unit": "ms"
+    },
+    "oscillation_count": {
+      "ideal": [0, 1],
+      "acceptable": [1, 2],
+      "marginal": [2, 3],
+      "critical": [3]
+    }
+  },
+
+  "tuning_rules": {
+    "default_pid_ranges": {
+      "MC_ROLLRATE_P":  {"min": 0.01, "max": 0.5,  "typical": 0.15,  "unit": "gain"},
+      "MC_ROLLRATE_I":  {"min": 0.01, "max": 0.6,  "typical": 0.2,   "unit": "gain"},
+      "MC_ROLLRATE_D":  {"min": 0.0,  "max": 0.01, "typical": 0.003, "unit": "gain"},
+      "MC_ROLLRATE_K":  {"min": 0.5,  "max": 2.0,  "typical": 1.0,   "unit": "gain"},
+      "MC_PITCHRATE_P": {"min": 0.01, "max": 0.6,  "typical": 0.15,  "unit": "gain"},
+      "MC_PITCHRATE_I": {"min": 0.01, "max": 0.6,  "typical": 0.2,   "unit": "gain"},
+      "MC_PITCHRATE_D": {"min": 0.0,  "max": 0.01, "typical": 0.003, "unit": "gain"},
+      "MC_PITCHRATE_K": {"min": 0.5,  "max": 2.0,  "typical": 1.0,   "unit": "gain"},
+      "MC_YAWRATE_P":   {"min": 0.05, "max": 0.6,  "typical": 0.2,   "unit": "gain"},
+      "MC_YAWRATE_I":   {"min": 0.01, "max": 0.4,  "typical": 0.1,   "unit": "gain"},
+      "MC_YAWRATE_D":   {"min": 0.0,  "max": 0.01, "typical": 0.0,   "unit": "gain"},
+      "MC_YAWRATE_K":   {"min": 0.5,  "max": 2.0,  "typical": 1.0,   "unit": "gain"}
+    },
+    "px4_notes": [
+      "PX4 的 MC_*RATE_K 是整轴总增益乘子 — P/I/D 比例合适但整体响应弱时优先调 K，而不是同步放大三项",
+      "PX4 D 项量级 (~0.003) 远小于 ArduPilot (~0.015)，二者增益不可横向比较",
+      "PX4 v1.14+ 推荐先用机载自动调参 (MC_AT_EN) 取得基线，再用日志分析做精修"
+    ]
+  },
+
+  "experience_rules": {
+    "symptom_to_param": {
+      "过冲大":      {"primary_action": "降低 MC_*RATE_P", "secondary_action": "适当降低 MC_*RATE_D"},
+      "响应慢":      {"primary_action": "提高 MC_*RATE_P 或 MC_*RATE_K", "secondary_action": "检查 IMU_GYRO_CUTOFF 是否过低"},
+      "稳态误差":    {"primary_action": "提高 MC_*RATE_I", "secondary_action": "检查 MC_*R_INT_LIM 积分限幅"},
+      "高频抖振":    {"primary_action": "降低 MC_*RATE_D", "secondary_action": "降低 IMU_DGYRO_CUTOFF"},
+      "外扰恢复慢":  {"primary_action": "提高 MC_*RATE_P", "secondary_action": "适当提高 MC_*RATE_I"}
+    },
+    "tuning_sequence": {
+      "1_filters": "先确认 IMU_GYRO_CUTOFF / IMU_DGYRO_CUTOFF 与振动水平匹配",
+      "2_rate_loop": "按 P → D → I 顺序调 rate 环（Acro 模式打杆测试）",
+      "3_attitude_loop": "rate 环满意后再调 MC_ROLL_P / MC_PITCH_P 姿态环",
+      "4_verify": "验证外扰恢复与全姿态范围表现"
+    }
+  },
+
+  "param_change_rules": {
+    "step_size": {
+      "P": {"increment": 0.01,  "max_change_per_step": 0.03},
+      "I": {"increment": 0.02,  "max_change_per_step": 0.05},
+      "D": {"increment": 0.0005, "max_change_per_step": 0.001},
+      "K": {"increment": 0.05,  "max_change_per_step": 0.1}
+    },
+    "safety_limits": {
+      "P_change_per_session": "不超过 ±25%",
+      "D_change_per_session": "不超过 ±25%",
+      "I_change_per_session": "不超过 ±25%"
+    }
+  }
+}
