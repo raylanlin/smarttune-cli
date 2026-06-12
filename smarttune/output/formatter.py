@@ -199,7 +199,14 @@ class OutputFormatter:
         self._console.print(f"  Fitness: {fitness:.1f} mGauss")
         self._console.print(f"  Assessment: {assessment}")
 
-        if hasattr(result, 'ofs') and result.ofs is not None and getattr(result.ofs, 'shape', (0,))[0] >= 3:
+        def _has_vec(x) -> bool:
+            # numpy array 真值判断会抛 ambiguous —— 用显式长度检查
+            try:
+                return x is not None and len(x) >= 3
+            except TypeError:
+                return False
+
+        if hasattr(result, 'ofs') and _has_vec(result.ofs):
             for i, axis in enumerate(["X", "Y", "Z"]):
                 native = self._platform_param(f"mag.ofs.{axis.lower()}")
                 self._console.print(f"    {native}: {result.ofs[i]:.1f}")
