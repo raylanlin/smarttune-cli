@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.0.0-blue?logo=github" alt="v3.0.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.0.3-blue?logo=github" alt="v3.0.3" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
-  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-141%20passed-brightgreen" alt="Tests" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-167%20passed-brightgreen" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -74,7 +74,7 @@ SmartTune isn't just a tool agents *call* — it's how agents learn the craft of
 | **Frequency-domain reasoning** | FFT spectra with peak detection. Agents learn to distinguish vibration sources (prop/ motor/ frame resonance) from the spectrum shape. |
 | **Filter design logic** | Notch and low-pass filter recommendations with Bode plots. Agents see the tradeoff between filtering and phase lag. |
 | **Platform differences** | ArduPilot vs Betaflight parameter conventions. ParamRef maps between them — agents learn to translate tuning knowledge across platforms. |
-| **Safety awareness** | All recommendations are capped at ±20%. Agents learn conservative tuning by default. |
+| **Safety awareness** | All recommendations are capped at ±25%. Agents learn conservative tuning by default. |
 | **Rule-based reasoning** | The 6-layer knowledge base is plain JSON. Agents can read, understand, and even propose rule changes by writing to their user layer. |
 
 ### What agents can do with SmartTune
@@ -344,7 +344,7 @@ stune params --category pid -p betaflight
 |----------|-----------|--------|--------|
 | **ArduPilot** | `.bin` / `.log` (DataFlash) | pymavlink | ✅ Full support |
 | **Betaflight** | `.bbl` / `.bfl` (Blackbox) | Pure Python | ✅ Full support |
-| **PX4** | `.ulg` (ULog) | pyulog | 🔲 Coming in v2.x |
+| **PX4** | `.ulg` (ULog) | pyulog | ✅ PID / FFT / SysID / Quality (v3.0+) |
 
 ### Auto-Detection
 
@@ -618,7 +618,8 @@ stune analyze -i flight.bin
 | v2.2 | Full English docs, CLI --help, OpenClaw SKILL.md | ✅ |
 | v2.4 | Technical debt cleanup + HTML report parity | ✅ |
 | **v3.0** | **Firmware parameter tables + MCP validation tools + knowledge base** | ✅ |
-| v3.x | PX4 ULog adapter, tool-calling manifest, web UI | 🔲 |
+| v3.0.1~v3.0.3 | Architecture audit fixes, PX4 ULog adapter, A1 convergence, cross-module contract fixes, performance vectorization | ✅ |
+| v3.x | Tool-calling manifest, web UI | 🔲 |
 
 ---
 
