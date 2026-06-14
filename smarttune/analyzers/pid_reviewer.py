@@ -368,7 +368,16 @@ class PIDReviewer:
 
     def __init__(self, knowledge: Optional[Dict[str, Any]] = None) -> None:
         self._knowledge = knowledge or {}
-        self._thresholds = self._knowledge.get("thresholds", {}) or _DEFAULT_THRESHOLDS
+        # 阈值形状校验：analyze() 按轴取 thresholds[axis][metric]["max"]（标量形）。
+        # 各平台 pid_rules.json 的 "thresholds" 块却是按指标组织、用 ideal/acceptable
+        # 区间形（thresholds[metric][axis]），消费方读不到 → 旧实现静默退化为
+        # 全轴硬编码兜底值。这里检测形状：非消费方可用形状时，回退到形状正确的
+        # _DEFAULT_THRESHOLDS（按轴 + min/max/ideal），而不是产出空 thresholds。
+        kb_thresholds = self._knowledge.get("thresholds", {})
+        self._thresholds = (
+            kb_thresholds if self._is_axis_threshold_shape(kb_thresholds)
+            else _DEFAULT_THRESHOLDS
+        )
         tuning_rules_raw = self._knowledge.get("tuning_rules")
         self._rules = (
             tuning_rules_raw if isinstance(tuning_rules_raw, list) and tuning_rules_raw
@@ -376,6 +385,21 @@ class PIDReviewer:
         )
         self._bounds = self._knowledge.get("pid_bounds", {}) or _DEFAULT_BOUNDS
         self._settle_band = float(self._knowledge.get("settle_band", 0.10))
+
+    @staticmethod
+    def _is_axis_threshold_shape(thresholds: Any) -> bool:
+        """判断 thresholds 是否为消费方可用形状：
+        至少有一个轴键（roll/pitch/yaw），其值含带 "max" 标量的指标字典。
+        """
+        if not isinstance(thresholds, dict):
+            return False
+        for ax in ("roll", "pitch", "yaw"):
+            axis_block = thresholds.get(ax)
+            if isinstance(axis_block, dict):
+                for metric_v in axis_block.values():
+                    if isinstance(metric_v, dict) and "max" in metric_v:
+                        return True
+        return False
 
     def analyze(self, flight_data: FlightData, axis: Optional[str] = None) -> PIDAnalysisResult:
         """分析 PID 阶跃响应。
@@ -430,7 +454,7 @@ class PIDReviewer:
         # 4. 频域阶跃响应（按平台动态分派）
         #    platform/ardupilot/step_response_fft.py  → WebTools 对齐
         #    platform/betaflight/step_response_fft.py  → PID Toolbox PTstepcalc 对齐
-        #    platform/px4/step_response_fft.py         → 未来
+        #    platform/px4/step_response_fft.py         → 复用 AP（WebTools 对齐）
         #    低采样率（< 20 Hz）时回退到时域阶跃平均（C7 修复：接线回退路径）
         fft_step = {}
         # 构造旧版 get_pid_data 返回格式

@@ -171,13 +171,12 @@ def estimate_step_response(
     full_len = 2 * (real_len - 1)  # 双边谱长度
 
     # ------------------------------------------------------------
+    # 向量化（P3-opt，已 bit-identical 核验）：原标量循环逐元素填充。
     # FFT 缩放因子（与 WebTools run_fft 一致）
     # DC/Nyquist: 1/N，其余: 2/N
     # ------------------------------------------------------------
-    scale = np.ones(real_len, dtype=np.float64)
+    scale = np.full(real_len, 2.0 / window_size, dtype=np.float64)
     scale[0] = 1.0 / window_size
-    for j in range(1, real_len - 1):
-        scale[j] = 2.0 / window_size
     scale[real_len - 1] = 1.0 / window_size
 
     # ------------------------------------------------------------
@@ -194,16 +193,15 @@ def estimate_step_response(
     radius = int(np.ceil(len_lpf * 0.5))
     sigma = len_lpf / 6.0
 
-    # 累积高斯积分（完整兑现 fft.js 逐元素循环）
+    # 累积高斯积分（fft.js 逐元素循环 → 向量化 cumsum，P3-opt 已 bit-identical 核验）
     sn = np.ones(real_len, dtype=np.float64)
-    last_sn = 0.0
-    for j in range(min(len_lpf, real_len)):
-        sn[j] = last_sn + np.exp((-0.5 / sigma ** 2) * (j - radius) ** 2)
-        last_sn = sn[j]
-
-    # 归一化到 1
-    if last_sn > 0:
-        sn[:min(len_lpf, real_len)] /= last_sn
+    m = min(len_lpf, real_len)
+    if m > 0:
+        j_arr = np.arange(m, dtype=np.float64)
+        gauss = np.exp((-0.5 / sigma ** 2) * (j_arr - radius) ** 2)
+        csum = np.cumsum(gauss)
+        total = csum[-1]
+        sn[:m] = csum / total if total > 0 else csum
 
     # 镜像拼接（精确复现 WebTools 语法）
     sn = np.concatenate([sn, sn[1:real_len - 1][::-1]])

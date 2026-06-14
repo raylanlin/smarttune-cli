@@ -492,6 +492,14 @@ class ArduPilotAdapter(PlatformAdapter):
         pit_acc = rate_pit_acc if len(rate_pit_acc) > 0 else rate_pit_leg
         yaw_acc = rate_yaw_acc if len(rate_yaw_acc) > 0 else rate_yaw_leg
 
+        # A2 契约：注入 generic key（pid.roll.p 等）供平台无关分析器读取当前值。
+        # 旧实现只存原生名（ATC_RAT_RLL_P），导致 PIDReviewer._get_current_pid
+        # 恒返回 0.0，叠加 C4「current≤0 跳过」后 PID 参数建议被全部丢弃。
+        # 与 PX4/BF 适配器保持一致。
+        for _generic, _plat in _PARAM_MAP_TO_PLATFORM.items():
+            if _plat in params and _generic not in params:
+                params[_generic] = params[_plat]
+
         t0 = t_min
         fd = FlightData(platform="ardupilot", log_file=str(path), params=params,
                         firmware_version=str(ver.get("FWVer", "")))

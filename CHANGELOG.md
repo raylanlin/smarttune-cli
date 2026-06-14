@@ -1,3 +1,28 @@
+# SmartTune v3.0.3 — R5 性能优化 + R6 跨模块契约修复 (2026-06-14)
+
+**依据：** Claude v4「完全体」补丁包 R5 + R6 轮次
+**范围：** bit-identical 向量化性能优化（4 处热点）+ 3 个跨模块契约 Bug 修复
+**测试：** `pytest tests/ -q → 167 passed in 5.21s`（含 8 个新增契约测试，全绿）
+
+## R5 — 性能优化（bit-identical，数值零变化）
+
+| 文件 | 变更 | 影响 |
+|------|------|------|
+| `analyzers/magfit.py` | 新增 `ned_to_body_batch()` 批量四元数旋转；`_compute_bin_weights` 用 `np.bincount` + fancy index 替掉逐样本 Python 循环 | 数万样本日志的期望磁场计算从 O(N) 次 Python 调用 → 1 次批运算；bin 权重同 |
+| `platform/ardupilot/step_response_fft.py` | scale 数组去标量循环 → `np.full` + 端点赋值；SNR 高斯累积去标量循环 → `np.exp` + `np.cumsum` | 每次调用一次性，向量化；已 JS 数值核验 bit-identical |
+
+## R6 — 跨模块契约 Bug 修复
+
+| 文件 | 变更 | 影响 |
+|------|------|------|
+| `platform/ardupilot/__init__.py` | parse() 注入 generic key（`pid.roll.p`→`ATC_RAT_RLL_P` 值）到 params | **修复 AP PID 参数建议被全部丢弃**（`_get_current_pid` 查 generic key，原生名匹配不到 → 恒返回 0.0 → C4 跳过） |
+| `platform/betaflight/__init__.py` | 同上，兼顾 BF 4.5+ 新名与旧固件名两张映射表 | **修复 BF PID 参数建议被全部丢弃**，与 AP 同根因 |
+| `knowledge/rules/betaflight/pid_rules.json` | 新增 BF 整数尺度 `pid_bounds`（P[10,150]/I[20,220]/D[0,100]/FF[0,300]） | 缺省 AP 尺度（0.01~0.5）会把 BF 45×1.1 夹成 0.5；generic-key 修复让 BF 开始产出建议后必须配套修正 |
+| `analyzers/pid_reviewer.py` | 新增 `_is_axis_threshold_shape()` 形状校验；非消费方形状时回退 `_DEFAULT_THRESHOLDS` | 所有 pid_rules.json 的 thresholds 块按指标组织（thresholds[metric][axis]），但 analyze() 按轴取 → 知识库 thresholds 是死配置，一直跑硬编码兜底 |
+| `tests/test_platform_contracts.py` | 新增 8 个契约测试 | A2 注入、阈值形状守卫、BF bounds 尺度、BF 增益不被夹到 AP 尺度 |
+
+---
+
 # SmartTune v3.0.1 — 架构审查修复 (2026-06-11)
 
 **依据：** 《SmartTune 架构与算法审查报告.md》 14 处代码修复

@@ -4,6 +4,13 @@
   "betaflight_version_min": "4.2",
   "description": "Betaflight Rate PID 调参知识库 — BF 4.x 特有的 PID 体系",
 
+  "pid_bounds": {
+    "p":  [10, 150],
+    "i":  [20, 220],
+    "d":  [0, 100],
+    "ff": [0, 300]
+  },
+
   "axis": ["roll", "pitch", "yaw"],
 
   "thresholds": {

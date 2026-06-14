@@ -159,6 +159,37 @@ def ned_to_body(ned: np.ndarray, q: np.ndarray) -> np.ndarray:
     return body
 
 
+def ned_to_body_batch(ned: np.ndarray, quats: np.ndarray) -> np.ndarray:
+    """
+    批量版 ned_to_body —— 一次旋转 N 个四元数（向量化，bit-identical）。
+
+    替代对每个样本调用 ned_to_body 的 Python 循环；数万样本日志上
+    把期望磁场计算从 O(N) 次 Python 调用降为单次 numpy 批运算。
+
+    Parameters
+    ----------
+    ned : np.ndarray, shape (3,)
+        NED 坐标系下的固定向量。
+    quats : np.ndarray, shape (N, 4)
+        四元数序列 [w, x, y, z]。
+
+    Returns
+    -------
+    np.ndarray, shape (N, 3)
+        每个样本在 Body 坐标系下的向量。
+    """
+    w, a, b, c = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
+    nx, ny, nz = float(ned[0]), float(ned[1]), float(ned[2])
+    ww, aa, bb, cc = w*w, a*a, b*b, c*c
+    wa, wb, wc = w*a, w*b, w*c
+    ab, ac, bc = a*b, a*c, b*c
+
+    bx = (ww + aa - bb - cc) * nx + 2*(ab - wc) * ny + 2*(ac + wb) * nz
+    by = 2*(ab + wc) * nx + (ww - aa + bb - cc) * ny + 2*(bc - wa) * nz
+    bz = 2*(ac - wb) * nx + 2*(bc + wa) * ny + (ww - aa - bb + cc) * nz
+    return np.stack([bx, by, bz], axis=1)
+
+
 def _apply_compass_compensation(
     mag: np.ndarray,
     ofs: np.ndarray,
@@ -289,19 +320,16 @@ def _compute_bin_weights(bin_indices: np.ndarray, num_bins: int = NUM_ATTITUDE_B
         coverage: 0~1, 覆盖的 bin 占总 bin 的比例
     """
     n = len(bin_indices)
-    counts = np.zeros(num_bins, dtype=np.float64)
-    for idx in bin_indices:
-        counts[idx] += 1.0
+    # np.bincount 替代逐元素累加（向量化）
+    counts = np.bincount(bin_indices, minlength=num_bins).astype(np.float64)
 
     num_unique = np.sum(counts > 0)
     total = float(n)
     mean_bin_size = total / max(num_unique, 1)
     coverage = float(num_unique) / num_bins
 
-    weights = np.empty(n, dtype=np.float64)
-    for i in range(n):
-        c = counts[bin_indices[i]]
-        weights[i] = mean_bin_size / max(c, 1.0)
+    # fancy index + np.maximum 替代逐样本 Python 循环（bit-identical）
+    weights = mean_bin_size / np.maximum(counts[bin_indices], 1.0)
 
     return weights, coverage
 
@@ -626,11 +654,10 @@ class MAGFit:
         )  # (3,)
 
         N = len(self._mag_synced)
-        field_expected = np.empty((N, 3), dtype=np.float64)
 
-        for i in range(N):
-            # R(q)ᵀ · b_ned  →  body 坐标系
-            field_expected[i] = ned_to_body(b_ned, self._quat[i])
+        # 批量旋转（向量化，替代逐样本 Python 循环，bit-identical）：
+        # R(q)ᵀ · b_ned → body 坐标系
+        field_expected = ned_to_body_batch(b_ned, self._quat[:N])
 
         # 若当地磁场接近零（异常查表结果），使用测量值的中位数强度做归一化
         # 阈值 100 mGauss（地表场强通常 250~650 mGauss）

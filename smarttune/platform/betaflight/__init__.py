@@ -336,6 +336,14 @@ class BetaflightAdapter(PlatformAdapter):
             except (ValueError, TypeError):
                 pass
 
+        # A2 契约：注入 generic key（pid.roll.p 等）供平台无关分析器读取当前值。
+        # 兼顾 BF 4.5+ 新名（p_roll）与旧固件名（pid_roll_p）。旧实现只存原生名，
+        # 导致 PIDReviewer._get_current_pid 恒返回 0.0，叠加 C4 后 PID 建议被全丢弃。
+        for _gmap in (_PARAM_MAP_TO_PLATFORM, _PARAM_MAP_TO_PLATFORM_LEGACY):
+            for _generic, _plat in _gmap.items():
+                if _plat in params and _generic not in params:
+                    params[_generic] = params[_plat]
+
         # ── 计算时间序列 ────────────────────────────
         loop_rate_hz = params.get("looptime", 250)
         if loop_rate_hz > 100:
