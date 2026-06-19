@@ -1,3 +1,16 @@
+## v3.0.4 (2026-06-19) - hotfix
+
+### Fixed
+
+- **`serialize_magfit_result` 兼容 `FitResult`**：duck-type 兜底支持 analyzer 层返回的 `FitResult` (4 个 numpy 数组 + `assessment` str) 和 services 层 `MagFitResult` (recommendations + offsets dict) 两种 result 类型。
+  - 修复前：`AttributeError: 'FitResult' object has no attribute 'recommendations'`，整条 `analyze_log` 在 magfit 模块崩。
+  - 修复后：MCP analyze_log 返回完整 6 模块 JSON（含 magfit 的 assessment / fitness_mgauss / offsets / recommendations）。
+  - 影响：MCP-only agent（小Mo/小Mo学长）通过 `smarttune_analyze_log` 调到的所有路径。CLI 走 formatter.py 不受影响。
+
+### Tests
+
+- 新增 `tests/services/test_serialize.py`（约 90 行）：双类型回归测试（FitResult + MagFitResult）+ 真实 .bin 端到端测试。
+
 # SmartTune v3.0.3 — R5 性能优化 + R6 跨模块契约修复 (2026-06-14)
 
 **依据：** Claude v4「完全体」补丁包 R5 + R6 轮次

@@ -222,19 +222,54 @@ def serialize_fft_result(
 
 
 def serialize_magfit_result(
-    result: MagFitResult,
+    result,  # MagFitResult (services) or FitResult (analyzer.MAGFit.analyze)
     adapter: Optional[PlatformAdapter] = None,
     max_recommendations: int = 20,
 ) -> Dict[str, Any]:
-    """Serialize magnetometer calibration result."""
+    """Serialize magnetometer calibration result.
+
+    兼容 MagFitResult (services 层) 和 FitResult (analyzer.MAGFit.analyze) 两种 result:
+    - MagFitResult: .recommendations (List[ParamRecommendation]) + .offsets (dict x/y/z)
+    - FitResult: .ofs/.dia/.odi/.mot (4 个 np.ndarray shape 3) + .assessment (str), 无 recommendations
+    """
+    # assessment: 字符串或 Enum
+    assess = result.assessment
+    if isinstance(assess, Enum):
+        assessment_str = assess.value
+    else:
+        assessment_str = str(assess)
+
+    # fitness: duck-type
+    fitness_mgauss = _safe_float(getattr(result, "fitness_mgauss", 0.0))
+
+    # offsets: 优先 result.offsets(dict), 否则 FitResult.ofs (np.ndarray shape 3)
+    offsets_attr = getattr(result, "offsets", None)
+    if isinstance(offsets_attr, dict):
+        offsets_dict = {k: _safe_float(v) for k, v in offsets_attr.items()}
+    elif hasattr(result, "ofs"):
+        ofs = result.ofs
+        if hasattr(ofs, "__len__") and len(ofs) >= 3:
+            offsets_dict = {
+                "x": _safe_float(ofs[0]),
+                "y": _safe_float(ofs[1]),
+                "z": _safe_float(ofs[2]),
+            }
+        else:
+            offsets_dict = {}
+    else:
+        offsets_dict = {}
+
+    # recommendations: duck-type 兜底 (FitResult 没有 recommendations)
+    recs_raw = getattr(result, "recommendations", None) or []
     recs = [
         serialize_param_recommendation(r, adapter)
-        for r in result.recommendations[:max_recommendations]
+        for r in list(recs_raw)[:max_recommendations]
     ]
+
     return {
-        "assessment": result.assessment.value if isinstance(result.assessment, Enum) else str(result.assessment),
-        "fitness_mgauss": _safe_float(result.fitness_mgauss),
-        "offsets": {k: _safe_float(v) for k, v in result.offsets.items()},
+        "assessment": assessment_str,
+        "fitness_mgauss": fitness_mgauss,
+        "offsets": offsets_dict,
         "recommendations": recs,
     }
 
