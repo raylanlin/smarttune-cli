@@ -1,3 +1,103 @@
+## v3.2.0 (2026-08-12) — Parameter table rebuild (groups + enum meanings) + validation gate fix
+
+The data side was fully rebuilt, and the code side fixes the security issue where
+"validation" did not actually validate. Parameter tables are now **generated
+artifacts**: the scraper lives in the repo (`tools/build_param_tables.py`) and a
+linter guards them (`stune params --lint`).
+
+### Data: parameter tables regenerated for all three platforms (schema_version 2)
+
+| Platform | Params | Groups | Upstream source |
+|------|-----:|---:|----------|
+| ArduPilot | 2,839 | 194 | `apm.pdef.json` (raylanlin/ParameterRepository → Copter-4.1) |
+| Betaflight | 814 | 82 | `src/main/cli/settings.c` + `fc/parameter_names.h` (BF has no metadata artifact; firmware source parsed directly) |
+| PX4 | 1,908 | 78 | `docs/public/config/failsafe/parameters.json` (output of PX4's own px4params generator) |
+
+Old-table defects fixed (each has a corresponding regression test):
+
+- **Descriptions shifted by one column** — `ARM_MAH` carried `BATT_OPTIONS`' description, `BATT_LOW_MAH` carried `CRT_MAH`'s. Names were sorted, descriptions were not; the zip misaligned. This is worse than NOT FOUND: an AI makes recommendations from the wrong description and the user never notices.
+- **Names stripped of group prefixes, inconsistently** — `MONITOR` (should be `BATT_MONITOR`), `0_BAUD` (`SERIAL0_BAUD`), `10_DIRECTION` (`SERVO10_DIRECTION`), `2SRV_IMAX`, plus `LOW_VOLT` coexisting with `BATT_LOW_VOLT`. Root cause: the scraper read `// @Description` without expanding group prefixes (the `@PREFIX@` placeholders left in descriptions were the smoking gun), while stripping the prefix from names. Now the real firmware names are always used.
+- **Missing @Values / @Bitmask** — the old tables had 0 `values` fields; the AI had no way to know `BATT_MONITOR=4` means "Analog Voltage and Current". Now ArduPilot's 781 enums + 112 bitmasks, PX4's 360 + 37, and Betaflight's 164 lookup tables all carry member meanings.
+- **Wrong type inference** — floats like `ACCEL_R_MAX`, `ACRO_Y_EXPO`, `ACC_BIAS_LIM` were tagged `enum` (which combined with the validation bug below into a security issue).
+- **default uniformly 0.0** (invented, not scraped) — now ArduPilot/Betaflight write `null` when upstream does not publish defaults (unknown ≠ 0); all 1,908 PX4 params carry real upstream defaults.
+- **category misclassification** — `FL_FF`, `I2C_ADDR`, `SERIAL_NUM`, `FS_VOLTSRC` were all filed under battery. Category is now derived from parameter group + tuning-domain rules.
+
+New fields: `group` (the firmware's own parameter group), `display_name`, `values`, `bitmask`, `increment`, `user` (Standard/Advanced), `reboot_required`, `read_only`, `unresolved_ref`. Tables carry a `source` provenance block (upstream file + firmware version + generation date).
+
+### Fixed — validation gate (security)
+
+- **`ParamTable.validate()` returned `True, "value accepted"` for enums** — any value passed. Combined with the type mislabeling above, a large share of the table **completely skipped range validation**: `ACCEL_R_MAX` has min 0.0, yet `validate(999999)` returned True. README sells this tool as a mandatory safety gate before recommending; the gate was wide open for enums.
+  - Now: `validate_detail()` returns a structured verdict — `status` ∈ `ok / not_found / out_of_range / not_a_member / not_an_integer / unverifiable`; enums are checked against real members, bitmasks against real bit spans, and rejections return the **allowed values with meanings** to the AI.
+  - **fail-closed**: discrete params with neither member tables nor ranges return `valid=false, status="unverifiable"` instead of silently passing.
+  - `validate()` keeps its `(bool, str)` signature for backward compatibility.
+- **Packaging missed files**: `knowledge/params/*.json` was not in `package-data` — after pip install, `stune params` and the three MCP param tools failed with `FileNotFoundError`. (Fixed in v3.1; recorded here.)
+- `ParamDef(**item)` blew up the whole table with `TypeError` on new upstream fields → switched to `from_dict()` which ignores unknown keys, forward-compatible.
+
+### Fixed — MCP reliability
+
+- **Payload slimming**: `smarttune_list_params` used to return the whole table as full objects (ArduPilot: 2,839 entries with long descriptions ≈ 600 KB per response — likely the real culprit behind that "no response" incident). It now returns slim rows (name/type/range/unit/one-liner) with `limit`/`offset` paging, and **refuses without a group or category, pointing to the group index first**; full descriptions and enum members are served by the new `smarttune_get_param`.
+- **stdout hygiene**: stdio MCP's stdout may only carry JSON-RPC. SmartTune itself writes to stderr (audited, no print leaks), but third-party parsers on the analysis path (pyulog / pymavlink / matplotlib) may print — one line of noise kills the whole stream. All service calls are now wrapped in `_quiet_stdout()`, redirecting stdout to stderr.
+- **Unified error shape**: there used to be at least three (`{"error": str}`, `{"error","code","hint"}`, `{"valid":false,"error"}`) with no retry marker. Now success is `{ok: true, …}`, failure is `{ok: false, error_code, message, hint, retryable}` so clients can tell "retryable" from "don't bother". A rejected parameter value is a **successful call** + `valid: false`, not a transport error.
+- **Param tools no longer pay the numpy startup cost**: `from smarttune.platform.params import ParamTable` used to execute `smarttune/platform/__init__.py` → `base` → `models.flight_data` → `import numpy`. Param tools only use the stdlib but were dragged through the whole scientific stack by the package `__init__`; every MCP call_tool spawns a new process, so looking up one param loaded everything. Switched to PEP 562 module-level `__getattr__` lazy import; public API unchanged.
+
+### Added
+
+- **`tools/build_param_tables.py`** — the missing scraper, now in the repo. One generation path per platform, output carries provenance blocks; `--check` runs the linter directly. Pure stdlib.
+- **`smarttune/platform/param_lint.py`** — parameter table health check: `name_shape` / `suffix_collision` / `placeholder_leak` / `discrete_without_members` / `constant_default` / `range_inverted` / `enum_key_not_int` / `empty_description` / `duplicate_name`. Every rule maps to a real incident. Current tables: **0 errors**.
+- **MCP `smarttune_list_param_groups`** — see the group index first (80–200 groups with counts/categories/sample members), then drill in; replaces "pull the whole table at once".
+- **MCP `smarttune_get_param`** — full definition of a single param (description + range + default + enum meanings).
+- **CLI group browsing**: `stune params ap --groups`, `--group ATC_`, `--lint`, and ranked `--search` (exact name > prefix > substring > display name > description > enum label); `stune params --search "analog voltage"` finds `BATT_MONITOR`. Listing a platform without filters shows the **group index** instead of dumping 2,839 rows.
+- All `stune params` sub-modes support `-f json`.
+
+### Tests
+
+- New `tests/test_param_tables.py` (37 cases): schema/provenance/lint zero errors for all three tables, names are real firmware names, descriptions not shifted, defaults not invented, enum member meanings, fail-closed validation, group index and in-group queries, search ranking, slim/full payload shapes, and 8 CLI end-to-end cases.
+
+### Verification
+
+- New `docs/TEST_PLAN_v3.2.md` — an executable acceptance spec, item by item (static checks / unit tests / parameter table data regression /
+  9 validation-gate cases / JSON contract / MCP contract & payload size limits / lazy loading / wheel contents / zero analysis-value regression),
+  with pass criteria, failure report format, and a "known limitations (not bugs)" list.
+- New `tools/smoke_mcp.py` — an MCP stdio smoke test with a built-in JSON-RPC client: checks 15 tools,
+  payload size limits, unified error shape, the validation gate, and **any stdout noise makes it fail outright**
+  (the detection mechanism for the last "no response" incident). No mcp client library dependency.
+
+### Docs
+
+- README: `stune params` section rewritten as "group → param → validate"; new Parameter tables subsection (three-platform source table + regeneration commands + linter notes); MCP tool table 13 → 15 with payload contract.
+- `skill-mcp/SKILL.md`: tool list and param query workflow updated in sync.
+
+---
+
+## v3.1.0 (2026-08-12) — CLI JSON output (`--format json`)
+
+### Added
+
+- **`smarttune/output/json_output.py`** — CLI JSON output layer: envelope (`schema_version` / `tool` / `command` / `status` / `generated_at`) + strict JSON encoding + structured error envelope.
+- **`-f/--format text|json`** across `analyze` / `pid` / `fft` / `magfit` / `sysid` / `hardware` / `filter` / `quality` / `platforms` / `params` (validate / search / query / list modes).
+  - payloads come straight from the services layer — the same functions the MCP server calls, so **CLI JSON and MCP JSON are isomorphic**; there is no second serialization path that can drift.
+  - JSON goes only to stdout (or `-o` file); progress, hints, and error panels always go to stderr, so `| jq` is always clean.
+  - Failure paths are JSON too: `status="error"` + `error {code, type, message, hint}`, exit code 1.
+  - NaN / ±Inf are sanitized to `null` before writing (`allow_nan=False`); strict parsers no longer blow up.
+  - `SMARTTUNE_DETERMINISTIC=1` omits `generated_at` so output is byte-diffable (CI snapshot regression).
+
+### Fixed
+
+- **`--report md` without `-o` silently produced nothing**: now aligned with the HTML path, defaulting to `<logstem>_report.md`.
+- **Packaging missed files**: `pyproject.toml`'s `package-data` only included `rules/**/*.json`; `knowledge/params/*.json` never made it into the wheel — `stune params` and MCP's three param validation tools hit `FileNotFoundError` in pip-installed environments. Added `params/*.json`.
+- Added the missing `smarttune/py.typed` (declared in `package-data` but the file did not exist).
+- Removed an unused `import json` in the `params` command (ruff F401).
+
+### Tests
+
+- New `tests/test_cli_json.py` (13 cases): envelope structure / payload cannot clobber meta fields / NaN sanitization / determinism switch / error envelope / `analyze` `quality` success & failure paths / stdout JSON for `platforms` and `params --validate` / text behavior unchanged without `--format`.
+
+### Docs
+
+- README: Output Formats gains a `--format json` contract table and examples; removed the "planned for a future release" note; three outdated "JSON only via MCP" phrasings updated (Quick Start / For Agents / For Humans).
+
+---
+
 ## v3.0.4 (2026-06-19) - hotfix
 
 ### Fixed

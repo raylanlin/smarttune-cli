@@ -7,28 +7,43 @@ Exposes flight log analysis tools for LLM agents (e.g. OpenClaw customer
 service) without shell execution, arbitrary file writes, or parameter mutation.
 
 Tool parity with CLI:
-  smarttune_list_platforms    ↔  stune platforms
-  smarttune_log_quality      ↔  stune quality
-  smarttune_analyze_log      ↔  stune analyze
-  smarttune_analyze_pid      ↔  stune pid
-  smarttune_analyze_fft      ↔  stune fft
-  smarttune_analyze_magfit   ↔  stune magfit
-  smarttune_analyze_sysid    ↔  stune sysid
-  smarttune_analyze_filter   ↔  stune filter
-  smarttune_analyze_hardware ↔  stune hardware
+  smarttune_list_platforms     ↔  stune platforms
+  smarttune_log_quality        ↔  stune quality
+  smarttune_analyze_log        ↔  stune analyze
+  smarttune_analyze_pid        ↔  stune pid
+  smarttune_analyze_fft        ↔  stune fft
+  smarttune_analyze_magfit     ↔  stune magfit
+  smarttune_analyze_sysid      ↔  stune sysid
+  smarttune_analyze_filter     ↔  stune filter
+  smarttune_analyze_hardware   ↔  stune hardware
+  smarttune_generate_plot      ↔  stune <cmd> --visual
+  smarttune_list_param_groups  ↔  stune params <platform> --groups
+  smarttune_list_params        ↔  stune params <platform> --group X / -c pid
+  smarttune_get_param          ↔  stune params <NAME>
+  smarttune_search_params      ↔  stune params --search
+  smarttune_validate_param     ↔  stune params --validate
+
+Response contract (v3.2):
+  Success  {"ok": true,  ...payload}
+  Failure  {"ok": false, "error_code", "message", "hint", "retryable"}
+  One shape for every tool, so clients branch on fields instead of prose.
+  A rejected parameter value is a successful call with valid=false — not an error.
 
 Security boundaries:
   - No subprocess / os.system / shell commands
   - No arbitrary output paths
   - Path validation: allowed roots, extensions, file size, symlink resolution
   - All tools are read-only and idempotent
+  - stdout carries JSON-RPC only: service calls run inside _quiet_stdout()
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -146,29 +161,93 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 # Helper: wrap service calls with path validation and error handling
 # ---------------------------------------------------------------------------
 
-def _call_service(func, log_path: str, **kwargs) -> str:
-    """Validate path, call service function, return JSON string.
+#: Error codes worth retrying. Everything else is deterministic — a retry
+#: returns the identical failure, so clients should surface it instead.
+_RETRYABLE_CODES = {"E9999"}
 
-    Catches SmartTuneError and unexpected exceptions, returning them
-    as structured JSON error responses instead of crashing the server.
+
+_PLATFORM_KEYS = {
+    "ap": "ardupilot", "apm": "ardupilot", "ardupilot": "ardupilot",
+    "bf": "betaflight", "betaflight": "betaflight",
+    "px4": "px4", "pixhawk": "px4",
+}
+
+
+def _resolve_platform_key(value: str) -> str:
+    """Normalise a platform argument ("ap" / "APM" / "ArduPilot" → "ardupilot")."""
+    return _PLATFORM_KEYS.get(str(value).strip().lower(), str(value).strip().lower())
+
+
+def _dumps(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _ok(payload: Dict[str, Any]) -> str:
+    """Success envelope: ok=True plus the payload's own fields."""
+    body: Dict[str, Any] = {"ok": True}
+    body.update(payload)
+    return _dumps(body)
+
+
+def _err(
+    message: str,
+    error_code: str = "E4000",
+    hint: str = "",
+    retryable: Optional[bool] = None,
+    **extra: Any,
+) -> str:
+    """Failure envelope — one shape for every tool.
+
+    {ok: false, error_code, message, hint, retryable}. Clients branch on
+    retryable instead of pattern-matching prose. (Was: three different shapes —
+    bare {"error": str}, {"error","code","hint"}, and {"valid": false,"error"} —
+    with no retry signal at all.)
     """
+    body: Dict[str, Any] = {
+        "ok": False,
+        "error_code": error_code,
+        "message": message,
+        "hint": hint,
+        "retryable": bool(error_code in _RETRYABLE_CODES if retryable is None else retryable),
+        # legacy key, kept one release for existing prompts/clients
+        "error": message,
+    }
+    body.update(extra)
+    return _dumps(body)
+
+
+@contextlib.contextmanager
+def _quiet_stdout():
+    """Redirect stdout to stderr for the duration of a service call.
+
+    stdio MCP transport allows ONLY JSON-RPC frames on stdout. SmartTune itself
+    logs to stderr, but third-party parsers on the analysis path (pyulog,
+    pymavlink, matplotlib backends) may print — one stray line corrupts the
+    stream and the client sees a hang. Anything printed inside this block lands
+    on stderr instead.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        yield
+
+
+def _call_service(func, log_path: str, **kwargs) -> str:
+    """Validate path, call service function, return a JSON envelope."""
     try:
         resolved = validate_log_path(log_path)
     except PathValidationError as exc:
-        return json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2)
+        return _err(str(exc), error_code="E1001",
+                    hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension")
 
     try:
-        result = func(log_path=resolved, **kwargs)
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        with _quiet_stdout():
+            result = func(log_path=resolved, **kwargs)
+        return _ok(result if isinstance(result, dict) else {"result": result})
     except SmartTuneError as exc:
-        return json.dumps({
-            "error": exc.message,
-            "code": exc.code,
-            "hint": exc.hint,
-        }, ensure_ascii=False, indent=2)
+        return _err(exc.message, error_code=exc.code, hint=exc.hint)
     except Exception as exc:
         logger.exception("Unexpected error in %s", func.__name__)
-        return json.dumps({"error": f"Unexpected error: {exc}"}, ensure_ascii=False, indent=2)
+        return _err(f"Unexpected error: {exc}", error_code="E9999",
+                    hint="This is an internal failure; retrying may help")
 
 
 # ---------------------------------------------------------------------------
@@ -364,13 +443,20 @@ mcp = FastMCP(
         "  smarttune_analyze_filter   — Filter transfer function (Bode plot)\n"
         "  smarttune_analyze_hardware — Hardware configuration report\n"
         "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n"
-        "  smarttune_list_params      — List firmware parameters for a platform\n"
-        "  smarttune_search_params    — Search parameters by keyword\n"
+        "  smarttune_list_param_groups — Browse a platform's parameter groups (start here)\n"
+        "  smarttune_list_params      — List parameters in one group or category (compact rows)\n"
+        "  smarttune_get_param        — Full definition of one parameter, incl. enum meanings\n"
+        "  smarttune_search_params    — Ranked keyword search across names/descriptions/enums\n"
         "  smarttune_validate_param   — Validate a parameter name + value before recommending\n\n"
+        "Every tool returns {ok: true, ...} or {ok: false, error_code, message, hint, retryable}.\n\n"
         "Recommended workflow: list_platforms → log_quality → analyze_log (or individual tools)\n"
+        "Parameter lookup: list_param_groups → list_params(group=…) → get_param(name) for detail.\n"
+        "  Never list a whole table: ArduPilot alone is ~2,800 parameters.\n"
         "Parameter validation: BEFORE recommending parameter changes, ALWAYS call\n"
-        "  smarttune_validate_param to check the parameter exists and the value is within range.\n"
-        "  This prevents suggesting parameters that don't exist in the target firmware.\n"
+        "  smarttune_validate_param. It checks enum membership as well as numeric range;\n"
+        "  status='unverifiable' means the table cannot confirm the value — do NOT proceed\n"
+        "  as if it were valid. Enum meanings come from get_param (e.g. BATT_MONITOR 4 =\n"
+        "  'Analog Voltage and Current').\n"
         "For visual reports: analyze first, then generate_plot for the relevant chart type."
     ),
 )
@@ -398,11 +484,10 @@ def smarttune_list_platforms() -> str:
         p["mcp_accepted_extensions"] = [
             e for e in cli_exts if e in _ALLOWED_EXTENSIONS
         ]
-    result = {
+    return _ok({
         "platforms": platforms,
         "mcp_allowed_extensions": sorted(_ALLOWED_EXTENSIONS),
-    }
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    })
 
 
 # ── 2. Log Quality ────────────────────────────────────────────
@@ -456,48 +541,50 @@ def smarttune_analyze_log(
 
     # Validate axis
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
+                    hint="Use all, roll, pitch, or yaw")
 
     # Validate response_format
     if response_format not in ("json", "markdown"):
-        return json.dumps({"error": f"Invalid response_format: {response_format!r}. Must be json or markdown."})
+        return _err(f"Invalid response_format: {response_format!r}", error_code="E4000",
+                    hint="Use json or markdown")
 
     # Validate include_modules
     valid_modules = {"pid", "fft", "magfit", "hardware", "filter", "sysid"}
     if include_modules is not None:
         invalid = set(include_modules) - valid_modules
         if invalid:
-            return json.dumps({"error": f"Invalid modules: {invalid}. Valid: {sorted(valid_modules)}"})
+            return _err(f"Invalid modules: {sorted(invalid)}", error_code="E4000",
+                        hint=f"Valid modules: {sorted(valid_modules)}")
 
     try:
         resolved = validate_log_path(log_path)
     except PathValidationError as exc:
-        return json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2)
+        return _err(str(exc), error_code="E1001",
+                    hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension")
 
     try:
         from smarttune.services.analysis import analyze_log
-        result = analyze_log(
-            log_path=resolved,
-            platform=platform,
-            axis=axis,
-            include_modules=include_modules,
-            max_recommendations=max_recommendations,
-        )
+        with _quiet_stdout():
+            result = analyze_log(
+                log_path=resolved,
+                platform=platform,
+                axis=axis,
+                include_modules=include_modules,
+                max_recommendations=max_recommendations,
+            )
 
         if response_format == "markdown":
             return _render_markdown(result)
 
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        return _ok(result)
 
     except SmartTuneError as exc:
-        return json.dumps({
-            "error": exc.message,
-            "code": exc.code,
-            "hint": exc.hint,
-        }, ensure_ascii=False, indent=2)
+        return _err(exc.message, error_code=exc.code, hint=exc.hint)
     except Exception as exc:
         logger.exception("Unexpected error in smarttune_analyze_log")
-        return json.dumps({"error": f"Unexpected error: {exc}"}, ensure_ascii=False, indent=2)
+        return _err(f"Unexpected error: {exc}", error_code="E9999",
+                    hint="This is an internal failure; retrying may help")
 
 
 # ── 4. PID Analysis ───────────────────────────────────────────
@@ -522,7 +609,8 @@ def smarttune_analyze_pid(
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
+                    hint="Use all, roll, pitch, or yaw")
 
     from smarttune.services.analysis import analyze_pid
     return _call_service(
@@ -609,7 +697,8 @@ def smarttune_analyze_sysid(
         nb: ARX model B polynomial order (default 2).
     """
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
+                    hint="Use all, roll, pitch, or yaw")
     na = max(1, min(10, na))
     nb = max(1, min(10, nb))
 
@@ -704,11 +793,14 @@ def smarttune_generate_plot(
         theme: Color theme — "light" (default) or "dark".
     """
     if plot_type not in ("pid", "fft", "filter"):
-        return json.dumps({"error": f"Invalid plot_type: {plot_type!r}. Must be pid, fft, or filter."})
+        return _err(f"Invalid plot_type: {plot_type!r}", error_code="E4000",
+                    hint="Use pid, fft, or filter")
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return json.dumps({"error": f"Invalid axis: {axis!r}. Must be all, roll, pitch, or yaw."})
+        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
+                    hint="Use all, roll, pitch, or yaw")
     if theme not in ("light", "dark"):
-        return json.dumps({"error": f"Invalid theme: {theme!r}. Must be light or dark."})
+        return _err(f"Invalid theme: {theme!r}", error_code="E4000",
+                    hint="Use light or dark")
 
     from smarttune.services.plot import generate_plot
     return _call_service(
@@ -717,121 +809,200 @@ def smarttune_generate_plot(
     )
 
 
-# ── 11. List Parameters ─────────────────────────────────────
+# ── 11. Parameter groups ─────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
+    """List a platform's firmware parameter GROUPS — the cheap way to explore a parameter table.
+
+    A full table is thousands of parameters; this returns ~80-200 groups with a
+    count, category and sample members each. Pick a group, then call
+    smarttune_list_params(group=...) to see its members.
+
+    Args:
+        platform: "ardupilot", "betaflight", or "px4".
+    """
+    from smarttune.platform.params import ParamTable
+
+    platform = _resolve_platform_key(platform)
+    available = ParamTable.available_platforms()
+    if platform not in available:
+        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
+                    hint=f"Available: {available}")
+
+    tbl = ParamTable.from_knowledge(platform)
+    return _ok({
+        "platform": tbl.platform,
+        "source": tbl.meta.get("source", {}),
+        "parameter_count": len(tbl),
+        "categories": tbl.categories(),
+        "groups": tbl.groups(),
+    })
+
+
+# ── 12. List Parameters ──────────────────────────────────────
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_params(
     platform: str = "ardupilot",
+    group: str = "",
     category: str = "all",
+    limit: int = 100,
+    offset: int = 0,
+    verbose: bool = False,
 ) -> str:
-    """List all known parameters for a flight controller platform.
+    """List parameters for a platform, filtered by group or category.
 
-    Returns parameters loaded from SmartTune's knowledge base (scraped from
-    official firmware source code). Each entry includes name, category, type,
-    default value, valid range, unit, and description.
-
-    Use this to discover available parameters before making tuning recommendations.
-    Critical for agents that need to verify a parameter exists in the target firmware.
+    Returns COMPACT rows (name, type, range, unit, one-line summary) — full
+    descriptions and enum member tables come from smarttune_get_param. Listing a
+    whole table without a filter is refused: ArduPilot alone is ~2,800
+    parameters, and dumping them all costs hundreds of KB per call.
 
     Args:
-        platform: Platform name — "ardupilot", "betaflight", or "px4".
-        category: Filter by category — "pid", "filter", "rate", "mag", "misc", or "all".
+        platform: "ardupilot", "betaflight", or "px4".
+        group: Firmware parameter group, e.g. "ATC_" / "GYRO_CONFIG" / "Multicopter Rate Control".
+        category: Topic filter, e.g. "pid", "filter", "battery". "all" needs a group.
+        limit: Max rows to return (1-500, default 100).
+        offset: Row offset for paging.
+        verbose: Include full descriptions and enum members (use sparingly).
     """
-    from smarttune.platform.params import ParamTable
+    from smarttune.platform.params import ParamTable, to_full_dict, to_slim_dict
 
-    platform = platform.lower()
+    platform = _resolve_platform_key(platform)
     available = ParamTable.available_platforms()
     if platform not in available:
-        return json.dumps({
-            "error": f"Unknown platform: {platform!r}. Available: {available}"
-        }, ensure_ascii=False, indent=2)
+        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
+                    hint=f"Available: {available}")
 
+    limit = max(1, min(500, limit))
+    offset = max(0, offset)
     tbl = ParamTable.from_knowledge(platform)
-    params = tbl.list_all() if category == "all" else tbl.list_by_category(category)
 
-    result = []
-    for p in sorted(params, key=lambda x: (x.category, x.name)):
-        entry = {
-            "name": p.name,
-            "category": p.category,
-            "type": p.type,
-            "default": p.default,
-        }
-        if p.min is not None:
-            entry["min"] = p.min
-        if p.max is not None:
-            entry["max"] = p.max
-        if p.unit:
-            entry["unit"] = p.unit
-        if p.description:
-            entry["description"] = p.description
-        result.append(entry)
+    if group:
+        rows = tbl.list_by_group(group)
+        if not rows:
+            return _err(f"No group matching {group!r} in {tbl.platform}", error_code="E4000",
+                        hint="Call smarttune_list_param_groups first")
+        scope = {"group": group}
+    elif category != "all":
+        rows = tbl.list_by_category(category)
+        if not rows:
+            return _err(f"No parameters in category {category!r}", error_code="E4000",
+                        hint=f"Available categories: {tbl.categories()}")
+        scope = {"category": category}
+    else:
+        return _err(
+            f"Refusing to list all {len(tbl)} parameters at once",
+            error_code="E4000",
+            hint="Pass group= or category=, or call smarttune_list_param_groups to explore",
+            group_count=len(tbl.groups()),
+            categories=tbl.categories(),
+        )
 
-    return json.dumps({
+    page = rows[offset:offset + limit]
+    shape = to_full_dict if verbose else to_slim_dict
+    return _ok({
         "platform": tbl.platform,
-        "count": len(result),
-        "category": category,
-        "categories": tbl.categories(),
-        "parameters": result,
-    }, ensure_ascii=False, indent=2)
+        **scope,
+        "count": len(rows),
+        "offset": offset,
+        "returned": len(page),
+        "next_offset": offset + len(page) if offset + len(page) < len(rows) else None,
+        "params": [shape(p) for p in page],
+    })
 
 
-# ── 12. Search Parameters ────────────────────────────────────
+# ── 13. Get one parameter ────────────────────────────────────
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_get_param(param_name: str, platform: str = "all") -> str:
+    """Get the FULL definition of one parameter — description, range, default, enum members.
+
+    This is the tool to call before explaining or recommending a parameter: it
+    carries the upstream description and, for enum/bitmask parameters, what each
+    value actually means (e.g. BATT_MONITOR 4 = "Analog Voltage and Current").
+
+    Args:
+        param_name: Exact firmware parameter name, e.g. "BATT_MONITOR", "MC_ROLLRATE_P", "gyro_lpf1_static_hz".
+        platform: "ardupilot" | "betaflight" | "px4" | "all" (default: search every table).
+    """
+    from smarttune.platform.params import ParamTable, to_full_dict
+
+    available = ParamTable.available_platforms()
+    if platform == "all":
+        targets = available
+    else:
+        key = _resolve_platform_key(platform)
+        if key not in available:
+            return _err(f"Unknown platform: {platform!r}", error_code="E4010",
+                        hint=f"Available: {available}")
+        targets = [key]
+
+    matches = []
+    for plat in targets:
+        tbl = ParamTable.from_knowledge(plat)
+        pd = tbl.query(param_name)
+        if pd:
+            matches.append({"platform": tbl.platform, **to_full_dict(pd)})
+
+    if not matches:
+        return _err(f"Parameter {param_name!r} not found", error_code="E4002",
+                    hint="Use smarttune_search_params for partial matches")
+    return _ok({"param_name": param_name, "matches": matches})
+
+
+# ── 14. Search Parameters ────────────────────────────────────
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_search_params(
     keyword: str,
     platform: str = "all",
+    limit: int = 40,
 ) -> str:
-    """Search for parameters by keyword across one or all platforms.
+    """Search parameters by keyword, ranked by match quality.
 
-    Case-insensitive search across parameter names, categories, and descriptions.
-    Useful when you know a parameter's purpose but not its exact name.
-    For example, searching "notch" finds INS_HNTCH_*, gyro_notch*, dyn_notch* params.
+    Matches names, groups, categories, display names, descriptions and enum
+    labels — so "analog voltage" finds BATT_MONITOR. Exact and prefix name
+    matches rank first. Returns compact rows; follow up with smarttune_get_param.
 
     Args:
-        keyword: Search term (case-insensitive). E.g., "roll rate", "notch", "lpf".
-        platform: Platform to search — "ardupilot", "betaflight", "px4", or "all".
+        keyword: Search text, e.g. "notch", "rate p gain", "analog voltage".
+        platform: "ardupilot" | "betaflight" | "px4" | "all" (default).
+        limit: Max hits per platform (1-200, default 40).
     """
-    from smarttune.platform.params import ParamTable
+    from smarttune.platform.params import ParamTable, to_slim_dict
 
-    targets = ParamTable.available_platforms() if platform == "all" else [platform.lower()]
+    if not keyword.strip():
+        return _err("keyword is empty", error_code="E4000", hint="Pass a search term")
 
-    all_results = {}
+    limit = max(1, min(200, limit))
+    available = ParamTable.available_platforms()
+    if platform == "all":
+        targets = available
+    else:
+        key = _resolve_platform_key(platform)
+        if key not in available:
+            return _err(f"Unknown platform: {platform!r}", error_code="E4010",
+                        hint=f"Available: {available}")
+        targets = [key]
+
+    results = {}
     total = 0
     for plat in targets:
-        try:
-            tbl = ParamTable.from_knowledge(plat)
-        except FileNotFoundError:
-            continue
+        tbl = ParamTable.from_knowledge(plat)
         hits = tbl.search(keyword)
+        total += len(hits)
         if hits:
-            result = []
-            for p in hits:
-                entry = {
-                    "name": p.name,
-                    "category": p.category,
-                    "type": p.type,
-                    "description": p.description or "",
-                }
-                if p.min is not None:
-                    entry["min"] = p.min
-                if p.max is not None:
-                    entry["max"] = p.max
-                if p.unit:
-                    entry["unit"] = p.unit
-                result.append(entry)
-            all_results[plat] = {"platform": tbl.platform, "matches": len(result), "parameters": result}
-            total += len(result)
+            results[tbl.platform] = {
+                "count": len(hits),
+                "returned": min(len(hits), limit),
+                "params": [to_slim_dict(p) for p in hits[:limit]],
+            }
 
-    return json.dumps({
-        "keyword": keyword,
-        "total_matches": total,
-        "platforms": all_results,
-    }, ensure_ascii=False, indent=2)
+    return _ok({"keyword": keyword, "total": total, "platforms": results})
 
 
-# ── 13. Validate Parameter ───────────────────────────────────
+# ── 15. Validate Parameter ───────────────────────────────────
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_validate_param(
@@ -839,63 +1010,54 @@ def smarttune_validate_param(
     param_value: float,
     platform: str,
 ) -> str:
-    """Validate whether a parameter exists and its value is within valid range.
+    """Validate that a parameter exists AND the proposed value is legal. Call before recommending anything.
 
-    This is the CRITICAL safeguard against recommending parameters that don't exist
-    in the target firmware. Always call this before suggesting parameter changes.
+    Checks, in order:
+      1. the name exists in the platform's parameter table
+      2. for enum/bitmask parameters, the value is a defined member / bit combination
+      3. otherwise, the value sits inside the published [min, max] range
 
-    Checks:
-      1. Parameter name exists in the platform's parameter table
-      2. Value is within the parameter's valid [min, max] range
+    Returns ok/valid plus a status field:
+      ok | not_found | out_of_range | not_a_member | not_an_integer | unverifiable
 
-    Returns valid=True with a confirmation message, or valid=False with the reason.
+    "unverifiable" means the table has no members and no range for a discrete
+    parameter — the value is NOT accepted; say so instead of guessing.
 
     Args:
-        param_name: The firmware parameter name to validate. E.g., "ATC_RAT_RLL_P", "p_roll".
-        param_value: The proposed value to check. E.g., 0.15.
-        platform: Target platform — "ardupilot", "betaflight", or "px4".
+        param_name: Firmware parameter name, e.g. "ATC_RAT_RLL_P", "p_roll", "MC_ROLLRATE_P".
+        param_value: The proposed value.
+        platform: "ardupilot", "betaflight", or "px4".
     """
-    from smarttune.platform.params import ParamTable
+    from smarttune.platform.params import ParamTable, to_full_dict
 
-    platform = platform.lower()
+    platform = _resolve_platform_key(platform)
     available = ParamTable.available_platforms()
     if platform not in available:
-        return json.dumps({
-            "valid": False,
-            "error": f"Unknown platform: {platform!r}. Available: {available}",
-        }, ensure_ascii=False, indent=2)
+        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
+                    hint=f"Available: {available}", valid=False, status="not_found")
 
     tbl = ParamTable.from_knowledge(platform)
-    ok, msg = tbl.validate(param_name, param_value)
-
-    # Also return the full parameter definition if found
+    verdict = tbl.validate_detail(param_name, param_value)
     pd = tbl.query(param_name)
-    param_info = None
-    if pd:
-        param_info = {
-            "name": pd.name,
-            "category": pd.category,
-            "type": pd.type,
-            "default": pd.default,
-        }
-        if pd.min is not None:
-            param_info["min"] = pd.min
-        if pd.max is not None:
-            param_info["max"] = pd.max
-        if pd.unit:
-            param_info["unit"] = pd.unit
-        if pd.description:
-            param_info["description"] = pd.description
 
-    return json.dumps({
-        "valid": ok,
-        "message": msg,
+    body = {
         "param_name": param_name,
         "param_value": param_value,
         "platform": tbl.platform,
-        "parameter": param_info,
-    }, ensure_ascii=False, indent=2)
+        "valid": verdict["valid"],
+        "status": verdict["status"],
+        "message": verdict["message"],
+    }
+    if verdict.get("options"):
+        body["options"] = verdict["options"]
+    if verdict.get("hint"):
+        body["hint"] = verdict["hint"]
+    if pd is not None:
+        body["parameter"] = to_full_dict(pd)
 
+    # A rejected value is a legitimate answer, not a tool failure — ok stays true
+    # so clients do not treat it as retryable transport trouble.
+    return _ok(body)
 
 # ---------------------------------------------------------------------------
 # Entry point

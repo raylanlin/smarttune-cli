@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smarttune"
-version = "3.0.3"
+version = "3.2.0"
 description = "Multi-platform flight log analysis & tuning advisor CLI"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -64,7 +64,9 @@ include = ["smarttune*"]
 
 [tool.setuptools.package-data]
 "smarttune" = ["py.typed"]
-"smarttune.knowledge" = ["rules/**/*.json"]
+# params/*.json powers `stune params` and the MCP validation tools —
+# it was missing here, so wheels shipped without the parameter tables.
+"smarttune.knowledge" = ["rules/**/*.json", "params/*.json"]
 
 [tool.black]
 line-length = 100

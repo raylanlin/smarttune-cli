@@ -48,7 +48,7 @@ stune platforms
    ```bash
    stune params --validate <PARAM_NAME> <VALUE> -p <platform>
    ```
-   If validation fails (exit code 1), do NOT recommend that parameter — it may not exist in the firmware, or the value is out of valid range. Find an alternative or tell the user the parameter is not available.
+   If validation fails (exit code 1), do NOT recommend that parameter — it may not exist in the firmware, the value may be outside [min, max], or (for an enum) not a defined member. When the rejection lists allowed values, pick from those. Find an alternative or tell the user the parameter is not available.
 
    This is critical because:
    - Betaflight 4.5+ renamed many parameters (e.g., `d_min_roll` → `d_max_roll`, `gyro_lowpass_hz` → `gyro_lpf1_static_hz`)
@@ -215,30 +215,46 @@ stune magfit -i flight.bin
 
 ### stune params
 
-Query and validate firmware parameter tables. Data sourced from official firmware repositories.
+Browse, query and validate firmware parameter tables — generated from official firmware metadata, grouped the way the firmware groups them, with enum meanings.
 
 ```bash
-# List all parameters for a platform
-stune params ap                           # ArduPilot (2,574 params)
-stune params bf                           # Betaflight (45 params)
-stune params px4                          # PX4 (20 params)
+# What tables exist
+stune params                              # ArduPilot 2,839 / Betaflight 814 / PX4 1,908
 
-# Show detail for a specific parameter
+# Browse by firmware parameter group
+stune params ap --groups                  # 194 ArduPilot groups
+stune params ap --group ATC_              # attitude controller parameters
+stune params bf --group PID_PROFILE
+stune params px4 --group "Multicopter Rate Control"
+
+# Browse by topic
+stune params ap -c pid                    # pid / filter / mag / battery / rate / …
+
+# Show detail for a specific parameter (description + what each enum value means)
 stune params ATC_RAT_RLL_P                # auto-detects platform
+stune params BATT_MONITOR                 # → 4 = Analog Voltage and Current
 stune params p_roll                       # Betaflight param
 
-# Search across all platforms
+# Ranked search — names, descriptions and enum labels
 stune params --search notch
-stune params --search roll --platform ardupilot
-
-# Filter by category
-stune params --category pid --platform betaflight
+stune params --search "analog voltage"    # finds BATT_MONITOR
 
 # Validate a parameter recommendation (CRITICAL for agents)
 stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot   # exit 0 if valid
-stune params --validate XYZZY_PARAM 0.0 -p ardupilot       # exit 1 if not found
-stune params --validate p_roll 500 -p betaflight           # exit 1 if out of range
+stune params --validate BATT_MONITOR 99 -p ardupilot      # exit 1: not a valid value (lists allowed)
+stune params --validate XYZZY_PARAM 0.0 -p ardupilot      # exit 1 if not found
+stune params --validate p_roll 500 -p betaflight          # exit 1 if out of range
+
+# Parameter-table health check (CI gate)
+stune params --lint
+
+# Any of the above as JSON
+stune params ap --group ATC_ -f json
 ```
+
+Tables are generated from official firmware metadata by `tools/build_param_tables.py`
+(ArduPilot `apm.pdef.json`, PX4 `px4params` JSON, Betaflight `cli/settings.c`).
+`default: null` means upstream publishes no default — it does **not** mean zero.
 
 **Parameter tables are loaded from knowledge base JSON files** (`smarttune/knowledge/params/`). Update the JSON to refresh parameters without code changes. Parameters scraped from official firmware source code — ArduPilot from `@Param` annotations, Betaflight from `settings.c`, PX4 from YAML definitions.
 

@@ -277,9 +277,14 @@ class FullAnalysisResult:
             for ax_result in self.pid.axes.values():
                 recs.extend(ax_result.recommendations)
         if self.fft:
-            recs.extend(self.fft.recommendations)
+            if isinstance(self.fft, dict):
+                # FFT analyzer returns dict form ({generic_name: value});
+                # rendered by format_fft, no .recommendations attribute.
+                pass
+            else:
+                recs.extend(self.fft.recommendations)
         if self.filter:
-            recs.extend(self.filter.recommendations)
+            recs.extend(getattr(self.filter, "recommendations", []))
         if self.magfit:
-            recs.extend(self.magfit.recommendations)
+            recs.extend(getattr(self.magfit, "recommendations", []))
         return recs

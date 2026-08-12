@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.0.3-blue?logo=github" alt="v3.0.3" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.2.0-blue?logo=github" alt="v3.2.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
-  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-167%20passed-brightgreen" alt="Tests" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-232%20passed-brightgreen" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -57,7 +57,7 @@ SmartTune was designed specifically for **LLM agent tool-calling workflows**. Ev
 | Principle | Implementation |
 |-----------|---------------|
 | **Deterministic output** | No interactive prompts, no TUI, no progress bars when piped to files. Same input → same output. |
-| **Structured by default** | JSON output via MCP server (`smarttune_analyze_log`). Markdown/HTML via CLI `--report md\|html`. No parsing fragile ANSI-escaped terminal dumps. |
+| **Structured by default** | JSON on stdout via `--format json` (CLI) or `smarttune_analyze_log` (MCP) — one shared schema. Markdown/HTML via `--report md\|html`. No parsing fragile ANSI-escaped terminal dumps. |
 | **Self-describing** | `stune platforms` lists available adapters. Error codes are standardized (E10xx–E50xx). Exit codes are meaningful. |
 | **Fail-fast & isolated** | Single-module failure doesn't abort the full analysis. Each module gets its own try/except block. |
 | **Config-free** | Zero config files needed. Everything is flags or auto-detected. No env vars required. |
@@ -103,7 +103,7 @@ smarttune-mcp          # stdio transport (for agent frameworks)
 python -m smarttune.mcp_server
 ```
 
-**Available MCP tools (13 total):**
+**Available MCP tools (15 total):**
 
 | Tool | Purpose |
 |------|---------|
@@ -117,13 +117,27 @@ python -m smarttune.mcp_server
 | `smarttune_analyze_filter` | Filter transfer function analysis (Bode plot data) |
 | `smarttune_analyze_hardware` | Hardware configuration report |
 | `smarttune_generate_plot` | Generate analysis chart as base64 PNG |
-| `smarttune_list_params` | **NEW v3.0** — List firmware parameters for a platform |
-| `smarttune_search_params` | **NEW v3.0** — Search parameters by keyword across platforms |
-| `smarttune_validate_param` | **NEW v3.0** — ⚠️ Validate param exists + value in range before recommending |
+| `smarttune_list_param_groups` | **NEW v3.2** — Browse a platform's parameter groups (start here) |
+| `smarttune_list_params` | List parameters in one group or category — compact rows |
+| `smarttune_get_param` | **NEW v3.2** — Full definition of one parameter, incl. what each enum value means |
+| `smarttune_search_params` | Ranked keyword search across names, descriptions and enum labels |
+| `smarttune_validate_param` | ⚠️ Validate param exists + value is a legal member/in range before recommending |
 
 All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`.
 
-**⚠️ Parameter validation is mandatory.** Before recommending ANY parameter change, call `smarttune_validate_param(param_name, value, platform)`. This prevents agents from suggesting parameters that don't exist in the target firmware — a critical issue because:
+**Response contract (v3.2)** — one shape for every tool, so clients branch on fields instead of prose:
+
+```json
+{ "ok": true,  "platform": "ArduPilot", "...": "payload" }
+{ "ok": false, "error_code": "E3002", "message": "Insufficient PID data in log",
+  "hint": "…", "retryable": false }
+```
+
+A rejected parameter value is a *successful* call with `valid: false` — not a transport error.
+stdout carries JSON-RPC only: every service call runs with stdout redirected to stderr, so a
+stray `print` from a third-party log parser can no longer corrupt the stream.
+
+**⚠️ Parameter validation is mandatory.** Before recommending ANY parameter change, call `smarttune_validate_param(param_name, value, platform)`. It checks **enum membership as well as numeric range**, and returns a `status`: `ok` / `not_found` / `out_of_range` / `not_a_member` / `not_an_integer` / `unverifiable`. `unverifiable` means the table cannot confirm the value — the call did **not** approve it. This prevents agents from suggesting parameters that don't exist in the target firmware — a critical issue because:
 - Betaflight 4.5+ renamed many parameters (`d_min_roll` → `d_max_roll`, `gyro_lowpass_hz` → `gyro_lpf1_static_hz`)
 - Parameter names differ between firmware versions
 - Some parameters have strict value ranges that must be respected
@@ -187,7 +201,8 @@ stune analyze -i flight.bin --report html -o report.html
 # List supported platforms
 stune platforms
 
-# For JSON output, use the MCP server (see "For Agents" above)
+# Machine-readable output (same schema as the MCP server)
+stune analyze -i flight.bin --format json
 ```
 
 ---
@@ -199,11 +214,50 @@ SmartTune supports multiple output formats, each designed for a specific consump
 | Format | Use Case | Example |
 |--------|----------|---------|
 | **Terminal** | Human inspection in the shell | `stune analyze -i flight.bin` |
-| **JSON** | Agent/script consumption | MCP: `smarttune_analyze_log(log_path="flight.bin")` |
+| **JSON** | Agent/script consumption | `stune analyze -i flight.bin --format json` |
 | **Markdown** | Reports, READMEs, documentation | `stune analyze -i flight.bin --report md -o report.md` |
 | **HTML** | Visual reports with embedded charts | `stune analyze -i flight.bin --report html -o report.html` |
 
-> **Note:** JSON output is available through the MCP server. The CLI currently supports `--report md` and `--report html`. A `--format json` CLI flag is planned for a future release.
+### `--format json` 🆕 v3.1
+
+Every analysis command takes `-f/--format json`. The payload comes from the same services-layer
+functions the MCP server calls, so **CLI JSON and MCP JSON are the same schema** — no second
+serializer to drift.
+
+```bash
+stune analyze -i flight.bin -f json | jq '.modules.pid.axes.roll'
+stune pid      -i flight.bin -f json -a roll
+stune fft      -i flight.bin -f json
+stune quality  -i flight.bin -f json -o quality.json
+stune filter   -i flight.bin -f json
+stune params --search notch -f json
+stune platforms -f json
+```
+
+Contract:
+
+| Guarantee | Detail |
+|-----------|--------|
+| **stdout is JSON only** | Progress, hints and error panels go to stderr — `\| jq` never chokes. `-o file.json` writes the payload to a file instead. |
+| **Envelope** | `schema_version`, `tool {name, version}`, `command`, `status`, `generated_at`, then the command's own fields. |
+| **Errors are JSON too** | `status: "error"` + `error {code, type, message, hint}`, exit code 1. No screen-scraping the failure path. |
+| **Strict JSON** | NaN/Infinity are emitted as `null` — safe for strict parsers. |
+| **Reproducible** | `SMARTTUNE_DETERMINISTIC=1` omits `generated_at` so runs diff byte-for-byte in CI. |
+
+```json
+{
+  "schema_version": "1.0",
+  "tool": { "name": "smarttune", "version": "3.1.0" },
+  "command": "pid",
+  "status": "error",
+  "error": {
+    "code": "E3002",
+    "type": "InsufficientPIDDataError",
+    "message": "Insufficient PID data in log",
+    "hint": ""
+  }
+}
+```
 
 ### JSON output example
 
@@ -312,31 +366,43 @@ List all available platform adapters and their capabilities.
 stune platforms
 ```
 
-### `stune params` 🆕 v3.0
+### `stune params` — firmware parameter tables
 
-Query and validate firmware parameter tables. Data scraped from official firmware source code.
+Browse, look up, search and validate real firmware parameters. Tables are generated from
+official firmware metadata by [`tools/build_param_tables.py`](tools/build_param_tables.py) —
+see [Parameter tables](#parameter-tables).
 
 ```bash
-# List all parameters for a platform
-stune params ap                      # ArduPilot (2,574 params)
-stune params bf                      # Betaflight (45 params, BF 4.5+ names)
-stune params px4                     # PX4 (20 params)
+# What's available
+stune params                          # tables, param counts, group counts, firmware
 
-# Show parameter details
-stune params ATC_RAT_RLL_P           # Auto-detects platform
+# Browse by parameter group (the firmware's own grouping)
+stune params ap --groups               # 194 ArduPilot groups
+stune params ap --group ATC_           # attitude controller group
+stune params bf --group PID_PROFILE    # Betaflight PG_PID_PROFILE
+stune params px4 --group "Multicopter Rate Control"
+
+# Browse by topic
+stune params ap -c pid                 # pid / filter / mag / battery / rate / …
+
+# One parameter: description, range, default, and what each enum value MEANS
+stune params BATT_MONITOR
+stune params MC_ROLLRATE_P
+
+# Ranked keyword search — names, descriptions and enum labels
+stune params --search notch
+stune params --search "analog voltage"        # finds BATT_MONITOR
 
 # ⚠️ Validate before recommending (exit 0 = valid, 1 = invalid)
-stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot
-stune params --validate p_roll 999 -p betaflight     # fails: exceeds max
+stune params --validate BATT_MONITOR 4 -p ap     # ✓ 4 = Analog Voltage and Current
+stune params --validate BATT_MONITOR 99 -p ap    # ✗ not a valid value (lists allowed)
+stune params --validate p_roll 999 -p bf         # ✗ exceeds max 250
 
-# Search and filter
-stune params --search notch          # Cross-platform search
-stune params --category pid -p betaflight
+# Data health (CI gate)
+stune params --lint                    # exit 1 if any table has defects
 ```
 
-**Architecture**: Parameters stored in `smarttune/knowledge/params/<platform>.json`. Update JSON to refresh — no code changes needed. See [Knowledge Base](#knowledge-base).
-
----
+Every subcommand supports `-f json`.
 
 ## Supported Platforms
 
@@ -426,6 +492,35 @@ A 6-layer deep-merge rule engine powers all tuning recommendations. Each layer o
 
 Rules are standard JSON files. Add a file, restart the command, and the engine picks it up. No compilation, no database, no setup.
 
+### Parameter tables
+
+`smarttune/knowledge/params/<platform>.json` holds the firmware parameter tables behind
+`stune params` and the MCP parameter tools. They are **generated, not hand-written**:
+
+| Platform | Parameters | Groups | Upstream source |
+|----------|-----------:|-------:|-----------------|
+| ArduPilot | 2,839 | 194 | `apm.pdef.json` — ArduPilot's generated parameter metadata |
+| Betaflight | 814 | 82 | `src/main/cli/settings.c` + `fc/parameter_names.h` (no metadata artifact exists) |
+| PX4 | 1,908 | 78 | `parameters.json` — PX4's own `px4params` generator |
+
+Each row carries the full firmware name, its group, upstream description, range, unit,
+increment, audience level, and — for enum/bitmask parameters — **what each value means**
+(`BATT_MONITOR` 4 = "Analog Voltage and Current"). Regenerate:
+
+```bash
+python tools/build_param_tables.py ardupilot  ../ParameterRepository/Copter-4.1/apm.pdef.json
+python tools/build_param_tables.py px4        ../PX4-Autopilot/docs/public/config/failsafe/parameters.json
+python tools/build_param_tables.py betaflight ../betaflight
+python tools/build_param_tables.py --check    # or: stune params --lint
+```
+
+`--check` / `--lint` runs the data linter (`smarttune/platform/param_lint.py`), which fails
+on the defect classes that shipped in v3.0–v3.1: prefix-stripped names, descriptions offset by
+one row, unexpanded `@PREFIX@` placeholders, fabricated constant defaults, and discrete
+parameters with no member list (which used to make validation a no-op). Honest gaps are
+recorded in the data — `default: null` where upstream publishes no default, `unresolved_ref`
+where an enum's member list lives outside the parsed source — instead of being invented.
+
 ---
 
 ## Development
@@ -442,7 +537,16 @@ pytest tests/test_betaflight_analyzers.py -v  # BF-specific analyzers
 # Lint
 ruff check smarttune/
 black --check smarttune/
+
+# Parameter-table health + MCP contract smoke test
+stune params --lint
+python tools/smoke_mcp.py --log /path/to/flight.bin
 ```
+
+Release verification for v3.2 is scripted step by step in
+[`docs/TEST_PLAN_v3.2.md`](docs/TEST_PLAN_v3.2.md) — static checks, data regressions for every
+defect this release fixes, the parameter-validation gate, JSON/MCP contracts, wheel contents,
+and an "analysis numbers must not change" diff.
 
 ### Adding a New Platform
 
@@ -601,7 +705,9 @@ Yes, the terminal output is also beautiful. Rich-powered tables, progress bars, 
 # Human-friendly terminal output (default)
 stune analyze -i flight.bin
 
-# Machine-parseable via MCP server
+# Machine-parseable
+stune analyze -i flight.bin --format json
+# ...or the identical payload over MCP:
 # smarttune_analyze_log(log_path="flight.bin", response_format="json")
 ```
 
@@ -619,6 +725,8 @@ stune analyze -i flight.bin
 | v2.4 | Technical debt cleanup + HTML report parity | ✅ |
 | **v3.0** | **Firmware parameter tables + MCP validation tools + knowledge base** | ✅ |
 | v3.0.1~v3.0.3 | Architecture audit fixes, PX4 ULog adapter, A1 convergence, cross-module contract fixes, performance vectorization | ✅ |
+| v3.1 | `--format json` CLI parity with MCP schema | ✅ |
+| **v3.2** | **Parameter tables regenerated from upstream metadata (groups + enum meanings), real enum validation, slim MCP payloads, unified error shape** | ✅ |
 | v3.x | Tool-calling manifest, web UI | 🔲 |
 
 ---

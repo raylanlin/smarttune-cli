@@ -17,9 +17,11 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 * Do not modify logs, parameters, firmware, local files, or aircraft configuration.
 * Use only the SmartTune MCP tools listed below.
 * If these tools are unavailable, say SmartTune MCP is not connected and ask the operator to enable the MCP server.
-* **MANDATORY: Validate every parameter recommendation.** Before suggesting any parameter change, call `smarttune_validate_param` with the exact parameter name, proposed value, and platform. Never recommend a parameter that fails validation — search for alternatives with `smarttune_search_params`.
+* **MANDATORY: Validate every parameter recommendation.** Before suggesting any parameter change, call `smarttune_validate_param` with the exact parameter name, proposed value, and platform. Never recommend a parameter that fails validation — search for alternatives with `smarttune_search_params`. A `status` of `unverifiable` is **not** approval.
+* **Every tool returns one shape:** `{ok: true, ...}` on success, `{ok: false, error_code, message, hint, retryable}` on failure. A rejected parameter value is a successful call with `valid: false`.
+* **Never list a whole parameter table.** Browse with `smarttune_list_param_groups` → `smarttune_list_params(group=...)` → `smarttune_get_param(name)` for full detail. ArduPilot alone is ~2,800 parameters.
 
-## Available MCP Tools (13 total)
+## Available MCP Tools (15 total)
 
 ### Core Tools
 
@@ -33,9 +35,11 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 
 | # | Tool | CLI Equivalent | Description |
 |---|------|----------------|-------------|
-| 4 | `smarttune_validate_param` | `stune params --validate` | ⚠️ **MANDATORY before recommending.** Validate a parameter name exists and value is within valid range. Returns valid=true/false with reason. Prevents agents from suggesting parameters that don't exist in the firmware. |
-| 5 | `smarttune_list_params` | `stune params <platform>` | List all known parameters for a platform. Filter by category. Each entry includes name, type, range, default, and description. |
-| 6 | `smarttune_search_params` | `stune params --search` | Search parameters by keyword across all platforms. Case-insensitive. Useful when you know a parameter's purpose but not the exact name. |
+| 4 | `smarttune_validate_param` | `stune params --validate` | ⚠️ **MANDATORY before recommending.** Checks the name exists, and that the value is a defined enum member / legal bit combination / inside [min, max]. Returns `valid` plus `status`: `ok` / `not_found` / `out_of_range` / `not_a_member` / `not_an_integer` / `unverifiable`, with the allowed values when it rejects. |
+| 5 | `smarttune_list_param_groups` | `stune params <platform> --groups` | **Start here.** The platform's firmware parameter groups (ArduPilot 194, Betaflight 82, PX4 78) with counts, categories and sample members. |
+| 6 | `smarttune_list_params` | `stune params <platform> --group X` | Parameters in one group or category, as compact rows (name/type/range/unit/one-line summary). Paged via `limit`/`offset`. Refuses to dump a whole table. |
+| 7 | `smarttune_get_param` | `stune params <NAME>` | Full definition of one parameter: upstream description, range, default, increment, and **what each enum value means** (BATT_MONITOR 4 = "Analog Voltage and Current"). Call this before explaining a parameter. |
+| 8 | `smarttune_search_params` | `stune params --search` | Ranked keyword search across names, groups, display names, descriptions and enum labels. Exact/prefix name matches rank first. |
 
 ### Individual Analysis Tools
 
@@ -93,6 +97,10 @@ The tool returns both `image_base64` (data URL for inline display) and `file_pat
    smarttune_validate_param(param_name="ATC_RAT_RLL_P", param_value=0.15, platform="ardupilot")
    ```
    - If `valid: true` → proceed to recommend
+   - If `status: "not_a_member"` → the response's `options` lists every legal value and its
+     meaning; pick from those or drop the recommendation
+   - If `status: "unverifiable"` → the table cannot confirm this value. Say so; do not present
+     it as validated
    - If `valid: false` with "NOT FOUND" → the parameter doesn't exist in this firmware. Search for alternatives:
      ```
      smarttune_search_params(keyword="roll rate", platform="ardupilot")

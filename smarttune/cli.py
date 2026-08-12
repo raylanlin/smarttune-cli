@@ -33,6 +33,24 @@ def _fail_in_progress(progress: Progress, exc: SmartTuneError) -> NoReturn:
 
 
 # ---------------------------------------------------------------------------
+# 输出格式 (--format text|json)
+# ---------------------------------------------------------------------------
+
+def format_option(func):
+    """复用的 ``-f/--format text|json`` 选项。
+
+    json 模式下 payload 由 services 层生成（与 MCP server 同源），只写 stdout；
+    进度/错误/提示始终走 stderr，因此管道里的 JSON 永远干净。
+    """
+    return click.option(
+        "-f", "--format", "output_format",
+        type=click.Choice(["text", "json"], case_sensitive=False),
+        default="text", show_default=True,
+        help="Output format: text (Rich terminal) or json (machine-readable, stdout)",
+    )(func)
+
+
+# ---------------------------------------------------------------------------
 # 入口组
 # ---------------------------------------------------------------------------
 
@@ -66,14 +84,17 @@ def main():
       sysid     ARX system identification
       hardware  Hardware configuration report
       magfit    Magnetometer calibration analysis
-      params    Query/validate firmware parameter tables
+      params    Browse/query/validate firmware parameter tables
 
     \b
     Parameter query examples:
-      stune params ap                  # List all ArduPilot parameters
-      stune params ATC_RAT_RLL_P       # Show param details
-      stune params --search notch       # Search across platforms
-      stune params --validate ATC_RAT_RLL_P 0.15 -p ardupilot
+      stune params                      # Available tables
+      stune params ap --groups          # ArduPilot parameter groups
+      stune params ap --group ATC_      # Parameters in a group
+      stune params BATT_MONITOR         # One parameter: description + enum values
+      stune params --search notch       # Ranked search across platforms
+      stune params --validate BATT_MONITOR 4 -p ap
+      stune params --lint               # Parameter-table health check
 
     \b
     The platform is auto-detected from the log file format.
@@ -87,8 +108,13 @@ def main():
 # ---------------------------------------------------------------------------
 
 @main.command()
-def platforms():
+@format_option
+def platforms(output_format: str):
     """List all supported flight controller platforms."""
+    if output_format == "json":
+        from smarttune.output.json_output import emit_result
+        sys.exit(emit_result("platforms", {"platforms": list_platforms()}))
+
     table = Table(title="Supported Platforms")
     table.add_column("Platform", style="cyan")
     table.add_column("Display Name")
@@ -120,9 +146,26 @@ def platforms():
               default="all", help="Axis to analyze")
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
+@format_option
 def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
-            report_format: Optional[str], visual: bool, axis: str, theme: str):
+            report_format: Optional[str], visual: bool, axis: str, theme: str,
+            output_format: str):
     """Comprehensive log analysis — PID + FFT + filter + mag recommendations."""
+    # ── JSON path: single call into the services layer (same code path as MCP) ──
+    if output_format == "json":
+        from smarttune.output.json_output import emit_result, fail
+        from smarttune.services.analysis import analyze_log
+
+        if visual:
+            _console.print("[dim]note: --visual is ignored in json mode[/dim]")
+        if report_format:
+            _console.print(f"[dim]note: --report {report_format} is ignored in json mode[/dim]")
+        try:
+            payload = analyze_log(log_file, platform=platform_name, axis=axis)
+        except SmartTuneError as exc:
+            sys.exit(fail("analyze", exc, output_file))
+        sys.exit(emit_result("analyze", payload, output_file))
+
     try:
         adapter = resolve_adapter(platform_name, log_file)
     except SmartTuneError as exc:
@@ -252,10 +295,12 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
                 fmt.format_magfit(magfit_result)
 
             # ── Markdown report ──
-            if effective_report_format == "md" and output_file:
-                md = fmt.to_markdown(full_result)
-                output_file.write_text(md, encoding="utf-8")
-                _console.print(f"\n[green]✓[/green] Report saved: [cyan]{output_file}[/cyan]")
+            # (was: silently produced nothing when --report md was passed without -o;
+            #  now mirrors the HTML path and derives a default filename)
+            if effective_report_format == "md":
+                md_path = output_file if output_file else Path(log_file.stem + "_report.md")
+                md_path.write_text(fmt.to_markdown(full_result), encoding="utf-8")
+                _console.print(f"\n[green]✓[/green] Report saved: [cyan]{md_path}[/cyan]")
 
         # ── Visual plots ─────────────────────────────────────────────────
         if visual:
@@ -310,7 +355,9 @@ def analyze(log_file: Path, platform_name: str, output_file: Optional[Path],
               help="Generate step response plots")
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
-def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str):
+@format_option
+def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str,
+        output_format: str):
     """PID step response analysis.
 
     \b
@@ -324,7 +371,8 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str)
       stune pid -i flight.bin -a roll          # Roll only
       stune pid -i flight.bin -a roll --visual # Roll with plots
     """
-    _run_single_analysis("pid", log_file, platform_name, axis, visual, theme=theme)
+    _run_single_analysis("pid", log_file, platform_name, axis, visual, theme=theme,
+                         output_format=output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +388,8 @@ def pid(log_file: Path, platform_name: str, axis: str, visual: bool, theme: str)
               help="Generate FFT spectrum plot")
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
-def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
+@format_option
+def fft(log_file: Path, platform_name: str, visual: bool, theme: str, output_format: str):
     """FFT vibration spectrum analysis.
 
     \b
@@ -353,7 +402,8 @@ def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
       stune fft -i flight.bin          # Basic analysis
       stune fft -i flight.bin --visual # With spectrum plot
     """
-    _run_single_analysis("fft", log_file, platform_name, "all", visual, theme=theme)
+    _run_single_analysis("fft", log_file, platform_name, "all", visual, theme=theme,
+                         output_format=output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +415,8 @@ def fft(log_file: Path, platform_name: str, visual: bool, theme: str):
               type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
-def magfit(log_file: Path, platform_name: str):
+@format_option
+def magfit(log_file: Path, platform_name: str, output_format: str):
     """Magnetometer calibration analysis.
 
     \b
@@ -378,7 +429,8 @@ def magfit(log_file: Path, platform_name: str):
     Example:
       stune magfit -i flight.bin
     """
-    _run_single_analysis("magfit", log_file, platform_name, "all", False)
+    _run_single_analysis("magfit", log_file, platform_name, "all", False,
+                         output_format=output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +447,8 @@ def magfit(log_file: Path, platform_name: str):
               help="Axis to analyze (default: all)")
 @click.option("--na", type=int, default=3, help="ARX model A polynomial order (default: 3)")
 @click.option("--nb", type=int, default=2, help="ARX model B polynomial order (default: 2)")
-def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
+@format_option
+def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int, output_format: str):
     """System identification — ARX model parameter estimation.
 
     \b
@@ -408,7 +461,8 @@ def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
       stune sysid -i flight.bin                  # All axes (na=3, nb=2)
       stune sysid -i flight.bin -a roll --na 4   # Custom ARX order
     """
-    _run_single_analysis("sysid", log_file, platform_name, axis, False, na=na, nb=nb)
+    _run_single_analysis("sysid", log_file, platform_name, axis, False, na=na, nb=nb,
+                         output_format=output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +474,8 @@ def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int):
               type=click.Path(exists=True, path_type=Path), help="Flight log file")
 @click.option("--platform", "platform_name", default="auto",
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
-def hardware(log_file: Path, platform_name: str):
+@format_option
+def hardware(log_file: Path, platform_name: str, output_format: str):
     """Hardware configuration report.
 
     \b
@@ -434,7 +489,8 @@ def hardware(log_file: Path, platform_name: str):
     Example:
       stune hardware -i flight.bin
     """
-    _run_single_analysis("hardware", log_file, platform_name, "all", False)
+    _run_single_analysis("hardware", log_file, platform_name, "all", False,
+                         output_format=output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -455,8 +511,10 @@ def hardware(log_file: Path, platform_name: str):
 @click.option("--visual/--no-visual", default=False, help="Generate Bode Plot visualization")
 @click.option("--theme", type=click.Choice(["light", "dark"], case_sensitive=False),
               default="light", help="Plot theme: light (default) or dark")
+@format_option
 def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
-               notch_freq: Optional[float], auto: bool, visual: bool, theme: str):
+               notch_freq: Optional[float], auto: bool, visual: bool, theme: str,
+               output_format: str):
     """Filter transfer function analysis (Bode Plot).
 
     \b
@@ -472,6 +530,23 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
       stune filter -i flight.bin --notch-freq 80 --visual
     """
     from smarttune.services.analysis import analyze_filter  # D1 fix: call services layer
+
+    # ── JSON path (bode arrays stay out of the payload — key points only) ──
+    if output_format == "json":
+        from smarttune.output.json_output import emit_result, fail
+
+        try:
+            result = analyze_filter(
+                log_file,
+                platform=platform_name,
+                gyro_filter_hz=gyro_filter,
+                notch_freq_hz=notch_freq,
+                auto_derive=auto,
+            )
+        except SmartTuneError as exc:
+            sys.exit(fail("filter", exc))
+        result.pop("bode_data", None)
+        sys.exit(emit_result("filter", result))
 
     with Progress(
         SpinnerColumn(),
@@ -559,7 +634,9 @@ def filter_cmd(log_file: Path, platform_name: str, gyro_filter: Optional[float],
               help="Platform: auto, ardupilot, betaflight, px4 (default: auto)")
 @click.option("-o", "--output", "output_file", type=click.Path(path_type=Path),
               default=None, help="Output quality report file (optional)")
-def quality(log_file: Path, platform_name: str, output_file: Optional[Path]):
+@format_option
+def quality(log_file: Path, platform_name: str, output_file: Optional[Path],
+            output_format: str):
     """Evaluate log quality — data completeness, excitation, and sample rate scoring.
 
     \b
@@ -575,6 +652,15 @@ def quality(log_file: Path, platform_name: str, output_file: Optional[Path]):
       stune quality -i flight.bin -o quality_report.txt
     """
     from smarttune.services.analysis import get_log_quality
+
+    if output_format == "json":
+        from smarttune.output.json_output import emit_result, fail
+
+        try:
+            payload = get_log_quality(log_file, platform=platform_name)
+        except SmartTuneError as exc:
+            sys.exit(fail("quality", exc, output_file))
+        sys.exit(emit_result("quality", payload, output_file))
 
     with Progress(
         SpinnerColumn(),
@@ -672,7 +758,36 @@ def quality(log_file: Path, platform_name: str, output_file: Optional[Path]):
 
 def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
                          axis: str, visual: bool, theme: str = "light",
-                         na: int = 3, nb: int = 2):
+                         na: int = 3, nb: int = 2, output_format: str = "text"):
+    # ── JSON path: delegate to the services layer, emit one envelope, exit ──
+    if output_format == "json":
+        from smarttune.output.json_output import emit_result, fail
+        from smarttune.services import analysis as svc
+
+        if visual:
+            _console.print("[dim]note: --visual is ignored in json mode[/dim]")
+        try:
+            if capability == "pid":
+                payload = svc.analyze_pid(log_file, platform=platform_name, axis=axis)
+            elif capability == "fft":
+                payload = svc.analyze_fft(log_file, platform=platform_name)
+            elif capability == "magfit":
+                payload = svc.analyze_magfit(log_file, platform=platform_name)
+            elif capability == "sysid":
+                payload = svc.analyze_sysid(log_file, platform=platform_name,
+                                            axis=axis, na=na, nb=nb)
+            elif capability == "hardware":
+                payload = svc.analyze_hardware(log_file, platform=platform_name)
+            else:
+                from smarttune.errors import CapabilityNotSupportedError
+                raise CapabilityNotSupportedError(
+                    message=f"'{capability}' has no json serializer",
+                    hint="Supported: pid, fft, magfit, sysid, hardware",
+                )
+        except SmartTuneError as exc:
+            sys.exit(fail(capability, exc))
+        sys.exit(emit_result(capability, payload))
+
     try:
         adapter = resolve_adapter(platform_name, log_file)
     except SmartTuneError as exc:
@@ -746,190 +861,380 @@ def _run_single_analysis(capability: str, log_file: Path, platform_name: str,
 
 @main.command()
 @click.argument("query", required=False)
-@click.option("--platform", "-p", default=None, help="Target platform: ardupilot, betaflight, px4")
-@click.option("--search", "-s", "search_term", default=None, help="Search keyword across all platforms")
-@click.option("--category", "-c", default="all", help="Filter by category")
+@click.option("--platform", "-p", default=None,
+              help="Target platform: ardupilot (ap), betaflight (bf), px4")
+@click.option("--search", "-s", "search_term", default=None,
+              help="Keyword search across names, descriptions and enum labels")
+@click.option("--group", "-g", "group_name", default=None,
+              help="List parameters in a firmware parameter group, e.g. ATC_ / GYRO_CONFIG")
+@click.option("--groups", "list_groups", is_flag=True, default=False,
+              help="List the platform's parameter groups")
+@click.option("--category", "-c", default="all", help="Filter by category, e.g. pid / filter")
 @click.option("--validate", "-v", "validate_pair", nargs=2, default=None, metavar="NAME VALUE",
               help="Validate a parameter name and value")
-def params(query, platform, search_term, category, validate_pair):
+@click.option("--lint", "run_lint", is_flag=True, default=False,
+              help="Check the parameter table for data-integrity defects")
+@click.option("--limit", type=int, default=60, show_default=True,
+              help="Max rows per listing (0 = no limit)")
+@format_option
+def params(query, platform, search_term, group_name, list_groups, category,
+           validate_pair, run_lint, limit, output_format):
     """Query and validate flight controller parameters.
 
     \b
-    Query parameter tables loaded from knowledge base JSON files
-    (smarttune/knowledge/params/). Data scraped from official firmware repos.
+    Parameter tables are generated from official firmware metadata into
+    smarttune/knowledge/params/<platform>.json (see tools/build_param_tables.py):
+      ArduPilot   apm.pdef.json  — full names, @Values, @Bitmask, ranges
+      PX4         px4params JSON — defaults, ranges, values, bitmasks
+      Betaflight  cli/settings.c — names, PG_ groups, ranges, lookup tables
 
     \b
-    Examples:
-      stune params ap                  # List all ArduPilot parameters
-      stune params bf                  # List all Betaflight parameters
-      stune params px4                 # List all PX4 parameters
-      stune params ATC_RAT_RLL_P       # Show detail for a specific param
-      stune params --search notch       # Search for "notch" across all platforms
-      stune params --validate ATC_RAT_RLL_P 0.15 --platform ardupilot
-      stune params --category pid --platform betaflight
-    """
-    from smarttune.platform.params import ParamTable
-    from rich.table import Table
-    from rich.panel import Panel
-    import json
+    Browse by group:
+      stune params ap --groups              # 194 parameter groups
+      stune params ap --group ATC_          # everything in the ATC_ group
+      stune params bf --group PID_PROFILE
+      stune params px4 --category pid
 
-    _PLATFORM_ALIASES = {
-        "ap": "ardupilot", "ardupilot": "ardupilot",
+    \b
+    Look up one parameter (description + enum members):
+      stune params BATT_MONITOR
+      stune params MC_ROLLRATE_P
+
+    \b
+    Search and validate:
+      stune params --search notch                       # ranked, cross-platform
+      stune params --validate BATT_MONITOR 4 -p ap      # enum member check
+      stune params --validate p_roll 999 -p bf          # range check (exit 1)
+
+    \b
+    Data health:
+      stune params --lint -p ap            # exit 1 if the table has defects
+    """
+    from smarttune.platform.params import ParamTable, to_full_dict, to_slim_dict
+
+    _json = output_format == "json"
+    if _json:
+        from smarttune.output.json_output import emit_result, fail
+
+    _ALIASES = {
+        "ap": "ardupilot", "ardupilot": "ardupilot", "apm": "ardupilot",
         "bf": "betaflight", "betaflight": "betaflight",
-        "px4": "px4",
+        "px4": "px4", "pixhawk": "px4",
     }
 
-    # ── validate mode ──────────────────────────────────────
+    def _resolve_platform(value):
+        return _ALIASES.get(str(value).lower(), str(value).lower()) if value else None
+
+    def _load(plat):
+        try:
+            return ParamTable.from_knowledge(plat)
+        except FileNotFoundError as exc:
+            if _json:
+                from smarttune.errors import UnsupportedPlatformError
+                sys.exit(fail("params", UnsupportedPlatformError(message=str(exc))))
+            _console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+
+    def _slim_table(rows, title):
+        t = Table(title=title, show_header=True, box=None, title_justify="left")
+        t.add_column("Parameter", style="cyan", no_wrap=True)
+        t.add_column("Type")
+        t.add_column("Range", justify="right")
+        t.add_column("Unit")
+        t.add_column("Summary")
+        for p in rows:
+            enum_note = f"enum[{len(p.values)}]" if p.values else (
+                f"bits[{len(p.bitmask)}]" if p.bitmask else p.type)
+            t.add_row(p.name, enum_note, p.range_str() or "—", p.unit or "", p.summary(70))
+        return t
+
+    def _emit_rows(command, rows, payload_extra):
+        capped = rows if limit in (0, None) else rows[:limit]
+        if _json:
+            body = dict(payload_extra)
+            body["count"] = len(rows)
+            body["returned"] = len(capped)
+            if len(capped) < len(rows):
+                body["truncated"] = True
+            body["params"] = [to_slim_dict(p) for p in capped]
+            sys.exit(emit_result(command, body))
+        title = payload_extra.get("title", "")
+        _console.print(_slim_table(capped, title))
+        if len(capped) < len(rows):
+            _console.print(f"[dim]showing {len(capped)} of {len(rows)} — raise --limit for more[/dim]")
+
+    platform = _resolve_platform(platform)
+
+    # ── lint ────────────────────────────────────────────────
+    if run_lint:
+        from smarttune.platform.param_lint import lint_table
+        targets = [platform] if platform else ParamTable.available_platforms()
+        reports = [lint_table(_load(p)) for p in targets]
+        if _json:
+            ok = all(r["ok"] for r in reports)
+            emit_result("params.lint", {"ok": ok, "reports": reports})
+            sys.exit(0 if ok else 1)
+        bad = False
+        for rep in reports:
+            colour = "green" if rep["ok"] else "red"
+            _console.print(
+                f"\n[bold]{rep['platform']}[/bold] schema v{rep['schema_version']} — "
+                f"{rep['parameter_count']} params — "
+                f"[{colour}]{rep['error_count']} errors[/{colour}], "
+                f"{rep['warning_count']} warnings"
+            )
+            for check, count in sorted(rep["by_check"].items(), key=lambda kv: -kv[1]):
+                _console.print(f"  {check:<28} {count}")
+            for f in rep["findings"][:10]:
+                mark = "[red]✗[/red]" if f["severity"] == "error" else "[yellow]![/yellow]"
+                _console.print(f"  {mark} {f['param'] or '(table)'}: {f['detail']}")
+            if len(rep["findings"]) > 10:
+                _console.print(f"  [dim]… {len(rep['findings']) - 10} more[/dim]")
+            bad = bad or not rep["ok"]
+        sys.exit(1 if bad else 0)
+
+    # ── validate ────────────────────────────────────────────
     if validate_pair:
         name, val_str = validate_pair
         try:
             value = float(val_str)
         except ValueError:
+            if _json:
+                from smarttune.errors import InvalidParameterError
+                sys.exit(fail("params.validate", InvalidParameterError(
+                    message=f"Invalid value: {val_str}", hint="Pass a number")))
             _console.print(f"[red]Invalid value: {val_str}[/red]")
             sys.exit(1)
 
         if not platform:
+            if _json:
+                from smarttune.errors import InvalidParameterError
+                sys.exit(fail("params.validate", InvalidParameterError(
+                    message="--platform is required for --validate",
+                    hint="e.g. -p ap | -p bf | -p px4")))
             _console.print("[red]--platform required for --validate[/red]")
             sys.exit(1)
 
-        platform = _PLATFORM_ALIASES.get(platform, platform)
-        try:
-            tbl = ParamTable.from_knowledge(platform)
-        except FileNotFoundError as e:
-            _console.print(f"[red]{e}[/red]")
-            sys.exit(1)
+        tbl = _load(platform)
+        verdict = tbl.validate_detail(name, value)
+        pd = tbl.query(name)
+        if _json:
+            body = {"platform": tbl.platform, "param": name, "value": value, **verdict}
+            if pd is not None:
+                body["parameter"] = to_full_dict(pd)
+            emit_result("params.validate", body, status=verdict["status"])
+            sys.exit(0 if verdict["valid"] else 1)
 
-        ok, msg = tbl.validate(name, value)
-        if ok:
-            _console.print(f"[green]✓ {msg}[/green]")
-            sys.exit(0)
+        if verdict["valid"]:
+            _console.print(f"[green]✓ {verdict['message']}[/green]")
         else:
-            _console.print(f"[red]✗ {msg}[/red]")
-            sys.exit(1)
+            _console.print(f"[red]✗ {verdict['message']}[/red]")
+            if verdict.get("hint"):
+                _console.print(f"[dim]  hint: {verdict['hint']}[/dim]")
+        opts = verdict.get("options")
+        if opts:
+            _console.print("[dim]  allowed:[/dim] " + ", ".join(
+                f"{k}={v}" for k, v in sorted(opts.items(), key=lambda kv: int(kv[0])
+                                              if kv[0].lstrip('-').isdigit() else 0)))
+        sys.exit(0 if verdict["valid"] else 1)
 
-    # ── search mode ────────────────────────────────────────
+    # ── search ──────────────────────────────────────────────
     if search_term:
-        available = ParamTable.available_platforms()
-        if platform:
-            platform = _PLATFORM_ALIASES.get(platform, platform)
-            available = [platform] if platform in available else []
-
-        if not available:
-            _console.print("[red]No platforms available[/red]")
-            sys.exit(1)
-
-        total = 0
-        for plat in available:
+        targets = [platform] if platform else ParamTable.available_platforms()
+        hits = []
+        for plat in targets:
             tbl = ParamTable.from_knowledge(plat)
-            results = tbl.search(search_term)
-            if not results:
-                continue
-            total += len(results)
-            _console.print(f"\n[bold cyan]{tbl.platform}[/bold cyan] — {len(results)} match(es)")
-            t = Table(show_header=True, box=None)
-            t.add_column("Parameter", style="cyan")
-            t.add_column("Category")
-            t.add_column("Type")
-            t.add_column("Range")
-            t.add_column("Description")
-            for r in results:
-                rng = ""
-                if r.min is not None or r.max is not None:
-                    rng = f"[{r.min}, {r.max}]"
-                if r.unit:
-                    rng += f" {r.unit}"
-                t.add_row(r.name, r.category, r.type, rng, r.description[:60])
-            _console.print(t)
-
-        if total == 0:
+            for p in tbl.search(search_term):
+                hits.append((tbl.platform, p))
+        if _json:
+            capped = hits if limit in (0, None) else hits[:limit]
+            emit_result("params.search", {
+                "keyword": search_term,
+                "count": len(hits),
+                "returned": len(capped),
+                "matches": [{"platform": plat, **to_slim_dict(p)} for plat, p in capped],
+            })
+            sys.exit(0)
+        if not hits:
             _console.print(f"[yellow]No parameters matching '{search_term}'[/yellow]")
+            sys.exit(0)
+        by_platform = {}
+        for plat, p in hits:
+            by_platform.setdefault(plat, []).append(p)
+        for plat, rows in by_platform.items():
+            capped = rows if limit in (0, None) else rows[:limit]
+            _console.print(_slim_table(capped, f"{plat} — {len(rows)} match(es) for '{search_term}'"))
+            if len(capped) < len(rows):
+                _console.print(f"[dim]showing {len(capped)} of {len(rows)} — raise --limit for more[/dim]")
         return
 
-    # ── query mode (specific param or platform list) ───────
+    # ── a bare query: platform alias, group name, or parameter name ──
+    if query and not platform:
+        alias = _ALIASES.get(query.lower())
+        if alias:
+            platform = alias
+            query = None
+
     if query:
-        # Try as platform alias first
-        plat_guess = _PLATFORM_ALIASES.get(query.lower())
-        if plat_guess:
-            # List all for this platform
-            platform = plat_guess
-        else:
-            # Treat as parameter name — try all platforms
-            available = ParamTable.available_platforms()
-            found = []
-            for plat in available:
-                tbl = ParamTable.from_knowledge(plat)
-                pd = tbl.query(query)
-                if pd:
-                    found.append((plat, pd))
-
-            if found:
-                for plat, pd in found:
-                    _console.print(Panel.fit(
-                        f"[bold cyan]{pd.name}[/bold cyan]\n"
-                        f"[dim]Platform:[/dim] {plat}  |  "
-                        f"[dim]Category:[/dim] {pd.category}  |  "
-                        f"[dim]Type:[/dim] {pd.type}\n"
-                        f"[dim]Default:[/dim] {pd.default}\n"
-                        f"[dim]Range:[/dim] [{pd.min}, {pd.max}]"
-                        + (f" {pd.unit}" if pd.unit else "") + "\n"
-                        f"[dim]Description:[/dim] {pd.description or '—'}",
-                        title=f"Parameter: {pd.name}"
-                    ))
-                return
-            else:
-                _console.print(f"[yellow]Parameter '{query}' not found in any platform[/yellow]")
-                _console.print(f"[dim]Try --search for partial matches[/dim]")
-                sys.exit(1)
-
-    # ── list mode (platform specified or no args) ──────────
-    if not platform:
-        # No args at all — show available platforms
-        available = ParamTable.available_platforms()
-        if not available:
-            _console.print("[yellow]No parameter tables found in knowledge base[/yellow]")
-            return
-        _console.print("[bold]Available parameter tables:[/bold]")
-        for plat in available:
+        targets = [platform] if platform else ParamTable.available_platforms()
+        found = []
+        for plat in targets:
             tbl = ParamTable.from_knowledge(plat)
-            cats = ", ".join(tbl.categories())
-            _console.print(f"  [cyan]{tbl.platform}[/cyan] — {len(tbl)} params ({cats})")
-        _console.print("\n[dim]Usage: stune params ap | stune params bf | stune params px4[/dim]")
-        return
+            pd = tbl.query(query)
+            if pd:
+                found.append((tbl.platform, pd))
+        if found:
+            if _json:
+                sys.exit(emit_result("params.get", {
+                    "query": query,
+                    "matches": [{"platform": plat, **to_full_dict(pd)} for plat, pd in found],
+                }))
+            for plat, pd in found:
+                lines = [
+                    f"[bold cyan]{pd.name}[/bold cyan]  [dim]{plat}[/dim]",
+                    f"[dim]{pd.display_name or ''}[/dim]",
+                    "",
+                    f"[dim]group:[/dim] {pd.group or '—'}    [dim]category:[/dim] {pd.category}"
+                    f"    [dim]type:[/dim] {pd.type}",
+                    f"[dim]default:[/dim] {'unknown' if pd.default is None else pd.default}"
+                    f"    [dim]range:[/dim] {pd.range_str() or '—'}"
+                    + (f" {pd.unit}" if pd.unit else "")
+                    + (f"    [dim]step:[/dim] {pd.increment}" if pd.increment is not None else ""),
+                ]
+                flags = []
+                if pd.user:
+                    flags.append(pd.user)
+                if pd.reboot_required:
+                    flags.append("reboot required")
+                if pd.read_only:
+                    flags.append("read-only")
+                if flags:
+                    lines.append(f"[dim]flags:[/dim] {', '.join(flags)}")
+                if pd.description:
+                    lines += ["", pd.description]
+                if pd.values:
+                    lines += ["", "[bold]values:[/bold]"]
+                    for k in sorted(pd.values, key=lambda x: int(x) if x.lstrip('-').isdigit() else 0):
+                        lines.append(f"  {k:>4} = {pd.values[k]}")
+                if pd.bitmask:
+                    lines += ["", "[bold]bits:[/bold]"]
+                    for k in sorted(pd.bitmask, key=lambda x: int(x) if x.isdigit() else 0):
+                        lines.append(f"  bit {k:>2} = {pd.bitmask[k]}")
+                if pd.unresolved_ref:
+                    lines += ["", f"[yellow]note:[/yellow] {pd.unresolved_ref}"]
+                _console.print(Panel("\n".join(lines), title=f"Parameter: {pd.name}", expand=False))
+            return
 
-    platform = _PLATFORM_ALIASES.get(platform, platform)
-    try:
-        tbl = ParamTable.from_knowledge(platform)
-    except FileNotFoundError as e:
-        _console.print(f"[red]{e}[/red]")
+        # not a parameter — maybe a group name
+        for plat in targets:
+            tbl = ParamTable.from_knowledge(plat)
+            rows = tbl.list_by_group(query)
+            if rows:
+                _emit_rows("params.group", rows, {
+                    "platform": tbl.platform, "group": query,
+                    "title": f"{tbl.platform} — group {query} ({len(rows)} params)",
+                })
+
+        if _json:
+            from smarttune.errors import InvalidParameterError
+            sys.exit(fail("params.get", InvalidParameterError(
+                message=f"'{query}' is not a known parameter or group",
+                hint="Use --search for partial matches, or --groups to browse",
+                code="E4002")))
+        _console.print(f"[yellow]'{query}' is not a known parameter or group[/yellow]")
+        _console.print("[dim]Try: stune params --search <keyword> | stune params <platform> --groups[/dim]")
         sys.exit(1)
 
-    params_list = tbl.list_all()
-    if category != "all":
-        params_list = tbl.list_by_category(category)
+    # ── no platform: list available tables ──────────────────
+    if not platform:
+        available = ParamTable.available_platforms()
+        tables = []
+        for plat in available:
+            tbl = ParamTable.from_knowledge(plat)
+            tables.append({
+                "platform": tbl.platform,
+                "key": plat,
+                "schema_version": tbl.schema_version,
+                "count": len(tbl),
+                "group_count": len(tbl.groups()),
+                "firmware": (tbl.meta.get("source") or {}).get("firmware", ""),
+            })
+        if _json:
+            sys.exit(emit_result("params.tables", {"tables": tables}))
+        if not tables:
+            _console.print("[yellow]No parameter tables found in knowledge base[/yellow]")
+            return
+        t = Table(title="Parameter tables", show_header=True, box=None, title_justify="left")
+        t.add_column("Platform", style="cyan")
+        t.add_column("Key")
+        t.add_column("Params", justify="right")
+        t.add_column("Groups", justify="right")
+        t.add_column("Schema", justify="right")
+        t.add_column("Firmware")
+        for e in tables:
+            t.add_row(e["platform"], e["key"], str(e["count"]), str(e["group_count"]),
+                      f"v{e['schema_version']}", e["firmware"] or "—")
+        _console.print(t)
+        _console.print("\n[dim]Browse: stune params ap --groups | stune params ap --group ATC_[/dim]")
+        return
 
-    cat_counts = {}
-    for p in params_list:
-        cat_counts[p.category] = cat_counts.get(p.category, 0) + 1
+    tbl = _load(platform)
 
-    _console.print(f"\n[bold]{tbl.platform}[/bold] — {len(params_list)} parameters"
-                   + (f" (category: {category})" if category != "all" else "")
-                   + (f"  [dim]categories: {', '.join(f'{k}({v})' for k,v in sorted(cat_counts.items()))}[/dim]" if category == "all" else ""))
+    # ── group listing ───────────────────────────────────────
+    if group_name:
+        rows = tbl.list_by_group(group_name)
+        if not rows:
+            if _json:
+                from smarttune.errors import InvalidParameterError
+                sys.exit(fail("params.group", InvalidParameterError(
+                    message=f"No group matching {group_name!r} in {tbl.platform}",
+                    hint="List groups with --groups")))
+            _console.print(f"[yellow]No group matching '{group_name}' in {tbl.platform}[/yellow]")
+            sys.exit(1)
+        _emit_rows("params.group", rows, {
+            "platform": tbl.platform, "group": group_name,
+            "title": f"{tbl.platform} — group {group_name} ({len(rows)} params)",
+        })
 
-    t = Table(show_header=True, box=None)
-    t.add_column("Parameter", style="cyan")
-    t.add_column("Category")
-    t.add_column("Type")
-    t.add_column("Default")
-    t.add_column("Range")
-    t.add_column("Description")
-    for p in sorted(params_list, key=lambda x: (x.category, x.name)):
-        rng = ""
-        if p.min is not None or p.max is not None:
-            rng = f"[{p.min}, {p.max}]"
-        if p.unit:
-            rng += f" {p.unit}"
-        t.add_row(p.name, p.category, p.type, str(p.default), rng, (p.description or "")[:80])
-    _console.print(t)
+    # ── group index ─────────────────────────────────────────
+    if list_groups or category == "all":
+        groups = tbl.groups()
+        if _json:
+            sys.exit(emit_result("params.groups", {
+                "platform": tbl.platform,
+                "parameter_count": len(tbl),
+                "group_count": len(groups),
+                "categories": tbl.categories(),
+                "groups": groups,
+            }))
+        t = Table(title=f"{tbl.platform} — {len(groups)} groups, {len(tbl)} parameters",
+                  show_header=True, box=None, title_justify="left")
+        t.add_column("Group", style="cyan")
+        t.add_column("Params", justify="right")
+        t.add_column("Category")
+        t.add_column("Examples")
+        for g in groups:
+            t.add_row(g["group"], str(g["count"]), g["category"], ", ".join(g["sample"]))
+        _console.print(t)
+        _console.print(f"\n[dim]Drill in: stune params {platform} --group {groups[0]['group'] if groups else 'ATC_'}"
+                       f"  |  by topic: stune params {platform} -c pid[/dim]")
+        return
+
+    # ── category listing ────────────────────────────────────
+    rows = tbl.list_by_category(category)
+    if not rows:
+        if _json:
+            from smarttune.errors import InvalidParameterError
+            sys.exit(fail("params.list", InvalidParameterError(
+                message=f"No parameters in category {category!r}",
+                hint=f"Available: {', '.join(tbl.categories())}")))
+        _console.print(f"[yellow]No parameters in category '{category}'[/yellow]")
+        _console.print(f"[dim]Available: {', '.join(tbl.categories())}[/dim]")
+        sys.exit(1)
+    _emit_rows("params.list", rows, {
+        "platform": tbl.platform, "category": category,
+        "title": f"{tbl.platform} — category {category} ({len(rows)} params)",
+    })
 
 
 if __name__ == "__main__":

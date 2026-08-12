@@ -115,6 +115,15 @@
 - [x] Old visualization (matplotlib plot) code in `_legacy_formatter.py` — file already removed, ROADMAP entry stale (v2.4.2)
 - [x] Clean up residual `ap_tune` references in arx_model.py / wmm.py docstrings (2026-05-03)
 - [x] Rename `ap-tune` → `SmartTune CLI` in html_report.py (2026-05-03)
+- [x] CLI `--format json` — parity with MCP schema, shared services-layer payload (v3.1)
+- [x] Parameter tables regenerated from upstream metadata — full firmware names, parameter
+      groups, @Values/@Bitmask meanings, real PX4 defaults; scraper now in-repo
+      (`tools/build_param_tables.py`) with a data linter (`stune params --lint`) (v3.2)
+- [x] `validate()` no longer accepts any value for enum-typed parameters — real member/bitmask
+      checking, fail-closed on unverifiable rows (v3.2)
+- [x] MCP payload slimming + unified `{ok, error_code, retryable}` shape + stdout isolation +
+      lazy numpy import for parameter tools (v3.2)
+- [x] `knowledge/params/*.json` missing from wheel `package-data` (v3.1)
 - [ ] CI/CD setup (GitHub Actions: lint + test + build)
 - [ ] PyPI publishing config
 
