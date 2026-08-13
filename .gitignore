@@ -30,7 +30,7 @@ htmlcov/
 Thumbs.db
 
 # Output
-output/
+/output/
 *.png
 !assets/*.png
 
