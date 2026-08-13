@@ -32,14 +32,17 @@ from smarttune.errors import MAGFitError
 # 内部异常
 # ---------------------------------------------------------------------------
 
+
 # MAGFitError 从 errors.py 导入，已继承自 APTuneError
 class CoverageError(MAGFitError):
     """轨迹覆盖不足，无法可靠拟合。"""
+
     pass
 
 
 class FitError(MAGFitError):
     """参数拟合失败。"""
+
     pass
 
 
@@ -50,6 +53,7 @@ class FitError(MAGFitError):
 # 尝试使用 WMM 精确模型；fallback 到简化 IGRF 近似
 try:
     from smarttune.analyzers.wmm import get_earth_field
+
     _HAS_WMM = True
 except ImportError:
     _HAS_WMM = False
@@ -61,7 +65,10 @@ TYPICAL_FIELD_UT = 50.0  # μT → 换算 1 mGauss = 0.1 μT
 
 
 def earth_field_ned(
-    lat_deg: float, lon_deg: float, alt_m: float, has_position: bool = True,
+    lat_deg: float,
+    lon_deg: float,
+    alt_m: float,
+    has_position: bool = True,
 ) -> np.ndarray:
     """
     根据经纬度返回 NED 地磁场向量 (mGauss)。
@@ -148,14 +155,14 @@ def ned_to_body(ned: np.ndarray, q: np.ndarray) -> np.ndarray:
     #        [2(xz-wy),    2(yz+wx),   1-2(x²+y²)]]
     w, a, b, c = q[0], q[1], q[2], q[3]
     nx, ny, nz = ned[0], ned[1], ned[2]
-    ww, aa, bb, cc = w*w, a*a, b*b, c*c
-    wb, wc, ab, ac, bc = w*b, w*c, a*b, a*c, b*c
+    ww, aa, bb, cc = w * w, a * a, b * b, c * c
+    wb, wc, ab, ac, bc = w * b, w * c, a * b, a * c, b * c
 
     body = np.empty(3, dtype=np.float64)
-    body[0] = (ww + aa - bb - cc) * nx + 2*(ab - wc) * ny + 2*(ac + wb) * nz
+    body[0] = (ww + aa - bb - cc) * nx + 2 * (ab - wc) * ny + 2 * (ac + wb) * nz
     wa = w * a
-    body[1] = 2*(ab + wc) * nx + (ww - aa + bb - cc) * ny + 2*(bc - wa) * nz
-    body[2] = 2*(ac - wb) * nx + 2*(bc + wa) * ny + (ww - aa - bb + cc) * nz
+    body[1] = 2 * (ab + wc) * nx + (ww - aa + bb - cc) * ny + 2 * (bc - wa) * nz
+    body[2] = 2 * (ac - wb) * nx + 2 * (bc + wa) * ny + (ww - aa - bb + cc) * nz
     return body
 
 
@@ -180,13 +187,13 @@ def ned_to_body_batch(ned: np.ndarray, quats: np.ndarray) -> np.ndarray:
     """
     w, a, b, c = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
     nx, ny, nz = float(ned[0]), float(ned[1]), float(ned[2])
-    ww, aa, bb, cc = w*w, a*a, b*b, c*c
-    wa, wb, wc = w*a, w*b, w*c
-    ab, ac, bc = a*b, a*c, b*c
+    ww, aa, bb, cc = w * w, a * a, b * b, c * c
+    wa, wb, wc = w * a, w * b, w * c
+    ab, ac, bc = a * b, a * c, b * c
 
-    bx = (ww + aa - bb - cc) * nx + 2*(ab - wc) * ny + 2*(ac + wb) * nz
-    by = 2*(ab + wc) * nx + (ww - aa + bb - cc) * ny + 2*(bc - wa) * nz
-    bz = 2*(ac - wb) * nx + 2*(bc + wa) * ny + (ww - aa - bb + cc) * nz
+    bx = (ww + aa - bb - cc) * nx + 2 * (ab - wc) * ny + 2 * (ac + wb) * nz
+    by = 2 * (ab + wc) * nx + (ww - aa + bb - cc) * ny + 2 * (bc - wa) * nz
+    bz = 2 * (ac - wb) * nx + 2 * (bc + wa) * ny + (ww - aa - bb + cc) * nz
     return np.stack([bx, by, bz], axis=1)
 
 
@@ -297,7 +304,9 @@ def _assign_bins(expected_field: np.ndarray, lattice: np.ndarray) -> np.ndarray:
     return np.argmax(dots, axis=1)
 
 
-def _compute_bin_weights(bin_indices: np.ndarray, num_bins: int = NUM_ATTITUDE_BINS) -> Tuple[np.ndarray, float]:
+def _compute_bin_weights(
+    bin_indices: np.ndarray, num_bins: int = NUM_ATTITUDE_BINS
+) -> Tuple[np.ndarray, float]:
     """
     根据 bin 分配计算样本权重和覆盖率。
 
@@ -336,32 +345,32 @@ def _compute_bin_weights(bin_indices: np.ndarray, num_bins: int = NUM_ATTITUDE_B
 
 THRESHOLDS: Dict[str, Any] = {
     "compass_parameters": {
-        "OFS_warning":   600.0,
+        "OFS_warning": 600.0,
         "OFS_critical": 1000.0,
-        "DIA_min":         0.5,
-        "DIA_max":         1.5,
-        "DIA_dev_threshold": 0.15,   # |DIA - 1.0| > 此值触发警告
-        "ODI_threshold":   0.3,
-        "ODI_critical":    0.5,
-        "MOT_warning":    50.0,
-        "MOT_critical":   100.0,
-        "SCALE_min":       0.9,
-        "SCALE_max":       1.1,
+        "DIA_min": 0.5,
+        "DIA_max": 1.5,
+        "DIA_dev_threshold": 0.15,  # |DIA - 1.0| > 此值触发警告
+        "ODI_threshold": 0.3,
+        "ODI_critical": 0.5,
+        "MOT_warning": 50.0,
+        "MOT_critical": 100.0,
+        "SCALE_min": 0.9,
+        "SCALE_max": 1.1,
     },
     "fitness_thresholds": {
-        "excellent":    5.0,   # < 5 mGauss — 极佳
-        "good":        15.0,   # < 15 mGauss — 良好
-        "acceptable":  30.0,   # < 30 mGauss — 可接受
-        "marginal":    50.0,   # < 50 mGauss — 勉强
-        "poor":       100.0,   # < 100 mGauss — 较差
+        "excellent": 5.0,  # < 5 mGauss — 极佳
+        "good": 15.0,  # < 15 mGauss — 良好
+        "acceptable": 30.0,  # < 30 mGauss — 可接受
+        "marginal": 50.0,  # < 50 mGauss — 勉强
+        "poor": 100.0,  # < 100 mGauss — 较差
     },
     "flight_coverage": {
-        "min_samples":         500,
-        "good_samples":       1000,
-        "yaw_coverage_min":     300.0,   # 度
-        "yaw_coverage_good":    360.0,
-        "pitch_range_min":       40.0,   # 度
-        "roll_range_min":        40.0,
+        "min_samples": 500,
+        "good_samples": 1000,
+        "yaw_coverage_min": 300.0,  # 度
+        "yaw_coverage_good": 360.0,
+        "pitch_range_min": 40.0,  # 度
+        "roll_range_min": 40.0,
     },
 }
 
@@ -370,18 +379,20 @@ THRESHOLDS: Dict[str, Any] = {
 # 数据类：拟合结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FitResult:
     """MAGFit 拟合结果的完整快照。"""
+
     # 原始参数（日志中记录的 COMPASS_OFS_* 等）
-    ofs: np.ndarray          # shape (3,) — [X, Y, Z]
-    dia: np.ndarray           # shape (3,) — [X, Y, Z]
-    odi: np.ndarray           # shape (3,) — [X, Y, Z]
-    mot: np.ndarray           # shape (3,) — [X, Y, Z]
+    ofs: np.ndarray  # shape (3,) — [X, Y, Z]
+    dia: np.ndarray  # shape (3,) — [X, Y, Z]
+    odi: np.ndarray  # shape (3,) — [X, Y, Z]
+    mot: np.ndarray  # shape (3,) — [X, Y, Z]
     scale: float
     # 拟合质量
     fitness_mgauss: float
-    assessment: str           # EXCELLENT / GOOD / ACCEPTABLE / MARGINAL / POOR / BAD
+    assessment: str  # EXCELLENT / GOOD / ACCEPTABLE / MARGINAL / POOR / BAD
     # 诊断消息列表
     warnings: List[str] = field(default_factory=list)
     # 轨迹覆盖元数据
@@ -391,6 +402,7 @@ class FitResult:
 # ---------------------------------------------------------------------------
 # MAGFit 主类
 # ---------------------------------------------------------------------------
+
 
 class MAGFit:
     """
@@ -411,18 +423,18 @@ class MAGFit:
         # ── 内部状态 ──────────────────────────────────────────────
         self._mag_data: Dict[str, np.ndarray] = {}
         self._att_data: Dict[str, np.ndarray] = {}
-        self._params:   Dict[str, float] = {}
+        self._params: Dict[str, float] = {}
 
         # GPS / baro
-        self._lat: float = 0.0    # 度
-        self._lon: float = 0.0    # 度
-        self._alt_m: float = 0.0   # 米（WGS84 高度）
+        self._lat: float = 0.0  # 度
+        self._lon: float = 0.0  # 度
+        self._alt_m: float = 0.0  # 米（WGS84 高度）
 
         # 同步后有效样本
-        self._mag_synced: Optional[np.ndarray] = None   # shape (N, 3)
+        self._mag_synced: Optional[np.ndarray] = None  # shape (N, 3)
         self._field_expected: Optional[np.ndarray] = None  # shape (N, 3)
-        self._throttle: Optional[np.ndarray] = None     # shape (N,)
-        self._weights: Optional[np.ndarray] = None      # shape (N,)
+        self._throttle: Optional[np.ndarray] = None  # shape (N,)
+        self._weights: Optional[np.ndarray] = None  # shape (N,)
 
         self._result: Optional[FitResult] = None
 
@@ -474,12 +486,23 @@ class MAGFit:
                 "MagZ": flight_data.mag[:, 2],
             }
         else:
-            self._mag_data = {"time": np.array([]), "MagX": np.array([]), "MagY": np.array([]), "MagZ": np.array([])}
+            self._mag_data = {
+                "time": np.array([]),
+                "MagX": np.array([]),
+                "MagY": np.array([]),
+                "MagZ": np.array([]),
+            }
 
         # 姿态数据 — 从 extras 获取或留空（magfit 内部会处理）
-        self._att_data = flight_data.extras.get("attitude", {
-            "time": np.array([]), "Roll": np.array([]), "Pitch": np.array([]), "Yaw": np.array([]),
-        })
+        self._att_data = flight_data.extras.get(
+            "attitude",
+            {
+                "time": np.array([]),
+                "Roll": np.array([]),
+                "Pitch": np.array([]),
+                "Yaw": np.array([]),
+            },
+        )
 
         # GPS 位置（C6 配套修复：记录位置来源，无真实位置时显式警告，
         # 不再静默用默认坐标（深圳）拟合其他地区的日志）
@@ -514,11 +537,15 @@ class MAGFit:
         # 旧实现读 self._mag_data["OfsX"]，但 _load_data 从未填充该键 → 必然 KeyError。
         compass_raw = flight_data.extras.get("compass_raw") or []
         self._ofs_current = self._extract_current_vec(
-            compass_raw, ("OfsX", "OfsY", "OfsZ"),
-            ("COMPASS_OFS_X", "COMPASS_OFS_Y", "COMPASS_OFS_Z"))
+            compass_raw,
+            ("OfsX", "OfsY", "OfsZ"),
+            ("COMPASS_OFS_X", "COMPASS_OFS_Y", "COMPASS_OFS_Z"),
+        )
         self._mot_current = self._extract_current_vec(
-            compass_raw, ("MOfsX", "MOfsY", "MOfsZ"),
-            ("COMPASS_MOT_X", "COMPASS_MOT_Y", "COMPASS_MOT_Z"))
+            compass_raw,
+            ("MOfsX", "MOfsY", "MOfsZ"),
+            ("COMPASS_MOT_X", "COMPASS_MOT_Y", "COMPASS_MOT_Z"),
+        )
 
         # 电池电流数据
         self._bat_data = None
@@ -544,7 +571,7 @@ class MAGFit:
             raise CoverageError("日志中磁力计数据不足（< 50 样本），无法拟合。")
 
         # 选择姿态源：优先 AHR2 四元数
-        use_ahr2 = (self._ahr2_data is not None and self._ahr2_data["time"].size > 50)
+        use_ahr2 = self._ahr2_data is not None and self._ahr2_data["time"].size > 50
 
         if use_ahr2:
             att_time = self._ahr2_data["time"]
@@ -574,30 +601,34 @@ class MAGFit:
             # normalize
             norms = np.sqrt(q1**2 + q2**2 + q3**2 + q4**2)
             norms = np.where(norms < 1e-9, 1.0, norms)
-            q = np.stack([q1/norms, q2/norms, q3/norms, q4/norms], axis=1)
+            q = np.stack([q1 / norms, q2 / norms, q3 / norms, q4 / norms], axis=1)
 
             # 从四元数提取欧拉角用于覆盖分析
-            roll  = np.arctan2(2*(q1*q2 + q3*q4), 1 - 2*(q2**2 + q3**2))
-            pitch = np.arcsin(np.clip(2*(q1*q3 - q4*q2), -1, 1))
-            yaw   = np.arctan2(2*(q1*q4 + q2*q3), 1 - 2*(q3**2 + q4**2))
-            roll  = np.rad2deg(roll)
+            roll = np.arctan2(2 * (q1 * q2 + q3 * q4), 1 - 2 * (q2**2 + q3**2))
+            pitch = np.arcsin(np.clip(2 * (q1 * q3 - q4 * q2), -1, 1))
+            yaw = np.arctan2(2 * (q1 * q4 + q2 * q3), 1 - 2 * (q3**2 + q4**2))
+            roll = np.rad2deg(roll)
             pitch = np.rad2deg(pitch)
-            yaw   = np.rad2deg(yaw)
+            yaw = np.rad2deg(yaw)
         else:
             # 从 ATT 欧拉角插值
-            roll  = w0 * self._att_data["Roll"][idx_att - 1]  + w1 * self._att_data["Roll"][idx_att]
-            pitch = w0 * self._att_data["Pitch"][idx_att - 1] + w1 * self._att_data["Pitch"][idx_att]
-            yaw   = w0 * self._att_data["Yaw"][idx_att - 1]   + w1 * self._att_data["Yaw"][idx_att]
+            roll = w0 * self._att_data["Roll"][idx_att - 1] + w1 * self._att_data["Roll"][idx_att]
+            pitch = (
+                w0 * self._att_data["Pitch"][idx_att - 1] + w1 * self._att_data["Pitch"][idx_att]
+            )
+            yaw = w0 * self._att_data["Yaw"][idx_att - 1] + w1 * self._att_data["Yaw"][idx_att]
 
             q = self._euler_to_quat(
-                np.deg2rad(yaw), np.deg2rad(pitch), np.deg2rad(roll),
+                np.deg2rad(yaw),
+                np.deg2rad(pitch),
+                np.deg2rad(roll),
             )
 
         self._mag_synced = np.stack([self._mag_data[k] for k in ("MagX", "MagY", "MagZ")], axis=1)
-        self._quat       = q
-        self._roll       = roll
-        self._pitch      = pitch
-        self._yaw        = yaw
+        self._quat = q
+        self._roll = roll
+        self._pitch = pitch
+        self._yaw = yaw
 
         # 油门/电机补偿：优先用电池电流，fallback 到伪油门
         if self._bat_data is not None and self._bat_data["Curr"].size > 50:
@@ -625,8 +656,9 @@ class MAGFit:
             att_time = att.get("time", np.array([]))
             if "PitchIn" in att and "RollIn" in att and len(att_time) > 1:
                 idx_att2 = np.clip(idx_att, 1, len(att_time) - 1)
-                throttle = np.abs(att["PitchIn"][idx_att2 - 1]) + \
-                           np.abs(att["RollIn"][idx_att2 - 1])
+                throttle = np.abs(att["PitchIn"][idx_att2 - 1]) + np.abs(
+                    att["RollIn"][idx_att2 - 1]
+                )
                 throttle = throttle / (np.max(throttle) + 1e-9)
             else:
                 throttle = np.zeros(mag_time.size, dtype=np.float64)
@@ -649,7 +681,9 @@ class MAGFit:
 
         # 当地地磁场 NED 向量（mGauss）— 有真实位置时用 WMM，否则 IGRF 近似
         b_ned = earth_field_ned(
-            self._lat, self._lon, self._alt_m,
+            self._lat,
+            self._lon,
+            self._alt_m,
             has_position=getattr(self, "_has_position", True),
         )  # (3,)
 
@@ -698,26 +732,26 @@ class MAGFit:
             self._sync_samples()
 
         N = len(self._mag_synced)
-        yaw_deg   = self._yaw
+        yaw_deg = self._yaw
         pitch_deg = self._pitch
-        roll_deg  = self._roll
+        roll_deg = self._roll
 
         # 偏航角解绕（unwrap），避免 359°→1° 跳变
         yaw_unwrap = np.unwrap(np.deg2rad(yaw_deg))
-        yaw_range  = np.rad2deg(yaw_unwrap.max() - yaw_unwrap.min())
+        yaw_range = np.rad2deg(yaw_unwrap.max() - yaw_unwrap.min())
 
         # yaw_coverage_deg = 偏航角范围 × 样本密度（近似：范围 × 样本数 / 2π）
         yaw_coverage_deg = yaw_range
 
-        pitch_range = float(np.ptp(pitch_deg))   # ptp = max - min
-        roll_range  = float(np.ptp(roll_deg))
+        pitch_range = float(np.ptp(pitch_deg))  # ptp = max - min
+        roll_range = float(np.ptp(roll_deg))
 
         tc = THRESHOLDS["flight_coverage"]
         coverage_ok = (
-            N >= tc["min_samples"] and
-            yaw_coverage_deg >= tc["yaw_coverage_min"] and
-            pitch_range >= tc["pitch_range_min"] and
-            roll_range >= tc["roll_range_min"]
+            N >= tc["min_samples"]
+            and yaw_coverage_deg >= tc["yaw_coverage_min"]
+            and pitch_range >= tc["pitch_range_min"]
+            and roll_range >= tc["roll_range_min"]
         )
 
         if N >= tc["good_samples"] and yaw_coverage_deg >= tc["yaw_coverage_good"]:
@@ -728,12 +762,12 @@ class MAGFit:
             quality = "poor"
 
         return {
-            "samples":          float(N),
+            "samples": float(N),
             "yaw_coverage_deg": float(yaw_coverage_deg),
-            "yaw_range_deg":    float(yaw_range),
-            "pitch_range_deg":  float(pitch_range),
-            "roll_range_deg":   float(roll_range),
-            "coverage_ok":      coverage_ok,
+            "yaw_range_deg": float(yaw_range),
+            "pitch_range_deg": float(pitch_range),
+            "roll_range_deg": float(roll_range),
+            "coverage_ok": coverage_ok,
             "coverage_quality": quality,
         }
 
@@ -752,12 +786,12 @@ class MAGFit:
         [ofs_x, ofs_y, ofs_z, dia_x, dia_y, dia_z,
          odi_x, odi_y, odi_z, mot_x, mot_y, mot_z]
         """
-        mag   = self._mag_synced   # (N, 3)
+        mag = self._mag_synced  # (N, 3)
         B_exp = self._field_expected
-        thr   = self._throttle
+        thr = self._throttle
 
         # bin 权重（Fibonacci lattice 加权）
-        bin_weights = getattr(self, '_bin_weights', None)
+        bin_weights = getattr(self, "_bin_weights", None)
         if bin_weights is not None and len(bin_weights) == len(mag):
             # sqrt(weight) 用于残差加权（因为 least_squares 最小化 sum(r^2)）
             sqrt_w = np.sqrt(bin_weights)
@@ -767,26 +801,50 @@ class MAGFit:
             sqrt_w_3d = np.ones((len(mag), 3), dtype=np.float64)
 
         # x0: [OFS(3), DIA(3), ODI(3), MOT(3)] = 12 elements
-        x0 = np.concatenate([
-            self._ofs_current,       # 3
-            np.array([1.0, 1.0, 1.0]),  # 3  DIA
-            np.zeros(3),               # 3  ODI (off-diagonal coupling per axis)
-            self._mot_current,       # 3
-        ])  # total 12
+        x0 = np.concatenate(
+            [
+                self._ofs_current,  # 3
+                np.array([1.0, 1.0, 1.0]),  # 3  DIA
+                np.zeros(3),  # 3  ODI (off-diagonal coupling per axis)
+                self._mot_current,  # 3
+            ]
+        )  # total 12
 
         # 边界约束
-        bounds_lo = np.array([
-            -2000, -2000, -2000,   # OFS
-              0.3,   0.3,   0.3,   # DIA
-              -1.0,  -1.0,  -1.0,  # ODI
-             -200,  -200,  -200,   # MOT
-        ], dtype=np.float64)
-        bounds_hi = np.array([
-             2000,  2000,  2000,   # OFS
-              2.0,   2.0,   2.0,   # DIA
-              1.0,   1.0,   1.0,   # ODI
-              200,   200,   200,   # MOT
-        ], dtype=np.float64)
+        bounds_lo = np.array(
+            [
+                -2000,
+                -2000,
+                -2000,  # OFS
+                0.3,
+                0.3,
+                0.3,  # DIA
+                -1.0,
+                -1.0,
+                -1.0,  # ODI
+                -200,
+                -200,
+                -200,  # MOT
+            ],
+            dtype=np.float64,
+        )
+        bounds_hi = np.array(
+            [
+                2000,
+                2000,
+                2000,  # OFS
+                2.0,
+                2.0,
+                2.0,  # DIA
+                1.0,
+                1.0,
+                1.0,  # ODI
+                200,
+                200,
+                200,  # MOT
+            ],
+            dtype=np.float64,
+        )
 
         # x0 来自日志真实 OFS/MOT，可能越出边界 → least_squares 会拒绝 infeasible x0
         x0 = np.clip(x0, bounds_lo, bounds_hi)
@@ -794,13 +852,18 @@ class MAGFit:
         def residuals(x: np.ndarray) -> np.ndarray:
             ofs = x[0:3]
             dia = x[3:6]
-            odi_vec = x[6:9]   # [ODI_X(xy), ODI_Y(xz), ODI_Z(yz)]
+            odi_vec = x[6:9]  # [ODI_X(xy), ODI_Y(xz), ODI_Z(yz)]
             mot = x[9:12]
 
             # C6 修复：使用 ArduPilot 对称软铁矩阵模型，
             # 拟合出的 ODI 可直接写回 COMPASS_ODI_*
             compensated = _apply_compass_compensation(
-                mag, ofs, dia, odi_vec, mot, thr,
+                mag,
+                ofs,
+                dia,
+                odi_vec,
+                mot,
+                thr,
             )
 
             # 加权残差 — mag 与 B_exp 均为 mGauss（C2 修复：去掉 ×10 换算）
@@ -823,21 +886,26 @@ class MAGFit:
             raise FitError(f"least_squares 拟合失败: {exc}") from exc
 
         x_fit = sol.x
-        ofs_fit  = x_fit[0:3]
-        dia_fit  = x_fit[3:6]
-        odi_fit  = x_fit[6:9]
-        mot_fit  = x_fit[9:12]
+        ofs_fit = x_fit[0:3]
+        dia_fit = x_fit[3:6]
+        odi_fit = x_fit[6:9]
+        mot_fit = x_fit[9:12]
         scale_fit = float(np.median(dia_fit))
 
         # 计算 fitness（未加权 RMSE — 权重仅影响拟合方向，不影响报告误差）
         compensated = _apply_compass_compensation(
-            mag, ofs_fit, dia_fit, odi_fit, mot_fit, thr,
+            mag,
+            ofs_fit,
+            dia_fit,
+            odi_fit,
+            mot_fit,
+            thr,
         )
         raw_res = compensated - B_exp  # mGauss（C2 修复：去掉 ×10 换算）
-        fitness = float(np.sqrt(np.mean(raw_res ** 2)))
+        fitness = float(np.sqrt(np.mean(raw_res**2)))
 
         # 添加 bin 覆盖率到 coverage
-        bin_cov = getattr(self, '_bin_coverage', 0.0)
+        bin_cov = getattr(self, "_bin_coverage", 0.0)
         coverage["bin_coverage"] = bin_cov
 
         # 评估等级（优先从 KB 读取，回退到硬编码默认值）
@@ -871,8 +939,12 @@ class MAGFit:
         # 诊断警告（位置源警告置顶）
         warnings = list(getattr(self, "_position_warnings", []))
         warnings += self._diagnose(
-            ofs_fit, dia_fit, odi_fit, mot_fit,
-            fitness, coverage,
+            ofs_fit,
+            dia_fit,
+            odi_fit,
+            mot_fit,
+            fitness,
+            coverage,
         )
 
         return FitResult(
@@ -917,8 +989,8 @@ class MAGFit:
         List[str]
             诊断消息列表。
         """
-        tp  = THRESHOLDS["compass_parameters"]
-        ft  = THRESHOLDS["fitness_thresholds"]
+        tp = THRESHOLDS["compass_parameters"]
+        ft = THRESHOLDS["fitness_thresholds"]
         msgs: List[str] = []
 
         # ── Fitness 等级描述 ────────────────────────────────────
@@ -927,44 +999,68 @@ class MAGFit:
         # ── OFS 检查 ────────────────────────────────────────────
         ofs_max = float(np.max(np.abs(ofs)))
         if ofs_max > tp["OFS_critical"]:
-            msgs.append(f"[严重] 硬铁偏移过大：max(|OFS|) = {ofs_max:.0f} > {tp['OFS_critical']:.0f}，建议拆除机体附近的强磁性材料或外置磁力计。")
+            msgs.append(
+                f"[严重] 硬铁偏移过大：max(|OFS|) = {ofs_max:.0f} > {tp['OFS_critical']:.0f}，建议拆除机体附近的强磁性材料或外置磁力计。"
+            )
         elif ofs_max > tp["OFS_warning"]:
-            msgs.append(f"[警告] 硬铁偏移偏高：max(|OFS|) = {ofs_max:.0f} > {tp['OFS_warning']:.0f}，建议检查是否存在扬声器、磁钢等干扰源。")
+            msgs.append(
+                f"[警告] 硬铁偏移偏高：max(|OFS|) = {ofs_max:.0f} > {tp['OFS_warning']:.0f}，建议检查是否存在扬声器、磁钢等干扰源。"
+            )
 
         # ── DIA 检查 ───────────────────────────────────────────
         for i, axis in enumerate("XYZ"):
             dev = abs(dia[i] - 1.0)
             if dev > tp["DIA_max"] - 1.0:
-                msgs.append(f"[警告] {axis} 轴软铁对角线异常：DIA_{axis} = {dia[i]:.3f}，建议检查电池或磁性材料分布。")
+                msgs.append(
+                    f"[警告] {axis} 轴软铁对角线异常：DIA_{axis} = {dia[i]:.3f}，建议检查电池或磁性材料分布。"
+                )
             elif dev > tp["DIA_dev_threshold"]:
-                msgs.append(f"[提示] {axis} 轴灵敏度偏差：|DIA_{axis} - 1.0| = {dev:.3f}，存在轻微软铁不对称。")
+                msgs.append(
+                    f"[提示] {axis} 轴灵敏度偏差：|DIA_{axis} - 1.0| = {dev:.3f}，存在轻微软铁不对称。"
+                )
 
         # ── ODI 检查 ───────────────────────────────────────────
         odi_max = float(np.max(np.abs(odi)))
         if odi_max > tp["ODI_critical"]:
-            msgs.append(f"[警告] 软铁非对角线过大：max(|ODI|) = {odi_max:.3f} > {tp['ODI_critical']:.3f}，常见于电池中心偏离机体中心，建议重新布局。")
+            msgs.append(
+                f"[警告] 软铁非对角线过大：max(|ODI|) = {odi_max:.3f} > {tp['ODI_critical']:.3f}，常见于电池中心偏离机体中心，建议重新布局。"
+            )
         elif odi_max > tp["ODI_threshold"]:
-            msgs.append(f"[提示] 软铁轴间耦合存在：max(|ODI|) = {odi_max:.3f}，电池或电机位置可能不对称。")
+            msgs.append(
+                f"[提示] 软铁轴间耦合存在：max(|ODI|) = {odi_max:.3f}，电池或电机位置可能不对称。"
+            )
 
         # ── MOT 检查 ───────────────────────────────────────────
         mot_max = float(np.max(np.abs(mot)))
         if mot_max > tp["MOT_critical"]:
-            msgs.append(f"[严重] 电机干扰补偿过大：max(|MOT|) = {mot_max:.1f} > {tp['MOT_critical']:.1f}，警告：电机挂载可能发生位移，飞行中补偿失效风险高。")
+            msgs.append(
+                f"[严重] 电机干扰补偿过大：max(|MOT|) = {mot_max:.1f} > {tp['MOT_critical']:.1f}，警告：电机挂载可能发生位移，飞行中补偿失效风险高。"
+            )
         elif mot_max > tp["MOT_warning"]:
-            msgs.append(f"[警告] 电机干扰明显：max(|MOT|) = {mot_max:.1f}，建议检查电调/电机 wires 与磁力计的距离，加固挂载。")
+            msgs.append(
+                f"[警告] 电机干扰明显：max(|MOT|) = {mot_max:.1f}，建议检查电调/电机 wires 与磁力计的距离，加固挂载。"
+            )
 
         # ── 轨迹覆盖检查 ───────────────────────────────────────
         if not coverage["coverage_ok"]:
-            msgs.append(f"[错误] 轨迹覆盖不足（{coverage['coverage_quality']}），建议按知识库第 4 节重新飞行： yaw > {THRESHOLDS['flight_coverage']['yaw_coverage_min']:.0f}°, pitch/roll > ±30°。")
+            msgs.append(
+                f"[错误] 轨迹覆盖不足（{coverage['coverage_quality']}），建议按知识库第 4 节重新飞行： yaw > {THRESHOLDS['flight_coverage']['yaw_coverage_min']:.0f}°, pitch/roll > ±30°。"
+            )
         elif coverage["coverage_quality"] == "acceptable":
-            msgs.append(f"[提示] 轨迹覆盖一般，建议飞行更多姿态变化以提高拟合精度（当前 yaw={coverage['yaw_coverage_deg']:.0f}°）。")
+            msgs.append(
+                f"[提示] 轨迹覆盖一般，建议飞行更多姿态变化以提高拟合精度（当前 yaw={coverage['yaw_coverage_deg']:.0f}°）。"
+            )
 
         # ── 综合建议 ───────────────────────────────────────────
         if fitness >= ft["marginal"]:
             if ofs_max > tp["OFS_warning"]:
-                msgs.append("建议：优先拆除硬铁干扰源（OFS过大），再优化软铁布局，最后补偿电机干扰。")
+                msgs.append(
+                    "建议：优先拆除硬铁干扰源（OFS过大），再优化软铁布局，最后补偿电机干扰。"
+                )
             elif odi_max > tp["ODI_threshold"] or mot_max > tp["MOT_warning"]:
-                msgs.append("建议：重新布局电池/电机，使用外置磁力计或将磁力计装在 GPS mast（> 10cm）。")
+                msgs.append(
+                    "建议：重新布局电池/电机，使用外置磁力计或将磁力计装在 GPS mast（> 10cm）。"
+                )
 
         return msgs
 
@@ -999,16 +1095,12 @@ class MAGFit:
             try:
                 vals = []
                 for k in raw_keys:
-                    arr = np.asarray(
-                        [float(c.get(k, 0.0)) for c in compass_raw], dtype=np.float64
-                    )
+                    arr = np.asarray([float(c.get(k, 0.0)) for c in compass_raw], dtype=np.float64)
                     vals.append(float(np.median(arr)) if arr.size else 0.0)
                 return np.array(vals, dtype=np.float64)
             except (TypeError, ValueError):
                 pass
-        return np.array(
-            [float(self._params.get(k, 0.0)) for k in param_keys], dtype=np.float64
-        )
+        return np.array([float(self._params.get(k, 0.0)) for k in param_keys], dtype=np.float64)
 
     @staticmethod
     def _euler_to_quat(yaw: np.ndarray, pitch: np.ndarray, roll: np.ndarray) -> np.ndarray:
@@ -1026,12 +1118,12 @@ class MAGFit:
             四元数。
         """
         # 左手系（ArduPilot NED）：Z-Y-X 顺序
-        cy = np.cos(yaw   * 0.5)
-        sy = np.sin(yaw   * 0.5)
+        cy = np.cos(yaw * 0.5)
+        sy = np.sin(yaw * 0.5)
         cp = np.cos(pitch * 0.5)
         sp = np.sin(pitch * 0.5)
-        cr = np.cos(roll  * 0.5)
-        sr = np.sin(roll  * 0.5)
+        cr = np.cos(roll * 0.5)
+        sr = np.sin(roll * 0.5)
 
         qw = cr * cp * cy + sr * sp * sy
         qx = sr * cp * cy - cr * sp * sy

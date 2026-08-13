@@ -35,9 +35,7 @@ def generate_bode_plot_data(
     """
     from smarttune.analyzers.filter_transfer import compute_filter_response
 
-    mag_db, phase_deg = compute_filter_response(
-        freqs, sample_rate, gyro_filter_hz, notch_params
-    )
+    mag_db, phase_deg = compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params)
 
     # 相位展开
     phase_unwrapped = np.unwrap(np.deg2rad(phase_deg))
@@ -157,6 +155,7 @@ def plot_bode(
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt  # noqa: F401
     except Exception:
@@ -224,6 +223,7 @@ def plot_filter_comparison(
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt  # noqa: F401
     except Exception:
@@ -248,6 +248,7 @@ def plot_filter_comparison(
     plt.close(fig)
 
     return output_path
+
 
 def plot_spectrogram(
     time_data: np.ndarray,
@@ -282,6 +283,7 @@ def plot_spectrogram(
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt  # noqa: F401
     except Exception:

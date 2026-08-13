@@ -16,39 +16,40 @@ from scipy import signal
 from smarttune.errors import InsufficientPIDDataError, AnalysisError
 from smarttune.analyzers.arx_model import arx_identify, estimate_delay
 
-
 # ---------------------------------------------------------------------------
 # 数据结构
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SysIDResult:
     """单轴系统辨识结果。"""
+
     axis: str
-    
+
     # ARX 模型参数
     na: int
     nb: int
     delay_samples: int
     a_coeffs: np.ndarray = field(repr=False)
     b_coeffs: np.ndarray = field(repr=False)
-    
+
     # 连续系统参数（二阶近似）
     natural_freq_hz: float
     damping_ratio: float
     dc_gain: float
-    
+
     # PID 带宽建议
     suggested_bandwidth_hz: float
     suggested_p_gain: float
-    
+
     # 拟合质量
     fit_quality_percent: float
-    
+
     # 原始数据信息
     sample_rate_hz: float
     data_points: int
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式（用于输出）。"""
         return {
@@ -80,6 +81,7 @@ class SysIDResult:
 # ---------------------------------------------------------------------------
 # 系统辨识核心函数
 # ---------------------------------------------------------------------------
+
 
 def discrete_to_second_order(
     a: np.ndarray,
@@ -172,16 +174,16 @@ def calculate_fit_quality(
 ) -> float:
     """
     计算模型拟合质量（百分比）。
-    
+
     使用 R² 决定系数，转换为百分比。
-    
+
     Parameters
     ----------
     y_actual : np.ndarray
         实际输出
     y_predicted : np.ndarray
         模型预测输出
-    
+
     Returns
     -------
     float
@@ -189,10 +191,10 @@ def calculate_fit_quality(
     """
     ss_res = np.sum((y_actual - y_predicted) ** 2)
     ss_tot = np.sum((y_actual - np.mean(y_actual)) ** 2)
-    
+
     if ss_tot < 1e-10:
         return 0.0
-    
+
     r_squared = 1 - (ss_res / ss_tot)
     return max(0.0, min(100.0, r_squared * 100))
 
@@ -205,7 +207,7 @@ def predict_arx_output(
 ) -> np.ndarray:
     """
     用 ARX 模型预测输出。
-    
+
     Parameters
     ----------
     u : np.ndarray
@@ -216,7 +218,7 @@ def predict_arx_output(
         B 多项式系数 [b0, b1, ...]
     d : int
         纯延迟（拍数）
-    
+
     Returns
     -------
     np.ndarray
@@ -224,23 +226,23 @@ def predict_arx_output(
     """
     N = len(u)
     y_pred = np.zeros(N)
-    
+
     na = len(a) - 1
     nb = len(b)
-    
+
     start_idx = max(na, nb + d)
-    
+
     for k in range(start_idx, N):
         # AR 部分
         for i in range(1, na + 1):
             y_pred[k] -= a[i] * y_pred[k - i]
-        
+
         # X 部分（外生输入）
         for j in range(nb):
             idx = k - d - j
             if idx >= 0:
                 y_pred[k] += b[j] * u[idx]
-    
+
     return y_pred
 
 
@@ -251,7 +253,7 @@ def suggest_pid_bandwidth(
 ) -> Tuple[float, float]:
     """
     根据系统特性建议 PID 带宽和 P 增益。
-    
+
     Parameters
     ----------
     natural_freq_hz : float
@@ -260,7 +262,7 @@ def suggest_pid_bandwidth(
         阻尼比
     sample_rate_hz : float
         采样率 (Hz)
-    
+
     Returns
     -------
     Tuple[bandwidth_hz, p_gain]
@@ -268,7 +270,7 @@ def suggest_pid_bandwidth(
     """
     # 带宽建议：通常为自然频率的 0.5 ~ 1.0 倍
     # 阻尼比低时，带宽应更低以避免振荡
-    
+
     if damping_ratio < 0.3:
         # 欠阻尼，保守带宽
         bandwidth_factor = 0.3
@@ -278,24 +280,25 @@ def suggest_pid_bandwidth(
     else:
         # 良好阻尼
         bandwidth_factor = 0.7
-    
+
     suggested_bw = natural_freq_hz * bandwidth_factor
-    
+
     # 限制带宽不超过采样率的 1/10（避免混叠）
     max_bw = sample_rate_hz / 10
     suggested_bw = min(suggested_bw, max_bw)
-    
+
     # P 增益建议：基于带宽和直流增益
     # 简化的经验公式：P ≈ 2π * bw / (10 * gain)
     suggested_p = 2 * np.pi * suggested_bw / 10
     suggested_p = np.clip(suggested_p, 0.01, 0.5)
-    
+
     return suggested_bw, suggested_p
 
 
 # ---------------------------------------------------------------------------
 # 主分析类
 # ---------------------------------------------------------------------------
+
 
 class SysIDAnalyzer:
     """
@@ -364,25 +367,30 @@ class SysIDAnalyzer:
         desired = sig.desired
         actual = sig.actual
         time_arr = sig.timestamp_s
-        
+
         # 计算采样率
         dt = np.median(np.diff(time_arr))
         if dt <= 0:
             dt = 0.004  # 默认 250 Hz
         sample_rate_hz = 1.0 / dt
-        
+
         # 去均值（使用前10个点作为基线）
         u = desired - np.mean(desired[:10])
         y = actual - np.mean(actual[:10])
-        
+
         # 估计延迟
         d = estimate_delay(u, y, max_delay=min(20, len(u) // 4))
-        
+
         # ARX 辨识（C14 修复：fallback 占位模型显式拒绝，不再产出
         # 看似合理实则虚构的 ωn/ζ 结论）
         try:
             a, b, arx_info = arx_identify(
-                u, y, self._na, self._nb, d, return_info=True,
+                u,
+                y,
+                self._na,
+                self._nb,
+                d,
+                return_info=True,
             )
         except Exception as exc:
             raise AnalysisError(
@@ -398,20 +406,18 @@ class SysIDAnalyzer:
                 ),
                 hint="增加采集时长或检查输入激励是否充分",
             )
-        
+
         # 计算拟合质量
         y_pred = predict_arx_output(u, a, b, d)
         fit_quality = calculate_fit_quality(y, y_pred)
-        
+
         # 转换为连续系统参数
         wn_rad_s, zeta, dc_gain = discrete_to_second_order(a, b, dt)
         natural_freq_hz = wn_rad_s / (2 * np.pi)
-        
+
         # PID 带宽建议
-        suggested_bw, suggested_p = suggest_pid_bandwidth(
-            natural_freq_hz, zeta, sample_rate_hz
-        )
-        
+        suggested_bw, suggested_p = suggest_pid_bandwidth(natural_freq_hz, zeta, sample_rate_hz)
+
         return SysIDResult(
             axis=axis,
             na=self._na,
@@ -433,12 +439,12 @@ class SysIDAnalyzer:
 def format_sysid_report(results: Dict[str, SysIDResult]) -> str:
     """
     格式化系统辨识报告为字符串。
-    
+
     Parameters
     ----------
     results : Dict[str, SysIDResult]
         各轴的辨识结果。
-    
+
     Returns
     -------
     str
@@ -449,26 +455,28 @@ def format_sysid_report(results: Dict[str, SysIDResult]) -> str:
     lines.append("系统辨识分析报告 (ARX 模型)")
     lines.append("=" * 60)
     lines.append("")
-    
+
     for axis in ["roll", "pitch", "yaw"]:
         if axis not in results:
             continue
-        
+
         r = results[axis]
         lines.append(f"\n【{axis.upper()} 轴】")
         lines.append("-" * 40)
-        
+
         # ARX 模型信息
         lines.append(f"ARX 模型: na={r.na}, nb={r.nb}, 延迟={r.delay_samples} 拍")
         lines.append(f"  A(z) = 1 + {r.a_coeffs[1]:.4f}z⁻¹ + {r.a_coeffs[2]:.4f}z⁻² + ...")
         lines.append(f"  B(z) = {r.b_coeffs[0]:.4f} + {r.b_coeffs[1]:.4f}z⁻¹ + ...")
         lines.append("")
-        
+
         # 连续系统参数
         lines.append("连续系统近似（二阶）:")
-        lines.append(f"  自然频率 ωn = {r.natural_freq_hz:.2f} Hz ({r.natural_freq_hz*2*np.pi:.1f} rad/s)")
+        lines.append(
+            f"  自然频率 ωn = {r.natural_freq_hz:.2f} Hz ({r.natural_freq_hz*2*np.pi:.1f} rad/s)"
+        )
         lines.append(f"  阻尼比 ζ = {r.damping_ratio:.3f}")
-        
+
         if r.damping_ratio < 0.3:
             damp_desc = "欠阻尼（易振荡）"
         elif r.damping_ratio < 0.7:
@@ -480,18 +488,18 @@ def format_sysid_report(results: Dict[str, SysIDResult]) -> str:
         lines.append(f"  阻尼状态: {damp_desc}")
         lines.append(f"  直流增益 = {r.dc_gain:.3f}")
         lines.append("")
-        
+
         # PID 建议
         lines.append("PID 带宽建议:")
         lines.append(f"  建议带宽: {r.suggested_bandwidth_hz:.1f} Hz")
         lines.append(f"  建议 P 增益: {r.suggested_p_gain:.4f}")
         lines.append("")
-        
+
         # 拟合质量
         lines.append(f"模型拟合质量: {r.fit_quality_percent:.1f}%")
         lines.append(f"数据点数: {r.data_points}, 采样率: {r.sample_rate_hz:.1f} Hz")
-    
+
     lines.append("")
     lines.append("=" * 60)
-    
+
     return "\n".join(lines)

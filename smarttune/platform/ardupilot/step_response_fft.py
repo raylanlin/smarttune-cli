@@ -62,10 +62,10 @@ def _to_double_sided(single: np.ndarray) -> np.ndarray:
     # 正/负频率向量化（P3-#5）：原 Python 循环逐元素填充，对典型 ~400 点窗口
     # 执行数百次。numpy slicing + 共轭批量赋值，性能提升一到两个数量级。
     if real_len > 2:
-        pos = single[1:real_len - 1] * 0.5
-        ret[1:real_len - 1] = pos
+        pos = single[1 : real_len - 1] * 0.5
+        ret[1 : real_len - 1] = pos
         # 负频率位置 full_len-1 .. real_len，对应正频率 1..real_len-2 的反向共轭
-        ret[full_len - 1:real_len - 1:-1] = np.conj(pos)
+        ret[full_len - 1 : real_len - 1 : -1] = np.conj(pos)
 
     return ret
 
@@ -198,13 +198,13 @@ def estimate_step_response(
     m = min(len_lpf, real_len)
     if m > 0:
         j_arr = np.arange(m, dtype=np.float64)
-        gauss = np.exp((-0.5 / sigma ** 2) * (j_arr - radius) ** 2)
+        gauss = np.exp((-0.5 / sigma**2) * (j_arr - radius) ** 2)
         csum = np.cumsum(gauss)
         total = csum[-1]
         sn[:m] = csum / total if total > 0 else csum
 
     # 镜像拼接（精确复现 WebTools 语法）
-    sn = np.concatenate([sn, sn[1:real_len - 1][::-1]])
+    sn = np.concatenate([sn, sn[1 : real_len - 1][::-1]])
 
     # Scale: -1 → offset 1 + 1e-9 → ×10 → inverse
     sn = 1.0 / (10.0 * (1.0 - sn + 1e-9))
@@ -289,7 +289,7 @@ def estimate_step_response(
 
         # 5. 阶跃响应质量检查：超调 > 300% 视为异常窗口
         if step_end > 5:
-            tail_val = float(np.mean(step[-max(5, step_end // 4):]))
+            tail_val = float(np.mean(step[-max(5, step_end // 4) :]))
             if abs(tail_val) > 1e-3:
                 peak_dev = float(np.max(step) - tail_val)
                 overshoot_est = peak_dev / abs(tail_val) * 100.0
@@ -356,8 +356,11 @@ def compute_step_response_for_axis(
             from scipy import interpolate
 
             interp_desired = interpolate.interp1d(
-                time_rate, desired, kind="linear",
-                bounds_error=False, fill_value=(desired[0], desired[-1]),
+                time_rate,
+                desired,
+                kind="linear",
+                bounds_error=False,
+                fill_value=(desired[0], desired[-1]),
             )
             desired_resampled = interp_desired(time_imu)
 

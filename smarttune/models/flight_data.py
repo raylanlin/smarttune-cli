@@ -21,14 +21,14 @@ class AxisPIDSignal:
     P/I/D/FF 项可选（部分平台日志不一定全部记录）。
     """
 
-    timestamp_s: np.ndarray          # 秒，从日志起始计
-    desired: np.ndarray              # 目标角速率, deg/s
-    actual: np.ndarray               # 实际角速率, deg/s
+    timestamp_s: np.ndarray  # 秒，从日志起始计
+    desired: np.ndarray  # 目标角速率, deg/s
+    actual: np.ndarray  # 实际角速率, deg/s
     p_term: Optional[np.ndarray] = None
     i_term: Optional[np.ndarray] = None
     d_term: Optional[np.ndarray] = None
-    ff_term: Optional[np.ndarray] = None   # Betaflight feedforward / ArduPilot FF
-    output: Optional[np.ndarray] = None    # 控制器总输出
+    ff_term: Optional[np.ndarray] = None  # Betaflight feedforward / ArduPilot FF
+    output: Optional[np.ndarray] = None  # 控制器总输出
 
     @property
     def sample_count(self) -> int:
@@ -50,8 +50,8 @@ class ModeChange:
     """
 
     timestamp_s: float
-    mode_name: str     # 统一: "stabilize", "acro", "althold", "loiter", "auto", "land", ...
-    raw_mode: str      # 平台原始名
+    mode_name: str  # 统一: "stabilize", "acro", "althold", "loiter", "auto", "land", ...
+    raw_mode: str  # 平台原始名
 
 
 @dataclass
@@ -73,33 +73,33 @@ class FlightData:
     """
 
     # ── 元信息 ──────────────────────────────────────────────
-    platform: str                           # "ardupilot" | "betaflight" | "px4"
+    platform: str  # "ardupilot" | "betaflight" | "px4"
     firmware_version: str = ""
-    frame_type: Optional[str] = None        # "quad", "hex", "octo", "tri", "heli", ...
-    board_name: Optional[str] = None        # 飞控板型号
-    log_file: str = ""                      # 原始日志路径
+    frame_type: Optional[str] = None  # "quad", "hex", "octo", "tri", "heli", ...
+    board_name: Optional[str] = None  # 飞控板型号
+    log_file: str = ""  # 原始日志路径
 
     # ── 采样信息 ────────────────────────────────────────────
-    sample_rate_hz: float = 0.0             # 主循环采样率
-    duration_s: float = 0.0                 # 总时长
+    sample_rate_hz: float = 0.0  # 主循环采样率
+    duration_s: float = 0.0  # 总时长
 
     # ── PID 信号（必选）──────────────────────────────────────
     pid: Dict[str, AxisPIDSignal] = field(default_factory=dict)
     # keys: "roll", "pitch", "yaw"
 
     # ── IMU 原始数据（必选）──────────────────────────────────
-    gyro: Optional[np.ndarray] = None       # (N, 3), deg/s
-    accel: Optional[np.ndarray] = None      # (N, 3), m/s²
+    gyro: Optional[np.ndarray] = None  # (N, 3), deg/s
+    accel: Optional[np.ndarray] = None  # (N, 3), m/s²
     imu_timestamp_s: Optional[np.ndarray] = None  # (N,)
 
     # ── 可选信号 ────────────────────────────────────────────
-    mag: Optional[np.ndarray] = None        # (N, 3), mGauss
+    mag: Optional[np.ndarray] = None  # (N, 3), mGauss
     mag_timestamp_s: Optional[np.ndarray] = None
-    baro_alt: Optional[np.ndarray] = None   # (N,), meters
+    baro_alt: Optional[np.ndarray] = None  # (N,), meters
     motor_output: Optional[np.ndarray] = None  # (N, num_motors), 0-1
     motor_timestamp_s: Optional[np.ndarray] = None
-    battery_voltage: Optional[np.ndarray] = None   # (N,), Volts
-    battery_current: Optional[np.ndarray] = None   # (N,), Amps
+    battery_voltage: Optional[np.ndarray] = None  # (N,), Volts
+    battery_current: Optional[np.ndarray] = None  # (N,), Amps
     battery_timestamp_s: Optional[np.ndarray] = None
 
     # ── 飞行模式 ────────────────────────────────────────────

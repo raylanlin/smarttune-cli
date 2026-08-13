@@ -46,7 +46,9 @@ def build_hardware_display_sections(report: Dict[str, Any]) -> List[str]:
     if sys_info:
         lines.append("[bold]System:[/bold]")
         lines.append(f"  Board: {sys_info.get('board_name', 'Unknown')}")
-        lines.append(f"  Frame: class={sys_info.get('frame_class', '?')} type={sys_info.get('frame_type', '?')}")
+        lines.append(
+            f"  Frame: class={sys_info.get('frame_class', '?')} type={sys_info.get('frame_type', '?')}"
+        )
         lines.append(f"  Loop rate: {sys_info.get('sched_loop_rate', '?')} Hz")
         lines.append(f"  EKF type: {sys_info.get('ahrs_ekf_type', '?')}")
 

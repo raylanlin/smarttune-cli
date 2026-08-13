@@ -30,12 +30,12 @@ _log = logging.getLogger(__name__)
 _MIN_STEP_AMP = 5.0  # deg/s
 
 # 窗口参数（秒）
-_WINDOW_BEFORE_S = 0.1   # 阶跃前保留时长
-_WINDOW_AFTER_S = 1.5    # 阶跃后保留时长（低采样率响应更慢）
+_WINDOW_BEFORE_S = 0.1  # 阶跃前保留时长
+_WINDOW_AFTER_S = 1.5  # 阶跃后保留时长（低采样率响应更慢）
 
 # 数据质量过滤常量
 _MAX_ACTUAL_DPS = 1500.0  # 最大合法角速率 (deg/s)
-_MIN_STD_DPS = 3.0        # Actual 最小标准差 (deg/s)，静止段过滤
+_MIN_STD_DPS = 3.0  # Actual 最小标准差 (deg/s)，静止段过滤
 
 
 def _detect_steps_time_domain(
@@ -121,18 +121,18 @@ def _extract_window(
         return None
 
     # 计算阶跃幅值：用 des_win 的局部索引
-    local_before = step_idx - start          # window 内阶跃点位置
+    local_before = step_idx - start  # window 内阶跃点位置
     pre_len = min(local_before, max(2, before // 2))
     # np.diff 返回 diff[i] = x[i+1]-x[i]，所以 step_idx 是跳变前最后一点，
     # 跳变后的第一个点在 step_idx+1，即 des_win 的 local_before+1 处
-    post_start = local_before + 1             # 跳变后首个采样点（窗口内索引）
+    post_start = local_before + 1  # 跳变后首个采样点（窗口内索引）
     post_len = max(2, before // 2)
 
     if pre_len < 1 or post_start >= len(des_win):
         return None
 
     des_pre = float(np.mean(des_win[:pre_len]))
-    des_post = float(np.mean(des_win[post_start: post_start + post_len]))
+    des_post = float(np.mean(des_win[post_start : post_start + post_len]))
     step_amp = abs(des_post - des_pre)
 
     if step_amp < _MIN_STEP_AMP:
@@ -255,7 +255,9 @@ def estimate_step_response_time_domain(
 
     _log.debug(
         "time_domain: %d / %d 窗口有效，平均稳态值 %.3f",
-        valid_windows, total_windows, float(np.mean(step_out[-max(1, step_len // 5):])),
+        valid_windows,
+        total_windows,
+        float(np.mean(step_out[-max(1, step_len // 5) :])),
     )
 
     return {

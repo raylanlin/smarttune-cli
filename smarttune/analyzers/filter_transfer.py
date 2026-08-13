@@ -16,10 +16,10 @@ from typing import Dict, Any, Tuple, List, Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Z 变换辅助
 # ---------------------------------------------------------------------------
+
 
 def exp_jw(freqs: np.ndarray, sample_rate: float) -> Tuple[np.ndarray, np.ndarray]:
     """计算 e^(jω) 的实部/虚部数组。"""
@@ -47,6 +47,7 @@ def _cdiv(nr, ni, dr, di):
 # DigitalBiquadFilter (LPF) — 与 WebTools 对齐
 # ---------------------------------------------------------------------------
 
+
 class DigitalBiquadFilter:
     """二阶 Butterworth LPF。"""
 
@@ -73,13 +74,16 @@ class DigitalBiquadFilter:
 
         t1r, t1i = _cmul(Hn_r, Hn_i, nr, ni)
         t2r, t2i = _cmul(Hd_r, Hd_i, dr, di)
-        Hn_r[:] = t1r; Hn_i[:] = t1i
-        Hd_r[:] = t2r; Hd_i[:] = t2i
+        Hn_r[:] = t1r
+        Hn_i[:] = t1i
+        Hd_r[:] = t2r
+        Hd_i[:] = t2i
 
 
 # ---------------------------------------------------------------------------
 # NotchFilter — 与 WebTools NotchFilter 对齐
 # ---------------------------------------------------------------------------
+
 
 class NotchFilter:
     """单陷波，含衰减缩放(A)、最小频率、spread 偏移。"""
@@ -107,8 +111,8 @@ class NotchFilter:
         cf = max(cf, self.min_freq_hz) * self.spread_mul
         bw = self.bandwidth_hz
         octaves = np.log2(cf / (cf - bw / 2.0)) * 2.0
-        Q = ((2.0 ** octaves) ** 0.5) / ((2.0 ** octaves) - 1.0) if octaves > 0 else 10.0
-        Asq = A ** 2
+        Q = ((2.0**octaves) ** 0.5) / ((2.0**octaves) - 1.0) if octaves > 0 else 10.0
+        Asq = A**2
 
         omega = 2.0 * np.pi * cf / sample_freq
         alpha = np.sin(omega) / (2.0 * Q)
@@ -126,13 +130,16 @@ class NotchFilter:
 
         t1r, t1i = _cmul(Hn_r, Hn_i, nr, ni)
         t2r, t2i = _cmul(Hd_r, Hd_i, dr, di)
-        Hn_r[:] = t1r; Hn_i[:] = t1i
-        Hd_r[:] = t2r; Hd_i[:] = t2i
+        Hn_r[:] = t1r
+        Hn_i[:] = t1i
+        Hd_r[:] = t2r
+        Hd_i[:] = t2i
 
 
 # ---------------------------------------------------------------------------
 # MultiNotch (双/三陷波) — 与 WebTools MultiNotch 对齐
 # ---------------------------------------------------------------------------
+
 
 class MultiNotch:
     """2 或 3 个 NotchFilter 以不同 spread 覆盖更宽带宽。"""
@@ -157,11 +164,22 @@ class MultiNotch:
 # HarmonicNotchFilter — 与 WebTools 对齐
 # ---------------------------------------------------------------------------
 
+
 class HarmonicNotchFilter:
     """多谐波 × 单/双/三 陷波。"""
 
-    def __init__(self, enable=0, freq=80.0, bandwidth=40.0, attenuation=40.0,
-                 harmonics=3, options=0, min_ratio=1.0, mode=1, ref=0.0):
+    def __init__(
+        self,
+        enable=0,
+        freq=80.0,
+        bandwidth=40.0,
+        attenuation=40.0,
+        harmonics=3,
+        options=0,
+        min_ratio=1.0,
+        mode=1,
+        ref=0.0,
+    ):
         self.enable = enable
         self.freq = freq
         self.bandwidth = bandwidth
@@ -193,7 +211,9 @@ class HarmonicNotchFilter:
             if single:
                 self.filters.append(NotchFilter(attenuation, bandwidth * h, h, mf, 1.0))
             else:
-                self.filters.append(MultiNotch(attenuation, bandwidth, h, mf, 3 if triple else 2, freq))
+                self.filters.append(
+                    MultiNotch(attenuation, bandwidth, h, mf, 3 if triple else 2, freq)
+                )
 
     @property
     def enabled(self):
@@ -209,6 +229,7 @@ class HarmonicNotchFilter:
 # ---------------------------------------------------------------------------
 # 相位分析 — 与 WebTools get_phase / phase_scale 对齐
 # ---------------------------------------------------------------------------
+
 
 def get_phase(h_r: np.ndarray, h_i: np.ndarray) -> np.ndarray:
     """偏置 unwrap 相位（度），陷波器友好。"""
@@ -248,6 +269,7 @@ def phase_scale(phases: List[np.ndarray], wrap: bool = True) -> List[np.ndarray]
 # 计算完整传递函数
 # ---------------------------------------------------------------------------
 
+
 def _apply_filter_chain(
     freqs: np.ndarray,
     sample_rate: float,
@@ -276,7 +298,7 @@ def _apply_filter_chain(
                 nf.transfer_static(Hn_r, Hn_i, Hd_r, Hd_i, sample_rate, Z1_r, Z1_i, Z2_r, Z2_i)
 
     H_r, H_i = _cdiv(Hn_r, Hn_i, Hd_r, Hd_i)
-    mag = np.sqrt(H_r ** 2 + H_i ** 2)
+    mag = np.sqrt(H_r**2 + H_i**2)
     mag_db = 20.0 * np.log10(np.maximum(mag, 1e-12))
     phase_deg = get_phase(H_r, H_i)
 
@@ -308,18 +330,24 @@ def compute_filter_response(
     lpf = DigitalBiquadFilter(gyro_filter_hz) if gyro_filter_hz > 0 else None
     notches = None
     if notch_params:
-        notches = [HarmonicNotchFilter(
-            enable=1, freq=notch_params.get("center_hz", 80.0),
-            bandwidth=notch_params.get("bandwidth_hz", 40.0),
-            attenuation=notch_params.get("attenuation_db", 40.0),
-            harmonics=notch_params.get("harmonics", 3),
-        )]
+        notches = [
+            HarmonicNotchFilter(
+                enable=1,
+                freq=notch_params.get("center_hz", 80.0),
+                bandwidth=notch_params.get("bandwidth_hz", 40.0),
+                attenuation=notch_params.get("attenuation_db", 40.0),
+                harmonics=notch_params.get("harmonics", 3),
+            )
+        ]
     return _apply_filter_chain(freqs, sample_rate, lpf, notches)
 
 
 def simulate_filtered_spectrum(
-    freqs: np.ndarray, magnitudes: np.ndarray, sample_rate: float,
-    gyro_filter_hz: float = 0.0, notch_params: Optional[Dict[str, Any]] = None,
+    freqs: np.ndarray,
+    magnitudes: np.ndarray,
+    sample_rate: float,
+    gyro_filter_hz: float = 0.0,
+    notch_params: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     """模拟滤波后的频谱（dB 域相加）。平台无关。"""
     mag_db, _ = compute_filter_response(freqs, sample_rate, gyro_filter_hz, notch_params)

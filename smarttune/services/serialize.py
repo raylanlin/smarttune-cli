@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     import numpy as np
+
     _HAS_NUMPY = True
 except ImportError:
     _HAS_NUMPY = False
@@ -35,10 +36,10 @@ from smarttune.models.analysis_result import (
 )
 from smarttune.platform.base import PlatformAdapter
 
-
 # ---------------------------------------------------------------------------
 # Generic helpers
 # ---------------------------------------------------------------------------
+
 
 def to_jsonable(value: Any) -> Any:
     """Recursively convert a value to a JSON-serializable form.
@@ -107,6 +108,7 @@ def _summarize_array(arr: "np.ndarray") -> Dict[str, Any]:
 # Domain-specific serializers
 # ---------------------------------------------------------------------------
 
+
 def serialize_param_recommendation(
     rec: ParamRecommendation,
     adapter: Optional[PlatformAdapter] = None,
@@ -118,7 +120,9 @@ def serialize_param_recommendation(
         "suggested": _safe_float(rec.suggested),
         "change_percent": _safe_float(rec.change_percent),
         "action": rec.action or ("increase" if rec.suggested > rec.current else "decrease"),
-        "confidence": rec.confidence.value if isinstance(rec.confidence, Enum) else str(rec.confidence),
+        "confidence": (
+            rec.confidence.value if isinstance(rec.confidence, Enum) else str(rec.confidence)
+        ),
         "reason": rec.reason,
     }
     if adapter is not None:
@@ -153,19 +157,24 @@ def serialize_pid_result(
     for axis_name, axis_result in result.axes.items():
         recs = axis_result.recommendations
         remaining = max(0, max_recommendations - total_recs)
-        serialized_recs = [
-            serialize_param_recommendation(r, adapter)
-            for r in recs[:remaining]
-        ]
+        serialized_recs = [serialize_param_recommendation(r, adapter) for r in recs[:remaining]]
         total_recs += len(serialized_recs)
         axes[axis_name] = {
-            "assessment": axis_result.assessment.value if isinstance(axis_result.assessment, Enum) else str(axis_result.assessment),
+            "assessment": (
+                axis_result.assessment.value
+                if isinstance(axis_result.assessment, Enum)
+                else str(axis_result.assessment)
+            ),
             "step_count": axis_result.step_count,
             "metrics": serialize_step_metrics(axis_result.metrics),
             "recommendations": serialized_recs,
         }
     return {
-        "overall_assessment": result.overall_assessment.value if isinstance(result.overall_assessment, Enum) else str(result.overall_assessment),
+        "overall_assessment": (
+            result.overall_assessment.value
+            if isinstance(result.overall_assessment, Enum)
+            else str(result.overall_assessment)
+        ),
         "axes": axes,
     }
 
@@ -189,10 +198,11 @@ def serialize_fft_result(
             for p in peaks_raw[:20]
         ]
         recs_raw = result.get("recommendations", [])
-        recs = [
-            serialize_param_recommendation(r, adapter)
-            for r in recs_raw[:max_recommendations]
-        ] if isinstance(recs_raw, list) else []
+        recs = (
+            [serialize_param_recommendation(r, adapter) for r in recs_raw[:max_recommendations]]
+            if isinstance(recs_raw, list)
+            else []
+        )
         return {
             "vibration_level": result.get("vibration_level", ""),
             "noise_floor": _safe_float(result.get("noise_floor", 0)),
@@ -214,7 +224,11 @@ def serialize_fft_result(
         for r in result.recommendations[:max_recommendations]
     ]
     return {
-        "vibration_level": result.vibration_level.value if isinstance(result.vibration_level, Enum) else str(result.vibration_level),
+        "vibration_level": (
+            result.vibration_level.value
+            if isinstance(result.vibration_level, Enum)
+            else str(result.vibration_level)
+        ),
         "noise_floor": _safe_float(result.noise_floor),
         "peaks": peaks,
         "recommendations": recs,
@@ -262,8 +276,7 @@ def serialize_magfit_result(
     # recommendations: duck-type 兜底 (FitResult 没有 recommendations)
     recs_raw = getattr(result, "recommendations", None) or []
     recs = [
-        serialize_param_recommendation(r, adapter)
-        for r in list(recs_raw)[:max_recommendations]
+        serialize_param_recommendation(r, adapter) for r in list(recs_raw)[:max_recommendations]
     ]
 
     return {
@@ -295,7 +308,7 @@ def serialize_sysid_results(results: Dict[str, Any]) -> Dict[str, Any]:
     axes: Dict[str, Any] = {}
     for axis_name, result in results.items():
         # SysIDResult has a .to_dict() method
-        if hasattr(result, 'to_dict'):
+        if hasattr(result, "to_dict"):
             axes[axis_name] = result.to_dict()
         elif isinstance(result, dict):
             axes[axis_name] = to_jsonable(result)
@@ -323,11 +336,13 @@ def serialize_filter_result(
             if fk >= freqs[-1]:
                 break
             idx = int(np.argmin(np.abs(freqs - fk)))
-            key_points.append({
-                "frequency_hz": fk,
-                "magnitude_db": round(float(mag_db[idx]), 1),
-                "phase_deg": round(float(phase_deg[idx]), 1),
-            })
+            key_points.append(
+                {
+                    "frequency_hz": fk,
+                    "magnitude_db": round(float(mag_db[idx]), 1),
+                    "phase_deg": round(float(phase_deg[idx]), 1),
+                }
+            )
 
     return {
         "config_summary": config_summary,
@@ -341,7 +356,7 @@ def serialize_extra_analyzers_results(results: Dict[str, Any]) -> Dict[str, Any]
     """Serialize results from platform extra analyzers (e.g. Betaflight FF/RPM/DTerm)."""
     out: Dict[str, Any] = {}
     for name, result in results.items():
-        if hasattr(result, 'to_dict'):
+        if hasattr(result, "to_dict"):
             out[name] = result.to_dict()
         elif isinstance(result, dict):
             out[name] = to_jsonable(result)

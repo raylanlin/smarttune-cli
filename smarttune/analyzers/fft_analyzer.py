@@ -12,6 +12,7 @@ import numpy as np
 
 try:
     from scipy.signal import find_peaks
+
     _HAS_SCIPY = True
 except ImportError:
     _HAS_SCIPY = False
@@ -21,13 +22,16 @@ except ImportError:
 # 内部异常
 # ---------------------------------------------------------------------------
 
+
 class FFTAnalyzerError(Exception):
     """FFTAnalyzer 基异常。"""
+
     pass
 
 
 class InsufficientDataError(FFTAnalyzerError):
     """数据点数不足，无法进行有效 FFT 分析。"""
+
     pass
 
 
@@ -35,8 +39,11 @@ class InsufficientDataError(FFTAnalyzerError):
 # 辅助
 # ---------------------------------------------------------------------------
 
+
 def _identify_source(
-    freq_hz: float, peaks: List[Dict], idx: int,
+    freq_hz: float,
+    peaks: List[Dict],
+    idx: int,
     bands: Optional[Dict[str, Tuple[float, float]]] = None,
 ) -> str:
     """
@@ -67,7 +74,9 @@ def _identify_source(
         "high_freq_resonance": (500.0, 2000.0),
         "motor_low": (30.0, 60.0),
     }
-    b = {**_defaults, **bands} if bands else _defaults  # C12 修复：KB 部分覆盖时用默认值补齐，避免 KeyError
+    b = (
+        {**_defaults, **bands} if bands else _defaults
+    )  # C12 修复：KB 部分覆盖时用默认值补齐，避免 KeyError
     # 检查是否为已知基频的谐波（2x, 3x）
     if idx > 0:
         prev_freq = peaks[idx - 1]["freq"]
@@ -106,10 +115,10 @@ def _identify_source(
 # 内部 5 级标签 → 全库统一 Assessment 枚举值（models/analysis_result.py）
 _ASSESSMENT_MAP = {
     "EXCELLENT": "EXCELLENT",
-    "GOOD":      "GOOD",
-    "MARGINAL":  "MARGINAL",
-    "SEVERE":    "POOR",
-    "CRITICAL":  "UNUSABLE",
+    "GOOD": "GOOD",
+    "MARGINAL": "MARGINAL",
+    "SEVERE": "POOR",
+    "CRITICAL": "UNUSABLE",
 }
 
 
@@ -138,6 +147,7 @@ def _vibration_level(value_mss: float, thresholds: List[Dict]) -> str:
 # ---------------------------------------------------------------------------
 # FFTAnalyzer
 # ---------------------------------------------------------------------------
+
 
 class FFTAnalyzer:
     """
@@ -182,7 +192,7 @@ class FFTAnalyzer:
     ) -> None:
         self._kb = knowledge or {}
         self._default_overlap = overlap
-        self._platform: str = ""    # analyze() 时从 FlightData.platform 填充
+        self._platform: str = ""  # analyze() 时从 FlightData.platform 填充
 
         # 内部状态（由 analyze() 填充）
         self._gyro_data: Optional[Dict[str, np.ndarray]] = None
@@ -234,16 +244,16 @@ class FFTAnalyzer:
         )
 
         if vib_level in ("SEVERE", "CRITICAL"):
-            warnings.append(
-                f"振动等级 {vib_level} — 禁止在自动模式下飞行，需先机械检修。"
+            warnings.append(f"振动等级 {vib_level} — 禁止在自动模式下飞行，需先机械检修。")
+            mech_checks.extend(
+                [
+                    "螺旋桨动平衡",
+                    "电机安装垫圈硬度",
+                    "机臂/框架裂纹",
+                    "IMU 缓震垫",
+                    "电池/负载安装方式",
+                ]
             )
-            mech_checks.extend([
-                "螺旋桨动平衡",
-                "电机安装垫圈硬度",
-                "机臂/框架裂纹",
-                "IMU 缓震垫",
-                "电池/负载安装方式",
-            ])
 
         recs = self._build_notch_recommendation(peaks, vib_level)
 
@@ -331,7 +341,7 @@ class FFTAnalyzer:
         window = np.hanning(window_size)
         # 窗口校正因子
         window_sum = np.sum(window)
-        window_sum_sq = np.sum(window ** 2)
+        window_sum_sq = np.sum(window**2)
 
         hop = max(1, int(window_size * (1 - overlap)))
         freqs = np.fft.rfftfreq(window_size, d=1.0 / sample_rate)
@@ -344,7 +354,7 @@ class FFTAnalyzer:
 
         pos = 0
         while pos + window_size <= n:
-            seg = signal[pos:pos + window_size] * window
+            seg = signal[pos : pos + window_size] * window
             fft_vals = np.fft.rfft(seg)
             mag = np.abs(fft_vals)
 
@@ -353,7 +363,7 @@ class FFTAnalyzer:
                 mag = mag * 2.0 / window_sum
             elif scaling == "psd":
                 # PSD: |X|^2 / (fs * S2)  其中 S2 = sum(w^2)
-                mag = (mag ** 2) / (sample_rate * window_sum_sq)
+                mag = (mag**2) / (sample_rate * window_sum_sq)
             # else dbfs: 不在循环中归一化
 
             acc += mag
@@ -366,7 +376,7 @@ class FFTAnalyzer:
         avg = acc / count
 
         if scaling == "dbfs":
-            rms = np.sqrt(np.mean(signal ** 2))
+            rms = np.sqrt(np.mean(signal**2))
             if rms < 1e-12:
                 db = np.full(num_bins, -120.0)
             else:
@@ -423,19 +433,21 @@ class FFTAnalyzer:
             )
         else:
             # 纯 numpy 回退（仅用高度阈值）
-            peak_indices = np.where(
-                (magnitudes[1:-1] > magnitudes[:-2]) &
-                (magnitudes[1:-1] > magnitudes[2:]) &
-                (magnitudes[1:-1] > threshold_db)
-            )[0] + 1
+            peak_indices = (
+                np.where(
+                    (magnitudes[1:-1] > magnitudes[:-2])
+                    & (magnitudes[1:-1] > magnitudes[2:])
+                    & (magnitudes[1:-1] > threshold_db)
+                )[0]
+                + 1
+            )
 
         if peak_indices.size == 0:
             return []
 
         # 构建峰列表（按频率升序）
         raw_peaks = sorted(
-            [(int(i), float(freqs[i]), float(magnitudes[i]))
-             for i in peak_indices],
+            [(int(i), float(freqs[i]), float(magnitudes[i])) for i in peak_indices],
             key=lambda x: x[1],
         )
 
@@ -444,20 +456,21 @@ class FFTAnalyzer:
         for i, (idx, freq_hz, mag_db) in enumerate(raw_peaks):
             src = _identify_source(freq_hz, peaks, i, bands=bands)
             is_harmonic = (
-                src in ("motor", "prop_blade_pass") and
-                i > 0 and
-                any(
-                    1.9 <= freq_hz / p["freq"] <= 2.1 or
-                    2.9 <= freq_hz / p["freq"] <= 3.1
+                src in ("motor", "prop_blade_pass")
+                and i > 0
+                and any(
+                    1.9 <= freq_hz / p["freq"] <= 2.1 or 2.9 <= freq_hz / p["freq"] <= 3.1
                     for p in peaks
                 )
             )
-            peaks.append({
-                "freq": round(freq_hz, 1),
-                "magnitude_db": round(mag_db, 1),
-                "source": src,
-                "is_harmonic": is_harmonic,
-            })
+            peaks.append(
+                {
+                    "freq": round(freq_hz, 1),
+                    "magnitude_db": round(mag_db, 1),
+                    "source": src,
+                    "is_harmonic": is_harmonic,
+                }
+            )
 
         return peaks
 
@@ -553,7 +566,10 @@ class FFTAnalyzer:
             hmc_motor = 1  # 默认：电机/浆叶噪声总有谐波成分，开启 HMC
             hmc_other = 0
             for rule in hmc_rules:
-                if "multirotor" in rule.get("rule", "").lower() or "motor" in rule.get("rule", "").lower():
+                if (
+                    "multirotor" in rule.get("rule", "").lower()
+                    or "motor" in rule.get("rule", "").lower()
+                ):
                     rec = rule.get("recommendation", "")
                     if "HMC=1" in rec or "harmonics" in rec.lower():
                         hmc_motor = 1
@@ -646,7 +662,8 @@ class FFTAnalyzer:
         if len(peaks) >= 2:
             sorted_peaks = sorted(peaks, key=lambda p: -p["magnitude_db"])
             second = next(
-                (p for p in sorted_peaks[1:] if not p.get("is_harmonic")), None,
+                (p for p in sorted_peaks[1:] if not p.get("is_harmonic")),
+                None,
             )
             if second is not None:
                 out["filter.notch2.enable"] = 1
@@ -683,13 +700,14 @@ class FFTAnalyzer:
         peaks = self._find_peak_frequencies()
         _raw_level = _vibration_level(
             self._vibration_mss,
-            self._kb.get("vibration_thresholds", {}).get("levels") or self._kb.get("vibration_thresholds", {}).get("fallback_levels", []),
+            self._kb.get("vibration_thresholds", {}).get("levels")
+            or self._kb.get("vibration_thresholds", {}).get("fallback_levels", []),
         )
         return {
-            "freqs":            self._freqs.tolist() if self._freqs is not None else [],
-            "magnitudes":       self._magnitudes.tolist() if self._magnitudes is not None else [],
-            "sample_rate":     self._gyro_sample_rate,
-            "peaks":           peaks,
+            "freqs": self._freqs.tolist() if self._freqs is not None else [],
+            "magnitudes": self._magnitudes.tolist() if self._magnitudes is not None else [],
+            "sample_rate": self._gyro_sample_rate,
+            "peaks": peaks,
             "vibration_level": _ASSESSMENT_MAP.get(_raw_level, _raw_level),
             "vibration_level_raw": _raw_level,
             "vibration_value_mss": round(self._vibration_mss, 3),
@@ -761,9 +779,7 @@ class FFTAnalyzer:
         ax = acc["AccX"] - np.mean(acc["AccX"])
         ay = acc["AccY"] - np.mean(acc["AccY"])
         az = acc["AccZ"] - np.mean(acc["AccZ"])
-        self._vibration_mss = float(
-            np.sqrt(np.mean(ax ** 2) + np.mean(ay ** 2) + np.mean(az ** 2))
-        )
+        self._vibration_mss = float(np.sqrt(np.mean(ax**2) + np.mean(ay**2) + np.mean(az**2)))
 
     def _compute_fft_from_gyro(self) -> None:
         """对三轴陀螺仪数据分别做 FFT，取三轴最大值合成幅度谱。
@@ -802,7 +818,8 @@ class FFTAnalyzer:
             if data.size < self._MIN_SAMPLES:
                 continue
             f, m = self.compute_fft(
-                data, sr,
+                data,
+                sr,
                 window_size=window_size,
                 overlap=_PEAK_DETECT_OVERLAP,
             )
@@ -824,7 +841,8 @@ class FFTAnalyzer:
         if self._freqs is None or self._freqs.size == 0:
             return []
         return self.find_peak_frequencies(
-            self._freqs, self._magnitudes,
+            self._freqs,
+            self._magnitudes,
             bands=self._kb.get("frequency_bands") if self._kb else None,
         )
 

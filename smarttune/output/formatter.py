@@ -127,10 +127,17 @@ class OutputFormatter:
         vib_level = result.get("vibration_level", "UNKNOWN")
         vib_mss = result.get("vibration_value_mss", 0)
         # 统一 Assessment 标签（POOR/UNUSABLE）+ 旧标签向后兼容
-        color = {"EXCELLENT": "green", "GOOD": "green", "MARGINAL": "yellow",
-                 "MODERATE": "yellow", "HIGH": "yellow", "POOR": "red",
-                 "SEVERE": "red", "UNUSABLE": "bold red",
-                 "CRITICAL": "bold red"}.get(vib_level, "white")
+        color = {
+            "EXCELLENT": "green",
+            "GOOD": "green",
+            "MARGINAL": "yellow",
+            "MODERATE": "yellow",
+            "HIGH": "yellow",
+            "POOR": "red",
+            "SEVERE": "red",
+            "UNUSABLE": "bold red",
+            "CRITICAL": "bold red",
+        }.get(vib_level, "white")
         self._console.print(f"  Vibration: [{color}]{vib_level}[/{color}] ({vib_mss:.1f} m/s²)")
 
         peaks = result.get("peak_frequencies", [])
@@ -151,7 +158,11 @@ class OutputFormatter:
         recs = result.get("recommendations", {})
         if isinstance(recs, dict):
             for key, val in recs.items():
-                native = self._platform_param(f"filter.{key}") if "." not in key else self._platform_param(key)
+                native = (
+                    self._platform_param(f"filter.{key}")
+                    if "." not in key
+                    else self._platform_param(key)
+                )
                 self._console.print(f"    → [cyan]{native}[/cyan]: {val}")
 
         for w in result.get("warnings", []):
@@ -175,10 +186,26 @@ class OutputFormatter:
             table = Table(show_header=False, box=None, padding=(0, 2))
             table.add_column("", style="dim")
             table.add_column("", justify="right")
-            nf = getattr(r, "natural_freq_hz", r.get("natural_freq_hz", 0) if isinstance(r, dict) else 0)
-            dr = getattr(r, "damping_ratio", r.get("damping_ratio", 0) if isinstance(r, dict) else 0)
-            fq = getattr(r, "fit_quality", r.get("fit_quality_percent", r.get("fit_quality", 0)) if isinstance(r, dict) else 0)
-            bw = getattr(r, "bandwidth_hz", r.get("suggested_bandwidth_hz", r.get("bandwidth_hz", 0)) if isinstance(r, dict) else 0)
+            nf = getattr(
+                r, "natural_freq_hz", r.get("natural_freq_hz", 0) if isinstance(r, dict) else 0
+            )
+            dr = getattr(
+                r, "damping_ratio", r.get("damping_ratio", 0) if isinstance(r, dict) else 0
+            )
+            fq = getattr(
+                r,
+                "fit_quality",
+                r.get("fit_quality_percent", r.get("fit_quality", 0)) if isinstance(r, dict) else 0,
+            )
+            bw = getattr(
+                r,
+                "bandwidth_hz",
+                (
+                    r.get("suggested_bandwidth_hz", r.get("bandwidth_hz", 0))
+                    if isinstance(r, dict)
+                    else 0
+                ),
+            )
             table.add_row("Natural freq", f"{nf:.1f} Hz")
             table.add_row("Damping ratio", f"{dr:.3f}")
             table.add_row("Fit quality", f"{fq:.1f}%")
@@ -206,11 +233,11 @@ class OutputFormatter:
             except TypeError:
                 return False
 
-        if hasattr(result, 'ofs') and _has_vec(result.ofs):
+        if hasattr(result, "ofs") and _has_vec(result.ofs):
             for i, axis in enumerate(["X", "Y", "Z"]):
                 native = self._platform_param(f"mag.ofs.{axis.lower()}")
                 self._console.print(f"    {native}: {result.ofs[i]:.1f}")
-        elif hasattr(result, 'offsets') and result.offsets:
+        elif hasattr(result, "offsets") and result.offsets:
             for axis, val in result.offsets.items():
                 native = self._platform_param(f"mag.ofs.{axis}")
                 self._console.print(f"    {native}: {val:.1f}")
@@ -233,9 +260,9 @@ class OutputFormatter:
 
         si = report.get("sys_info", {})
         if si:
-            board = si.get('board_name', 'Unknown')
-            if board and board != 'Unknown':
-                board_id = si.get('board_id', 0)
+            board = si.get("board_name", "Unknown")
+            if board and board != "Unknown":
+                board_id = si.get("board_id", 0)
                 self._console.print(f"  Board: {board} (ID={board_id})")
             self._console.print(f"  Loop Rate: {si.get('sched_loop_rate', 400)} Hz")
             self._console.print(f"  EKF Type: {si.get('ahrs_ekf_type', 3)}")
@@ -344,7 +371,9 @@ class OutputFormatter:
         if visual:
             path = self._generate_hardware_report_plot(report)
             if path:
-                self._console.print(f"\n[green]✓[/green] Hardware report plot saved: [cyan]{path}[/cyan]")
+                self._console.print(
+                    f"\n[green]✓[/green] Hardware report plot saved: [cyan]{path}[/cyan]"
+                )
 
     # ------------------------------------------------------------------
     # 通用建议渲染
@@ -391,9 +420,7 @@ class OutputFormatter:
         # 汇总所有建议
         all_recs = result.all_recommendations
         if all_recs:
-            self._console.print(
-                Panel(f"Total recommendations: {len(all_recs)}", style="bold cyan")
-            )
+            self._console.print(Panel(f"Total recommendations: {len(all_recs)}", style="bold cyan"))
             self._render_recommendations(all_recs)
 
     # ------------------------------------------------------------------
@@ -424,7 +451,9 @@ class OutputFormatter:
                     lines.append(f"- SS error: {m.steady_state_error_percent:.1f}%")
                 for rec in ax.recommendations:
                     native = self._platform_param(rec.param.generic_name)
-                    lines.append(f"- **{native}**: {rec.current:.4f} → {rec.suggested:.4f} ({rec.reason})")
+                    lines.append(
+                        f"- **{native}**: {rec.current:.4f} → {rec.suggested:.4f} ({rec.reason})"
+                    )
                 lines.append("")
 
         all_recs = result.all_recommendations
@@ -435,7 +464,9 @@ class OutputFormatter:
             lines.append("|---|---|---|---|")
             for rec in all_recs:
                 native = self._platform_param(rec.param.generic_name)
-                lines.append(f"| {native} | {rec.current:.4f} | {rec.suggested:.4f} | {rec.reason} |")
+                lines.append(
+                    f"| {native} | {rec.current:.4f} | {rec.suggested:.4f} | {rec.reason} |"
+                )
 
         return "\n".join(lines)
 
@@ -473,6 +504,7 @@ class OutputFormatter:
         """
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
@@ -516,8 +548,14 @@ class OutputFormatter:
             info = fft_step.get("info", {})
 
             if not time_s or not step_resp:
-                ax.text(0.5, 0.5, "No FFT step response data", ha="center", va="center",
-                        transform=ax.transAxes)
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No FFT step response data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
                 ax.set_title(f"{axis_name.capitalize()} Step Response ({assessment})")
                 continue
 
@@ -528,13 +566,17 @@ class OutputFormatter:
             if self._theme == "dark":
                 ax.plot(t, resp, color="#e63946", linewidth=1.5, alpha=0.9, label="Response")
                 ax.axhline(0, color="#555555", linestyle="-", linewidth=0.5, alpha=0.5)
-                ax.axhline(1, color="#ffffff", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+                ax.axhline(
+                    1, color="#ffffff", linestyle="--", linewidth=1.0, alpha=0.8, label="Target"
+                )
                 ax.axhline(0.1, color="#444444", linestyle=":", linewidth=0.8, alpha=0.5)
                 ax.axhline(0.9, color="#444444", linestyle=":", linewidth=0.8, alpha=0.5)
             else:
                 ax.plot(t, resp, "b-", linewidth=1.5, alpha=0.9, label="Response")
                 ax.axhline(0, color="#cccccc", linestyle="-", linewidth=0.5, alpha=0.5)
-                ax.axhline(1, color="#999999", linestyle="--", linewidth=1.0, alpha=0.8, label="Target")
+                ax.axhline(
+                    1, color="#999999", linestyle="--", linewidth=1.0, alpha=0.8, label="Target"
+                )
                 ax.axhline(0.1, color="#dddddd", linestyle=":", linewidth=0.8, alpha=0.5)
                 ax.axhline(0.9, color="#dddddd", linestyle=":", linewidth=0.8, alpha=0.5)
                 # Subtle axes spines for light theme
@@ -575,6 +617,7 @@ class OutputFormatter:
         """
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
@@ -595,16 +638,25 @@ class OutputFormatter:
 
             if mags.size > 0:
                 sorted_mag = np.sort(mags)
-                noise_floor = float(np.mean(sorted_mag[:max(1, mags.size // 5)]))
+                noise_floor = float(np.mean(sorted_mag[: max(1, mags.size // 5)]))
                 noise_floor_color = "#888888" if self._theme == "dark" else "gray"
-                ax.axhline(noise_floor, color=noise_floor_color, linestyle="--",
-                           linewidth=0.8, alpha=0.5, label=f"Noise floor ({noise_floor:.0f}dB)")
+                ax.axhline(
+                    noise_floor,
+                    color=noise_floor_color,
+                    linestyle="--",
+                    linewidth=0.8,
+                    alpha=0.5,
+                    label=f"Noise floor ({noise_floor:.0f}dB)",
+                )
         else:
             # Fallback to bar chart (peaks only)
             peaks = results.get("peak_frequencies", [])
             if peaks:
                 freqs_bar = [p.get("freq", p.get("frequency_hz", 0)) for p in peaks]
-                mags_bar = [p.get("magnitude_db", p.get("amplitude_dbfs", p.get("amplitude", 0))) for p in peaks]
+                mags_bar = [
+                    p.get("magnitude_db", p.get("amplitude_dbfs", p.get("amplitude", 0)))
+                    for p in peaks
+                ]
                 bar_color = "#ff6b35" if self._theme == "dark" else "steelblue"
                 ax.bar(freqs_bar, mags_bar, color=bar_color, alpha=0.8, width=10)
 
@@ -622,12 +674,24 @@ class OutputFormatter:
             if is_harm:
                 label += "*"
 
-            ax.annotate(label, (f, m), textcoords="offset points",
-                        xytext=(5, 8), ha="left", fontsize=8,
-                        color="darkred" if is_harm else "black")
+            ax.annotate(
+                label,
+                (f, m),
+                textcoords="offset points",
+                xytext=(5, 8),
+                ha="left",
+                fontsize=8,
+                color="darkred" if is_harm else "black",
+            )
             if self._theme == "dark":
-                ax.plot(f, m, color="#ff0000", marker="*" if is_harm else "o",
-                        markersize=8 if is_harm else 6, alpha=0.9)
+                ax.plot(
+                    f,
+                    m,
+                    color="#ff0000",
+                    marker="*" if is_harm else "o",
+                    markersize=8 if is_harm else 6,
+                    alpha=0.9,
+                )
             else:
                 ax.plot(f, m, "r*" if is_harm else "ro", markersize=8 if is_harm else 6, alpha=0.7)
 
@@ -638,13 +702,24 @@ class OutputFormatter:
             notch_freq = recs.get("INS_HNTCH_FREQ", 0)
         if notch_freq > 0:
             notch_color = "#00ff00" if self._theme == "dark" else "green"
-            ax.axvline(notch_freq, color=notch_color, linestyle="--",
-                       linewidth=1.5, alpha=0.7, label=f"Notch center ({notch_freq:.0f}Hz)")
+            ax.axvline(
+                notch_freq,
+                color=notch_color,
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.7,
+                label=f"Notch center ({notch_freq:.0f}Hz)",
+            )
             notch_bw = recs.get("INS_HNTCH_BW", 0) if isinstance(recs, dict) else 0
             if notch_bw > 0:
                 notch_span_color = "#00cc00" if self._theme == "dark" else "green"
-                ax.axvspan(notch_freq - notch_bw / 2, notch_freq + notch_bw / 2,
-                           color=notch_span_color, alpha=0.15, label=f"Notch BW ({notch_bw:.0f}Hz)")
+                ax.axvspan(
+                    notch_freq - notch_bw / 2,
+                    notch_freq + notch_bw / 2,
+                    color=notch_span_color,
+                    alpha=0.15,
+                    label=f"Notch BW ({notch_bw:.0f}Hz)",
+                )
 
         # Title & axes
         vib = results.get("vibration_level", "?")
@@ -661,7 +736,9 @@ class OutputFormatter:
 
         max_freq = 500
         if peaks:
-            max_freq = max(max_freq, max(p.get("freq", p.get("frequency_hz", 0)) for p in peaks) * 1.2)
+            max_freq = max(
+                max_freq, max(p.get("freq", p.get("frequency_hz", 0)) for p in peaks) * 1.2
+            )
         if notch_freq > 0:
             max_freq = max(max_freq, notch_freq * 1.2)
         ax.set_xlim(0, max_freq)
@@ -683,6 +760,7 @@ class OutputFormatter:
         """
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
         except ImportError:
@@ -702,17 +780,20 @@ class OutputFormatter:
             for imu in imu_configs:
                 gi = imu.get("gyro_info", {})
                 ai = imu.get("accel_info", {})
-                table_data.append([
-                    f"IMU {imu.get('imu_index', '?')}",
-                    gi.get("name", str(imu.get("gyro_id", "?"))),
-                    ai.get("name", str(imu.get("accel_id", "?"))),
-                    "✓" if imu.get("gyro_calibrated") else "✗",
-                    "✓" if imu.get("accel_calibrated") else "✗",
-                ])
+                table_data.append(
+                    [
+                        f"IMU {imu.get('imu_index', '?')}",
+                        gi.get("name", str(imu.get("gyro_id", "?"))),
+                        ai.get("name", str(imu.get("accel_id", "?"))),
+                        "✓" if imu.get("gyro_calibrated") else "✗",
+                        "✓" if imu.get("accel_calibrated") else "✗",
+                    ]
+                )
             ax1.table(
                 cellText=table_data,
                 colLabels=["IMU", "Gyro", "Accel", "Gyro Cal", "Accel Cal"],
-                loc="center", cellLoc="center",
+                loc="center",
+                cellLoc="center",
             )
             ax1.set_title("IMU Configuration", fontsize=12, fontweight="bold")
 
@@ -727,8 +808,15 @@ class OutputFormatter:
             f"NOTCH_BW: {filter_cfg.get('notch_bw', 0):.1f} Hz",
         ]
         ax2.axis("off")
-        ax2.text(0.1, 0.5, "\n".join(filter_items), fontsize=10, family="monospace",
-                 verticalalignment="center", transform=ax2.transAxes)
+        ax2.text(
+            0.1,
+            0.5,
+            "\n".join(filter_items),
+            fontsize=10,
+            family="monospace",
+            verticalalignment="center",
+            transform=ax2.transAxes,
+        )
         ax2.set_title("Filter Configuration", fontsize=12, fontweight="bold")
 
         # PID params
@@ -737,18 +825,21 @@ class OutputFormatter:
         if pid_params:
             table_data = []
             for axis_key, params in pid_params.items():
-                table_data.append([
-                    axis_key.upper(),
-                    f"{params.get('P', 0):.3f}",
-                    f"{params.get('I', 0):.3f}",
-                    f"{params.get('D', 0):.4f}",
-                    f"{params.get('FF', 0):.3f}",
-                ])
+                table_data.append(
+                    [
+                        axis_key.upper(),
+                        f"{params.get('P', 0):.3f}",
+                        f"{params.get('I', 0):.3f}",
+                        f"{params.get('D', 0):.4f}",
+                        f"{params.get('FF', 0):.3f}",
+                    ]
+                )
             ax3.axis("off")
             ax3.table(
                 cellText=table_data,
                 colLabels=["Axis", "P", "I", "D", "FF"],
-                loc="center", cellLoc="center",
+                loc="center",
+                cellLoc="center",
             )
             ax3.set_title("Rate PID Parameters", fontsize=12, fontweight="bold")
         else:
@@ -763,8 +854,15 @@ class OutputFormatter:
             f"Total Params: {hw_report.get('total_params', 0)}",
         ]
         ax4.axis("off")
-        ax4.text(0.1, 0.5, "\n".join(sys_items), fontsize=10, family="monospace",
-                 verticalalignment="center", transform=ax4.transAxes)
+        ax4.text(
+            0.1,
+            0.5,
+            "\n".join(sys_items),
+            fontsize=10,
+            family="monospace",
+            verticalalignment="center",
+            transform=ax4.transAxes,
+        )
         ax4.set_title("System Information", fontsize=12, fontweight="bold")
 
         plt.tight_layout()

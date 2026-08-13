@@ -38,7 +38,8 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     for pfx in ["INS_HNTCH_", "INS_HNTC2_"]:
         en = int(params.get(f"{pfx}ENABLE", 0))
         hnf = HarmonicNotchFilter(
-            enable=en, freq=params.get(f"{pfx}FREQ", 80.0),
+            enable=en,
+            freq=params.get(f"{pfx}FREQ", 80.0),
             bandwidth=params.get(f"{pfx}BW", 40.0),
             attenuation=params.get(f"{pfx}ATT", 40.0),
             harmonics=int(params.get(f"{pfx}HMNCS", 3)),
@@ -107,13 +108,13 @@ def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
         if not en:
             continue
         freq_val = params.get(f"{pfx}FREQ", 0.0)
-        bw_val   = params.get(f"{pfx}BW",   0.0)
-        att_val  = params.get(f"{pfx}ATT",  0.0)
-        hmncs    = int(params.get(f"{pfx}HMNCS", 0))
-        opts     = int(params.get(f"{pfx}OPTS",  0))
-        mode_val = int(params.get(f"{pfx}MODE",  0))
-        double   = "Double" if (opts & 1)  else ""
-        triple   = "Triple" if (opts & 16) else ""
+        bw_val = params.get(f"{pfx}BW", 0.0)
+        att_val = params.get(f"{pfx}ATT", 0.0)
+        hmncs = int(params.get(f"{pfx}HMNCS", 0))
+        opts = int(params.get(f"{pfx}OPTS", 0))
+        mode_val = int(params.get(f"{pfx}MODE", 0))
+        double = "Double" if (opts & 1) else ""
+        triple = "Triple" if (opts & 16) else ""
         notch_type = triple or double or "Single"
         lines.append(
             f"  Notch{i + 1}: {freq_val:.0f} Hz, BW={bw_val:.0f}, "

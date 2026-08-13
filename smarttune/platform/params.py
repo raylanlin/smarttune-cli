@@ -25,7 +25,6 @@ from pathlib import Path
 from dataclasses import dataclass, field, fields as dataclass_fields
 from typing import Any, Dict, List, Optional, Tuple
 
-
 _KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge" / "params"
 
 #: validate_detail() status values
@@ -40,9 +39,10 @@ STATUS_UNVERIFIABLE = "unverifiable"
 @dataclass
 class ParamDef:
     """Single parameter definition loaded from knowledge base."""
-    name: str               # platform-specific parameter name, e.g. "ATC_RAT_RLL_P"
-    category: str           # "pid" | "filter" | "mag" | "battery" | ...
-    type: str               # "float" | "int" | "enum" | "bitmask"
+
+    name: str  # platform-specific parameter name, e.g. "ATC_RAT_RLL_P"
+    category: str  # "pid" | "filter" | "mag" | "battery" | ...
+    type: str  # "float" | "int" | "enum" | "bitmask"
     default: Any = None
     min: Optional[float] = None
     max: Optional[float] = None
@@ -84,8 +84,7 @@ class ParamDef:
             elif isinstance(raw, list):
                 # tolerate [{"value": 4, "label": "..."}] shape
                 kwargs[key] = {
-                    str(e.get("value")): str(e.get("label", ""))
-                    for e in raw if isinstance(e, dict)
+                    str(e.get("value")): str(e.get("label", "")) for e in raw if isinstance(e, dict)
                 }
             else:
                 kwargs[key] = {}
@@ -129,6 +128,7 @@ class ParamDef:
 # ---------------------------------------------------------------------------
 # Dict shapes — defined ONCE here so CLI and MCP cannot drift apart
 # ---------------------------------------------------------------------------
+
 
 def to_slim_dict(p: ParamDef) -> Dict[str, Any]:
     """Compact row for listings and search hits (a few hundred bytes).
@@ -453,8 +453,8 @@ class ParamTable:
                     f"enum/bitmask members and no range — cannot verify {value:g}"
                 ),
                 "hint": (
-                    pd.unresolved_ref or
-                    "Regenerate the parameter table with tools/build_param_tables.py "
+                    pd.unresolved_ref
+                    or "Regenerate the parameter table with tools/build_param_tables.py "
                     "(schema_version 2 carries @Values / @Bitmask metadata)"
                 ),
             }

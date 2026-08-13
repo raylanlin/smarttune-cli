@@ -45,7 +45,8 @@ def estimate_delay(u: np.ndarray, y: np.ndarray, max_delay: int = 20) -> int:
     # 互相关（FFT 实现，O(N log N)；旧实现 np.correlate(mode='full')
     # 为 O(N²)，10 万样本日志需秒级开销）
     from scipy import signal as _signal
-    corr = _signal.fftconvolve(y_centered, u_centered[::-1], mode='full')
+
+    corr = _signal.fftconvolve(y_centered, u_centered[::-1], mode="full")
     lags = np.arange(-n + 1, n)
 
     # 找正半轴第一个峰值
@@ -113,14 +114,19 @@ def arx_identify(
         # 数据不足，返回默认模型
         # C14 修复：显式告警 + info 标记 — 默认模型是虚构系统
         _log.warning(
-            "ARX 辨识数据不足（N=%d < %d），返回默认占位模型；"
-            "下游自然频率/阻尼比结果不可信。", N, start_idx + M,
+            "ARX 辨识数据不足（N=%d < %d），返回默认占位模型；" "下游自然频率/阻尼比结果不可信。",
+            N,
+            start_idx + M,
         )
-        return _ret(_FALLBACK_A, _FALLBACK_B, {
-            "is_fallback": True,
-            "fallback_reason": f"insufficient_data (N={N} < {start_idx + M})",
-            "cond": None,
-        })
+        return _ret(
+            _FALLBACK_A,
+            _FALLBACK_B,
+            {
+                "is_fallback": True,
+                "fallback_reason": f"insufficient_data (N={N} < {start_idx + M})",
+                "cond": None,
+            },
+        )
 
     # 构建回归矩阵
     Phi = np.zeros((N - start_idx, na + nb))
@@ -152,7 +158,8 @@ def arx_identify(
         _log.warning(
             "ARX 回归矩阵条件数 %.2e > %.0e，模型参数可能不可信。"
             "建议：增加采集时长、减小阶数（na/nb）、或检查输入是否充分激励。",
-            cond, _ARX_COND_WARN_THRESHOLD,
+            cond,
+            _ARX_COND_WARN_THRESHOLD,
         )
 
     try:
@@ -161,23 +168,31 @@ def arx_identify(
         # 求解失败，返回默认模型
         # C14 修复：显式告警 + info 标记，不再静默吞掉
         _log.warning(
-            "ARX 最小二乘求解失败（%s），返回默认占位模型；"
-            "下游自然频率/阻尼比结果不可信。", exc,
+            "ARX 最小二乘求解失败（%s），返回默认占位模型；" "下游自然频率/阻尼比结果不可信。",
+            exc,
         )
-        return _ret(_FALLBACK_A, _FALLBACK_B, {
-            "is_fallback": True,
-            "fallback_reason": f"lstsq_failed ({exc})",
-            "cond": cond,
-        })
+        return _ret(
+            _FALLBACK_A,
+            _FALLBACK_B,
+            {
+                "is_fallback": True,
+                "fallback_reason": f"lstsq_failed ({exc})",
+                "cond": cond,
+            },
+        )
 
     a = np.concatenate([[1.0], theta[:na]])
-    b = theta[na:na + nb]
+    b = theta[na : na + nb]
 
-    return _ret(a, b, {
-        "is_fallback": False,
-        "fallback_reason": None,
-        "cond": cond,
-    })
+    return _ret(
+        a,
+        b,
+        {
+            "is_fallback": False,
+            "fallback_reason": None,
+            "cond": cond,
+        },
+    )
 
 
 def arx_step_response(
@@ -213,7 +228,7 @@ def arx_step_response(
         N = n_steps
         oversample = 1  # 不插值，直接返回 N 点
     from scipy import interpolate
-    
+
     # 1. 在原始采样率下计算
     y = np.zeros(N)
     u_step = np.ones(N)
@@ -243,11 +258,11 @@ def arx_step_response(
     # 2. 用三次样条插值平滑
     x_coarse = np.arange(N)
     x_fine = np.linspace(0, N - 1, N * oversample)
-    
+
     # 三次样条插值
     cs = interpolate.CubicSpline(x_coarse, y)
     y_fine = cs(x_fine)
-    
+
     # 限制范围（避免插值产生异常值）
     y_fine = np.clip(y_fine, -0.5, 2.0)
 
@@ -302,10 +317,14 @@ def estimate_step_response_arx(
     a, b, arx_info = arx_identify(u, y, na, nb, d, return_info=True)
 
     if arx_info["is_fallback"]:
-        return np.array([0.0]), np.array([0.0]), {
-            "error": f"ARX 辨识失败: {arx_info['fallback_reason']}",
-            "model_is_fallback": True,
-        }
+        return (
+            np.array([0.0]),
+            np.array([0.0]),
+            {
+                "error": f"ARX 辨识失败: {arx_info['fallback_reason']}",
+                "model_is_fallback": True,
+            },
+        )
 
     # 计算阶跃响应（过采样 10 倍使曲线平滑）
     step_resp = arx_step_response(a, b, d, N=N, oversample=10)

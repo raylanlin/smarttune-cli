@@ -40,6 +40,7 @@ _TRUTHY = {"1", "true", "yes", "on"}
 # 清洗 / 编码
 # ---------------------------------------------------------------------------
 
+
 def sanitize(value: Any) -> Any:
     """递归把非有限浮点（NaN/±Inf）替换为 ``None``。
 
@@ -58,19 +59,23 @@ def sanitize(value: Any) -> Any:
 
 def dumps(payload: Any) -> str:
     """编码为严格 JSON 文本（尾随换行，便于逐行管道消费）。"""
-    return json.dumps(
-        sanitize(payload),
-        indent=2,
-        ensure_ascii=False,
-        allow_nan=False,
-        default=str,
-        sort_keys=False,
-    ) + "\n"
+    return (
+        json.dumps(
+            sanitize(payload),
+            indent=2,
+            ensure_ascii=False,
+            allow_nan=False,
+            default=str,
+            sort_keys=False,
+        )
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------
 # 信封
 # ---------------------------------------------------------------------------
+
 
 def _deterministic() -> bool:
     return os.environ.get("SMARTTUNE_DETERMINISTIC", "").lower() in _TRUTHY
@@ -120,6 +125,7 @@ def error_envelope(command: str, exc: BaseException) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 写出
 # ---------------------------------------------------------------------------
+
 
 def emit(envelope: dict[str, Any], output_file: Path | None = None) -> int:
     """写出信封。返回建议的进程退出码（ok=0 / error=1）。"""

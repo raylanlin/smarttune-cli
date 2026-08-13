@@ -63,17 +63,27 @@ def main() -> int:
         return 1
 
     # 量级 sanity
-    check("gyro 形状 (N,3) 且非空", fd.gyro is not None and fd.gyro.ndim == 2 and fd.gyro.shape[1] == 3)
+    check(
+        "gyro 形状 (N,3) 且非空",
+        fd.gyro is not None and fd.gyro.ndim == 2 and fd.gyro.shape[1] == 3,
+    )
     if fd.gyro is not None and len(fd.gyro):
         g_max = float(np.nanmax(np.abs(fd.gyro)))
         check("gyro 量级像 deg/s（峰值 < 2000）", g_max < 2000.0, f"max |gyro| = {g_max:.1f}")
-    check("sample_rate 合理 (50~2000 Hz)", 50.0 <= fd.sample_rate_hz <= 2000.0,
-          f"{fd.sample_rate_hz:.1f} Hz", warn_only=True)
+    check(
+        "sample_rate 合理 (50~2000 Hz)",
+        50.0 <= fd.sample_rate_hz <= 2000.0,
+        f"{fd.sample_rate_hz:.1f} Hz",
+        warn_only=True,
+    )
     check("duration > 5 s", fd.duration_s > 5.0, f"{fd.duration_s:.1f} s", warn_only=True)
     if fd.mag is not None and len(fd.mag):
         mag_norm = float(np.nanmedian(np.linalg.norm(fd.mag, axis=1)))
-        check("mag 模长像 mGauss (150~800)", 150.0 <= mag_norm <= 800.0,
-              f"median |mag| = {mag_norm:.0f}")
+        check(
+            "mag 模长像 mGauss (150~800)",
+            150.0 <= mag_norm <= 800.0,
+            f"median |mag| = {mag_norm:.0f}",
+        )
     else:
         check("mag 数据", True, "无 sensor_mag 主题（样例日志可能未记录）", warn_only=True)
 
@@ -81,24 +91,31 @@ def main() -> int:
     has_plat = any(k.startswith("MC_ROLLRATE") for k in fd.params)
     has_generic = "pid.roll.p" in fd.params
     check("参数表含 MC_*RATE_*", has_plat, warn_only=not has_plat)
-    check("generic key 双写 (pid.roll.p)", has_generic == has_plat,
-          "A2 契约：有平台参数就必须有 generic 镜像")
+    check(
+        "generic key 双写 (pid.roll.p)",
+        has_generic == has_plat,
+        "A2 契约：有平台参数就必须有 generic 镜像",
+    )
 
     # 4/5/6. 分析链路
     from smarttune.services.analysis import run_module
     from smarttune.knowledge import KnowledgeBase
+
     kb = KnowledgeBase(platform="px4")
 
     if fd.pid:
         try:
             pid_res = run_module("pid", adapter, fd, kb=kb)
-            check("PID 分析链路", True,
-                  f"axes={list(getattr(pid_res, 'axes', {}).keys())}")
+            check("PID 分析链路", True, f"axes={list(getattr(pid_res, 'axes', {}).keys())}")
         except Exception as exc:
             check("PID 分析链路", False, str(exc))
     else:
-        check("PID 分析链路", True,
-              "vehicle_rates_setpoint 未记录 → 正常降级（需带 setpoint 的日志）", warn_only=True)
+        check(
+            "PID 分析链路",
+            True,
+            "vehicle_rates_setpoint 未记录 → 正常降级（需带 setpoint 的日志）",
+            warn_only=True,
+        )
 
     try:
         fft_res = run_module("fft", adapter, fd, kb=kb)
@@ -106,12 +123,17 @@ def main() -> int:
         rec_keys = list(recs.keys()) if isinstance(recs, dict) else []
         bad = [k for k in rec_keys if any(s in k for s in (".mode", ".ref", ".hmc", ".att"))]
         check("FFT 分析链路", True)
-        check("FFT 建议为 PX4 语义（无 mode/REF/HMC/ATT 键）", not bad,
-              f"违例键: {bad}" if bad else "")
+        check(
+            "FFT 建议为 PX4 语义（无 mode/REF/HMC/ATT 键）",
+            not bad,
+            f"违例键: {bad}" if bad else "",
+        )
         lvl = fft_res.get("vibration_level") if isinstance(fft_res, dict) else None
-        check("vibration_level 为统一 Assessment 标签",
-              lvl in ("EXCELLENT", "GOOD", "MARGINAL", "POOR", "UNUSABLE", None),
-              f"got {lvl!r}")
+        check(
+            "vibration_level 为统一 Assessment 标签",
+            lvl in ("EXCELLENT", "GOOD", "MARGINAL", "POOR", "UNUSABLE", None),
+            f"got {lvl!r}",
+        )
     except Exception as exc:
         check("FFT 分析链路", False, str(exc))
 

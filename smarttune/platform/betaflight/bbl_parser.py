@@ -46,11 +46,11 @@ FLIGHT_LOG_FIELD_UNSIGNED = 0
 FLIGHT_LOG_FIELD_SIGNED = 1
 
 # 帧类型标识字节
-FRAME_TYPE_I = ord('I')
-FRAME_TYPE_P = ord('P')
-FRAME_TYPE_S = ord('S')  # Slow frame
-FRAME_TYPE_E = ord('E')  # Event frame
-FRAME_TYPE_H = ord('H')  # Header continuation
+FRAME_TYPE_I = ord("I")
+FRAME_TYPE_P = ord("P")
+FRAME_TYPE_S = ord("S")  # Slow frame
+FRAME_TYPE_E = ord("E")  # Event frame
+FRAME_TYPE_H = ord("H")  # Header continuation
 
 # 事件类型
 EVENT_SYNC_BEEP = 0
@@ -60,18 +60,18 @@ EVENT_FLIGHT_MODE = 30
 EVENT_LOG_END = 255
 
 # 预测器类型 — 决定 I-frame 中如何编码原始值
-PREDICTOR_0 = 0             # 无预测，直接编码
-PREDICTOR_PREVIOUS = 1      # 前一帧的值作为预测
-PREDICTOR_STRAIGHT_LINE = 2 # 线性外推
-PREDICTOR_AVERAGE_2 = 3     # 两帧均值
-PREDICTOR_MINTHROTTLE = 4   # 最低油门
-PREDICTOR_MOTOR_0 = 5       # motor[0] 值
-PREDICTOR_INC = 6           # 递增 1
-PREDICTOR_HOME_COORD = 7    # Home GPS 坐标
-PREDICTOR_1500 = 8          # 常量 1500
-PREDICTOR_VBATREF = 9       # 电池参考电压
+PREDICTOR_0 = 0  # 无预测，直接编码
+PREDICTOR_PREVIOUS = 1  # 前一帧的值作为预测
+PREDICTOR_STRAIGHT_LINE = 2  # 线性外推
+PREDICTOR_AVERAGE_2 = 3  # 两帧均值
+PREDICTOR_MINTHROTTLE = 4  # 最低油门
+PREDICTOR_MOTOR_0 = 5  # motor[0] 值
+PREDICTOR_INC = 6  # 递增 1
+PREDICTOR_HOME_COORD = 7  # Home GPS 坐标
+PREDICTOR_1500 = 8  # 常量 1500
+PREDICTOR_VBATREF = 9  # 电池参考电压
 PREDICTOR_LAST_MAIN_FRAME_TIME = 10  # 上一主帧时间
-PREDICTOR_MINMOTOR = 11              # motorOutput[0] (DShot/数字协议最低值)
+PREDICTOR_MINMOTOR = 11  # motorOutput[0] (DShot/数字协议最低值)
 
 # 编码类型 — 决定如何从二进制流中读取值
 ENCODING_SIGNED_VB = 0
@@ -88,9 +88,11 @@ ENCODING_TAG2_3SVARIABLE = 10
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FrameFieldDef:
     """BBL 帧字段定义。"""
+
     name: str
     signed: int = FLIGHT_LOG_FIELD_SIGNED
     predictor: int = PREDICTOR_0
@@ -100,6 +102,7 @@ class FrameFieldDef:
 @dataclass
 class BBLHeader:
     """BBL 文件头解析结果。"""
+
     product: str = ""
     data_version: int = 0
     firmware_type: str = ""
@@ -132,6 +135,7 @@ class BBLHeader:
 @dataclass
 class BBLFrame:
     """一帧解码后的数据。"""
+
     frame_type: str  # 'I', 'P', 'S', 'E'
     values: Dict[str, int]  # 字段名 → 原始值
     time_us: int = 0  # 微秒时间戳
@@ -140,6 +144,7 @@ class BBLFrame:
 @dataclass
 class BBLEvent:
     """事件帧数据。"""
+
     event_type: int
     time_us: int = 0
     data: Dict[str, Any] = field(default_factory=dict)
@@ -148,6 +153,7 @@ class BBLEvent:
 @dataclass
 class BBLLogSegment:
     """单段飞行日志 (一个 BBL 文件可含多段)。"""
+
     header: BBLHeader
     frames: List[BBLFrame] = field(default_factory=list)
     events: List[BBLEvent] = field(default_factory=list)
@@ -156,6 +162,7 @@ class BBLLogSegment:
 # ---------------------------------------------------------------------------
 # Binary stream reader
 # ---------------------------------------------------------------------------
+
 
 class BBLStreamReader:
     """BBL 二进制流读取器 — 封装变长编码解码。"""
@@ -195,7 +202,7 @@ class BBLStreamReader:
     def read_bytes(self, n: int) -> bytes:
         if self._pos + n > self._len:
             raise EOFError("Unexpected end of BBL data")
-        result = self._data[self._pos:self._pos + n]
+        result = self._data[self._pos : self._pos + n]
         self._pos += n
         return result
 
@@ -263,9 +270,12 @@ class BBLStreamReader:
             val1 = (header >> 2) & 0x03
             val2 = header & 0x03
             # Sign-extend 2-bit values
-            if val0 >= 2: val0 -= 4
-            if val1 >= 2: val1 -= 4
-            if val2 >= 2: val2 -= 4
+            if val0 >= 2:
+                val0 -= 4
+            if val1 >= 2:
+                val1 -= 4
+            if val2 >= 2:
+                val2 -= 4
             return [val0, val1, val2]
 
         elif tag == 1:
@@ -276,16 +286,20 @@ class BBLStreamReader:
             val1 = (byte2 >> 4) & 0x0F
             val2 = byte2 & 0x0F
             # Sign-extend 4-bit values
-            if val0 >= 8: val0 -= 16
-            if val1 >= 8: val1 -= 16
-            if val2 >= 8: val2 -= 16
+            if val0 >= 8:
+                val0 -= 16
+            if val1 >= 8:
+                val1 -= 16
+            if val2 >= 8:
+                val2 -= 16
             return [val0, val1, val2]
 
         elif tag == 2:
             # BITS_6: byte1 = ss|AAAAAA, byte2 = val1 (8-bit signed), byte3 = val2 (8-bit signed)
             # BF encoder: (selector << 6) | (val0 & 0x3F)  then  (uint8_t)val1  then  (uint8_t)val2
             val0 = header & 0x3F
-            if val0 >= 32: val0 -= 64  # sign-extend 6-bit
+            if val0 >= 32:
+                val0 -= 64  # sign-extend 6-bit
             byte2 = self.read_byte()
             val1 = byte2 if byte2 < 128 else byte2 - 256
             byte3 = self.read_byte()
@@ -308,20 +322,23 @@ class BBLStreamReader:
                     lo = self.read_byte()
                     hi = self.read_byte()
                     val = lo | (hi << 8)
-                    if val >= 0x8000: val -= 0x10000
+                    if val >= 0x8000:
+                        val -= 0x10000
                 elif field_width == 2:  # 3 bytes LE
                     b0 = self.read_byte()
                     b1 = self.read_byte()
                     b2 = self.read_byte()
                     val = b0 | (b1 << 8) | (b2 << 16)
-                    if val >= 0x800000: val -= 0x1000000
+                    if val >= 0x800000:
+                        val -= 0x1000000
                 else:  # 4 bytes LE
                     b0 = self.read_byte()
                     b1 = self.read_byte()
                     b2 = self.read_byte()
                     b3 = self.read_byte()
                     val = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-                    if val >= 0x80000000: val -= 0x100000000
+                    if val >= 0x80000000:
+                        val -= 0x100000000
                 values.append(val)
             return values
 
@@ -419,9 +436,12 @@ class BBLStreamReader:
             val0 = (header >> 4) & 0x03
             val1 = (header >> 2) & 0x03
             val2 = header & 0x03
-            if val0 >= 2: val0 -= 4
-            if val1 >= 2: val1 -= 4
-            if val2 >= 2: val2 -= 4
+            if val0 >= 2:
+                val0 -= 4
+            if val1 >= 2:
+                val1 -= 4
+            if val2 >= 2:
+                val2 -= 4
             return [val0, val1, val2]
 
         elif tag == 1:
@@ -433,9 +453,12 @@ class BBLStreamReader:
             val1 = ((header & 0x01) << 4) | ((byte2 >> 4) & 0x0F)
             val2 = byte2 & 0x0F
             # Sign extend: 5, 5, 4 bits
-            if val0 >= 16: val0 -= 32
-            if val1 >= 16: val1 -= 32
-            if val2 >= 8: val2 -= 16
+            if val0 >= 16:
+                val0 -= 32
+            if val1 >= 16:
+                val1 -= 32
+            if val2 >= 8:
+                val2 -= 16
             return [val0, val1, val2]
 
         elif tag == 2:
@@ -478,11 +501,11 @@ class BBLStreamReader:
             #   blackboxWrite((selector << 6) | ((values[0] >> 2) & 0x3F));
             #   blackboxWrite(((values[0] & 0x03) << 6) | ((values[1] >> 1) & 0x3F));  -- OR is it (values[1] & 0x3F)?
             #   blackboxWrite(((values[1] & 0x01) << 7) | (values[2] & 0x7F));
-            # That would be: 6+2+6+1+7 = 22, with val0=8, val1=7, val2=7. 
+            # That would be: 6+2+6+1+7 = 22, with val0=8, val1=7, val2=7.
             # I need to just fetch the actual source. For now, let me try the simple approach:
             pass
 
-        # For tag 2 and 3, fall through to generic approach  
+        # For tag 2 and 3, fall through to generic approach
         if tag == 2:
             # Re-extract properly
             # byte1 = (2 << 6) | ((val0 >> 2) & 0x3F)  -> val0_hi6 = header & 0x3F
@@ -492,9 +515,12 @@ class BBLStreamReader:
             val1 = ((byte2 & 0x3F) << 1) | ((byte3 >> 7) & 0x01)
             val2 = byte3 & 0x7F
             # Sign extend
-            if val0 >= 128: val0 -= 256  # 8-bit
-            if val1 >= 64: val1 -= 128   # 7-bit
-            if val2 >= 64: val2 -= 128   # 7-bit
+            if val0 >= 128:
+                val0 -= 256  # 8-bit
+            if val1 >= 64:
+                val1 -= 128  # 7-bit
+            if val2 >= 64:
+                val2 -= 128  # 7-bit
             return [val0, val1, val2]
 
         else:  # tag == 3
@@ -511,20 +537,23 @@ class BBLStreamReader:
                     lo = self.read_byte()
                     hi = self.read_byte()
                     val = lo | (hi << 8)
-                    if val >= 0x8000: val -= 0x10000
+                    if val >= 0x8000:
+                        val -= 0x10000
                 elif field_width == 2:
                     b0 = self.read_byte()
                     b1 = self.read_byte()
                     b2 = self.read_byte()
                     val = b0 | (b1 << 8) | (b2 << 16)
-                    if val >= 0x800000: val -= 0x1000000
+                    if val >= 0x800000:
+                        val -= 0x1000000
                 else:
                     b0 = self.read_byte()
                     b1 = self.read_byte()
                     b2 = self.read_byte()
                     b3 = self.read_byte()
                     val = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-                    if val >= 0x80000000: val -= 0x100000000
+                    if val >= 0x80000000:
+                        val -= 0x100000000
                 values.append(val)
             return values
 
@@ -533,8 +562,7 @@ class BBLStreamReader:
 
         返回帧类型字节，或 None 如果到达末尾。
         """
-        valid_frame_types = {FRAME_TYPE_I, FRAME_TYPE_P, FRAME_TYPE_S,
-                             FRAME_TYPE_E, FRAME_TYPE_H}
+        valid_frame_types = {FRAME_TYPE_I, FRAME_TYPE_P, FRAME_TYPE_S, FRAME_TYPE_E, FRAME_TYPE_H}
         while self._pos < self._len:
             b = self._data[self._pos]
             if b in valid_frame_types:
@@ -547,19 +575,20 @@ class BBLStreamReader:
         start = self._pos
         while self._pos < self._len:
             if self._data[self._pos] == 0x0A:  # \n
-                line = self._data[start:self._pos].decode("ascii", errors="replace")
+                line = self._data[start : self._pos].decode("ascii", errors="replace")
                 self._pos += 1
-                return line.rstrip('\r')
+                return line.rstrip("\r")
             self._pos += 1
         # 到末尾了
         if self._pos > start:
-            return self._data[start:self._pos].decode("ascii", errors="replace").rstrip('\r')
+            return self._data[start : self._pos].decode("ascii", errors="replace").rstrip("\r")
         return None
 
 
 # ---------------------------------------------------------------------------
 # Header parser
 # ---------------------------------------------------------------------------
+
 
 def parse_header(reader: BBLStreamReader) -> BBLHeader:
     """解析 BBL 文件头 — 所有 "H " 开头的文本行。
@@ -586,7 +615,7 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
 
     while reader.has_data():
         # 检查是否还是 H 行
-        if reader.peek_byte() != ord('H'):
+        if reader.peek_byte() != ord("H"):
             break
 
         line = reader.read_line()
@@ -598,10 +627,10 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
             continue
 
         content = line[2:]  # 去掉 "H "
-        if ':' not in content:
+        if ":" not in content:
             continue
 
-        key, _, value = content.partition(':')
+        key, _, value = content.partition(":")
         key = key.strip()
         value = value.strip()
 
@@ -632,8 +661,8 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
                 pass
         elif key == "P interval":
             # 格式: "1/N" 或直接数字
-            if '/' in value:
-                parts = value.split('/')
+            if "/" in value:
+                parts = value.split("/")
                 try:
                     header.p_ratio = int(parts[1])
                 except (ValueError, IndexError):
@@ -645,7 +674,7 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
                     pass
         # 帧字段定义
         elif key == "Field I name":
-            i_field_names = value.split(',')
+            i_field_names = value.split(",")
         elif key == "Field I signed":
             i_field_signed = _parse_int_list(value)
         elif key == "Field I predictor":
@@ -657,7 +686,7 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
         elif key == "Field P encoding":
             p_field_encoding = _parse_int_list(value)
         elif key == "Field S name":
-            s_field_names = value.split(',')
+            s_field_names = value.split(",")
         elif key == "Field S signed":
             s_field_signed = _parse_int_list(value)
         elif key == "Field S predictor":
@@ -709,7 +738,7 @@ def parse_header(reader: BBLStreamReader) -> BBLHeader:
 def _parse_int_list(s: str) -> List[int]:
     """解析逗号分隔的整数列表。"""
     result = []
-    for part in s.split(','):
+    for part in s.split(","):
         part = part.strip()
         if part:
             try:
@@ -723,8 +752,8 @@ def _parse_int_list(s: str) -> List[int]:
 # Frame decoders
 # ---------------------------------------------------------------------------
 
-def _read_field_value(reader: BBLStreamReader, encoding: int,
-                      field_count: int = 1) -> List[int]:
+
+def _read_field_value(reader: BBLStreamReader, encoding: int, field_count: int = 1) -> List[int]:
     """根据编码类型读取一个或多个字段值。
 
     部分编码 (tag8_4S16, tag2_3S32 等) 一次解码多个值。
@@ -751,12 +780,15 @@ def _read_field_value(reader: BBLStreamReader, encoding: int,
         return [reader.read_signed_vb()]
 
 
-def _apply_predictor(predictor: int, raw_value: int,
-                     prev_values: Dict[str, int],
-                     field_name: str,
-                     all_prev: Dict[str, int],
-                     header: BBLHeader,
-                     prev_prev_values: Optional[Dict[str, int]] = None) -> int:
+def _apply_predictor(
+    predictor: int,
+    raw_value: int,
+    prev_values: Dict[str, int],
+    field_name: str,
+    all_prev: Dict[str, int],
+    header: BBLHeader,
+    prev_prev_values: Optional[Dict[str, int]] = None,
+) -> int:
     """根据预测器类型，将原始编码值转换为实际值。
 
     Parameters
@@ -803,9 +835,9 @@ def _apply_predictor(predictor: int, raw_value: int,
     elif predictor == PREDICTOR_MINMOTOR:
         # BF 4.x: motorOutput header gives [low, high] for digital protocols
         motor_output = header.properties.get("motorOutput", "")
-        if ',' in motor_output:
+        if "," in motor_output:
             try:
-                min_motor = int(motor_output.split(',')[0])
+                min_motor = int(motor_output.split(",")[0])
             except ValueError:
                 min_motor = 0
         else:
@@ -815,9 +847,12 @@ def _apply_predictor(predictor: int, raw_value: int,
         return raw_value
 
 
-def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
-                   prev_values: Dict[str, int],
-                   prev_prev_values: Optional[Dict[str, int]] = None) -> Dict[str, int]:
+def decode_i_frame(
+    reader: BBLStreamReader,
+    header: BBLHeader,
+    prev_values: Dict[str, int],
+    prev_prev_values: Optional[Dict[str, int]] = None,
+) -> Dict[str, int]:
     """解码 I-frame (关键帧)。
 
     I-frame 包含所有字段的完整值，使用各字段的 I 编码。
@@ -837,8 +872,8 @@ def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header,
-                        prev_prev_values)
+                        fd.predictor, rv, prev_values, fd.name, values, header, prev_prev_values
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_4S16:
             raw_values = _read_field_value(reader, encoding)
@@ -846,36 +881,41 @@ def decode_i_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header,
-                        prev_prev_values)
+                        fd.predictor, rv, prev_values, fd.name, values, header, prev_prev_values
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_8SVB:
             # 计算连续同编码字段数
             count = 0
-            while i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB:
+            while (
+                i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB
+            ):
                 count += 1
             raw_values = reader.read_tag8_8svb(count)
             for j, rv in enumerate(raw_values):
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, values, header,
-                        prev_prev_values)
+                        fd.predictor, rv, prev_values, fd.name, values, header, prev_prev_values
+                    )
             i += count
         else:
             raw_values = _read_field_value(reader, encoding)
             raw = raw_values[0]
             values[fdef.name] = _apply_predictor(
-                fdef.predictor, raw, prev_values, fdef.name, values, header,
-                prev_prev_values)
+                fdef.predictor, raw, prev_values, fdef.name, values, header, prev_prev_values
+            )
             i += 1
 
     return values
 
 
-def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
-                   prev_values: Dict[str, int],
-                   prev_prev_values: Optional[Dict[str, int]] = None) -> Dict[str, int]:
+def decode_p_frame(
+    reader: BBLStreamReader,
+    header: BBLHeader,
+    prev_values: Dict[str, int],
+    prev_prev_values: Optional[Dict[str, int]] = None,
+) -> Dict[str, int]:
     """解码 P-frame (差值帧)。
 
     P-frame 的值是相对于上一帧 (I 或 P) 的差值。
@@ -894,8 +934,14 @@ def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
-                        prev_prev_values)
+                        fd.predictor,
+                        rv,
+                        prev_values,
+                        fd.name,
+                        prev_values,
+                        header,
+                        prev_prev_values,
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_4S16:
             raw_values = _read_field_value(reader, encoding)
@@ -903,34 +949,49 @@ def decode_p_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
-                        prev_prev_values)
+                        fd.predictor,
+                        rv,
+                        prev_values,
+                        fd.name,
+                        prev_values,
+                        header,
+                        prev_prev_values,
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_8SVB:
             count = 0
-            while i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB:
+            while (
+                i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB
+            ):
                 count += 1
             raw_values = reader.read_tag8_8svb(count)
             for j, rv in enumerate(raw_values):
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_values, fd.name, prev_values, header,
-                        prev_prev_values)
+                        fd.predictor,
+                        rv,
+                        prev_values,
+                        fd.name,
+                        prev_values,
+                        header,
+                        prev_prev_values,
+                    )
             i += count
         else:
             raw_values = _read_field_value(reader, encoding)
             raw = raw_values[0]
             values[fdef.name] = _apply_predictor(
-                fdef.predictor, raw, prev_values, fdef.name, prev_values, header,
-                prev_prev_values)
+                fdef.predictor, raw, prev_values, fdef.name, prev_values, header, prev_prev_values
+            )
             i += 1
 
     return values
 
 
-def decode_s_frame(reader: BBLStreamReader, header: BBLHeader,
-                   prev_slow: Dict[str, int]) -> Dict[str, int]:
+def decode_s_frame(
+    reader: BBLStreamReader, header: BBLHeader, prev_slow: Dict[str, int]
+) -> Dict[str, int]:
     """解码 S-frame (慢帧 — GPS 等低频数据)。"""
     values: Dict[str, int] = {}
     field_defs = header.s_field_defs
@@ -946,7 +1007,8 @@ def decode_s_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header)
+                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_4S16:
             raw_values = _read_field_value(reader, encoding)
@@ -954,24 +1016,29 @@ def decode_s_frame(reader: BBLStreamReader, header: BBLHeader,
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header)
+                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header
+                    )
             i += len(raw_values)
         elif encoding == ENCODING_TAG8_8SVB:
             count = 0
-            while i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB:
+            while (
+                i + count < len(field_defs) and field_defs[i + count].encoding == ENCODING_TAG8_8SVB
+            ):
                 count += 1
             raw_values = reader.read_tag8_8svb(count)
             for j, rv in enumerate(raw_values):
                 if i + j < len(field_defs):
                     fd = field_defs[i + j]
                     values[fd.name] = _apply_predictor(
-                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header)
+                        fd.predictor, rv, prev_slow, fd.name, prev_slow, header
+                    )
             i += count
         else:
             raw_values = _read_field_value(reader, encoding)
             raw = raw_values[0]
             values[fdef.name] = _apply_predictor(
-                fdef.predictor, raw, prev_slow, fdef.name, prev_slow, header)
+                fdef.predictor, raw, prev_slow, fdef.name, prev_slow, header
+            )
             i += 1
 
     return values
@@ -993,7 +1060,7 @@ def decode_e_frame(reader: BBLStreamReader, header: BBLHeader) -> BBLEvent:
         if adj_func > 127:
             # Float adjustment
             raw = reader.read_bytes(4)
-            event.data["value"] = struct.unpack('<f', raw)[0]
+            event.data["value"] = struct.unpack("<f", raw)[0]
         else:
             event.data["value"] = reader.read_signed_vb()
     elif event_type == EVENT_LOGGING_RESUME:
@@ -1033,6 +1100,7 @@ def _has_corrupted_imu_values(values: Dict[str, int]) -> bool:
 # Top-level BBL parser
 # ---------------------------------------------------------------------------
 
+
 def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
     """解析 BBL 二进制数据，返回日志段列表。
 
@@ -1058,7 +1126,7 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
         # 寻找段起始 — "H Product:"
         found = False
         while reader.has_data():
-            if reader.peek_byte() == ord('H'):
+            if reader.peek_byte() == ord("H"):
                 # 可能是 header 行
                 save_pos = reader.pos
                 line = reader.read_line()
@@ -1095,10 +1163,10 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
 
         while reader.has_data() and frame_count < max_frames:
             # 检查是否遇到新段的头
-            if reader.peek_byte() == ord('H'):
+            if reader.peek_byte() == ord("H"):
                 # 只有 "H " (H 后跟空格) 才是真正的 header 行
                 # 0x48 也可能出现在帧数据中，不能仅凭 peek 就 continue
-                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(' '):
+                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(" "):
                     save_pos = reader.pos
                     line_peek = reader.read_line()
                     if line_peek and "H Product:" in line_peek:
@@ -1136,7 +1204,8 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                             logger.warning(
                                 "BBL: %d consecutive corrupted frames at frame %d, "
                                 "stopping segment parse",
-                                corrupt_frame_count, frame_count,
+                                corrupt_frame_count,
+                                frame_count,
                             )
                             break
                         # Skip this corrupted frame, don't add to segment
@@ -1145,7 +1214,7 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                         corrupt_frame_count = 0  # Reset on valid frame
 
                     frame = BBLFrame(
-                        frame_type='I',
+                        frame_type="I",
                         values=values,
                         time_us=cur_iter,
                     )
@@ -1161,7 +1230,7 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
                     prev_prev_values = prev_values.copy()
                     prev_values = values.copy()
                     frame = BBLFrame(
-                        frame_type='P',
+                        frame_type="P",
                         values=values,
                         time_us=values.get("loopIteration", 0),
                     )
@@ -1203,6 +1272,7 @@ def parse_bbl(data: bytes, max_segments: int = 1) -> List[BBLLogSegment]:
 # Columnar (memory-efficient) parser
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BBLColumnarSegment:
     """Memory-efficient columnar segment: NumPy arrays instead of per-frame dicts.
@@ -1211,10 +1281,11 @@ class BBLColumnarSegment:
     This avoids ~1 KB of Python dict/object overhead per frame, saving ~300 MB
     on a typical 300K-frame log.
     """
+
     header: BBLHeader
-    field_names: List[str]              # ordered field name list
-    columns: Dict[str, np.ndarray]      # field_name → np.int64[n_frames]
-    frame_types: np.ndarray             # np.uint8[n_frames], ord('I') or ord('P')
+    field_names: List[str]  # ordered field name list
+    columns: Dict[str, np.ndarray]  # field_name → np.int64[n_frames]
+    frame_types: np.ndarray  # np.uint8[n_frames], ord('I') or ord('P')
     n_frames: int = 0
     events: List[BBLEvent] = field(default_factory=list)
 
@@ -1228,24 +1299,24 @@ class BBLColumnarSegment:
 
     @property
     def i_frame_count(self) -> int:
-        return int(np.sum(self.frame_types[:self.n_frames] == FRAME_TYPE_I))
+        return int(np.sum(self.frame_types[: self.n_frames] == FRAME_TYPE_I))
 
     @property
     def p_frame_count(self) -> int:
-        return int(np.sum(self.frame_types[:self.n_frames] == FRAME_TYPE_P))
+        return int(np.sum(self.frame_types[: self.n_frames] == FRAME_TYPE_P))
 
 
-def _grow_arrays(columns: Dict[str, np.ndarray],
-                 frame_types: np.ndarray,
-                 new_capacity: int) -> np.ndarray:
+def _grow_arrays(
+    columns: Dict[str, np.ndarray], frame_types: np.ndarray, new_capacity: int
+) -> np.ndarray:
     """Double the capacity of all column arrays. Returns new frame_types."""
     for name in columns:
         old = columns[name]
         new = np.zeros(new_capacity, dtype=old.dtype)
-        new[:len(old)] = old
+        new[: len(old)] = old
         columns[name] = new
     new_ft = np.zeros(new_capacity, dtype=np.uint8)
-    new_ft[:len(frame_types)] = frame_types
+    new_ft[: len(frame_types)] = frame_types
     return new_ft
 
 
@@ -1275,7 +1346,7 @@ def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSe
         # Find segment start — "H Product:"
         found = False
         while reader.has_data():
-            if reader.peek_byte() == ord('H'):
+            if reader.peek_byte() == ord("H"):
                 save_pos = reader.pos
                 line = reader.read_line()
                 if line and "H Product:" in line:
@@ -1298,8 +1369,7 @@ def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSe
         field_names = [f.name for f in header.i_field_defs]
         initial_capacity = 8192  # will grow × 2 as needed
         columns: Dict[str, np.ndarray] = {
-            name: np.zeros(initial_capacity, dtype=np.int64)
-            for name in field_names
+            name: np.zeros(initial_capacity, dtype=np.int64) for name in field_names
         }
         frame_types = np.zeros(initial_capacity, dtype=np.uint8)
         capacity = initial_capacity
@@ -1316,8 +1386,8 @@ def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSe
 
         while reader.has_data() and n_frames < max_frames:
             # Check for new segment header
-            if reader.peek_byte() == ord('H'):
-                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(' '):
+            if reader.peek_byte() == ord("H"):
+                if reader.has_data(2) and reader._data[reader.pos + 1] == ord(" "):
                     save_pos = reader.pos
                     line_peek = reader.read_line()
                     if line_peek and "H Product:" in line_peek:
@@ -1339,7 +1409,8 @@ def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSe
                             logger.warning(
                                 "BBL: %d consecutive corrupted frames at frame %d, "
                                 "stopping segment parse",
-                                corrupt_frame_count, n_frames,
+                                corrupt_frame_count,
+                                n_frames,
                             )
                             break
                         continue
@@ -1397,9 +1468,7 @@ def parse_bbl_columnar(data: bytes, max_segments: int = 1) -> List[BBLColumnarSe
                     break
 
         # Trim to actual size
-        trimmed_columns = {
-            name: arr[:n_frames].copy() for name, arr in columns.items()
-        }
+        trimmed_columns = {name: arr[:n_frames].copy() for name, arr in columns.items()}
         trimmed_ft = frame_types[:n_frames].copy()
         # Free the oversized arrays
         del columns, frame_types
@@ -1426,14 +1495,14 @@ BF_MODE_FLAGS = {
     0: "ARM",
     1: "ANGLE",
     2: "HORIZON",
-    3: "MAG",         # not used in modern BF
+    3: "MAG",  # not used in modern BF
     5: "HEADFREE",
     6: "HEADADJ",
     10: "GPS_HOME",
     11: "GPS_HOLD",
     12: "PASSTHRU",
     15: "FAILSAFE",
-    19: "AIR",         # Airmode
+    19: "AIR",  # Airmode
     28: "3D",
     36: "TURTLE",
 }

@@ -65,6 +65,7 @@ SCHEMA_VERSION = 2
 # shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _today() -> str:
     return _dt.date.today().isoformat()
 
@@ -78,7 +79,7 @@ def _num(value: Any) -> float | None:
         return None
     if f != f or f in (float("inf"), float("-inf")):
         return None
-    return int(f) if f.is_integer() and abs(f) < 2 ** 53 else f
+    return int(f) if f.is_integer() and abs(f) < 2**53 else f
 
 
 def _slug(text: str) -> str:
@@ -203,8 +204,14 @@ def build_ardupilot(pdef_path: Path) -> dict[str, Any]:
         if kept:
             groups.append({"name": group, "count": kept})
 
-    vehicle = next((k for k in raw if k in
-                    ("Copter", "Plane", "Rover", "Sub", "Tracker", "Blimp", "AP_Periph")), "")
+    vehicle = next(
+        (
+            k
+            for k in raw
+            if k in ("Copter", "Plane", "Rover", "Sub", "Tracker", "Blimp", "AP_Periph")
+        ),
+        "",
+    )
     return _envelope(
         "ArduPilot",
         {
@@ -267,8 +274,11 @@ def build_px4(json_path: Path) -> dict[str, Any]:
             "group": group,
             "category": _first_rule(name, _PX4_RULES) or _slug(group) or "misc",
             "display_name": (meta.get("shortDesc") or name).strip(),
-            "type": "enum" if values else ("bitmask" if bitmask else
-                                           ("float" if meta.get("type") == "Float" else "int")),
+            "type": (
+                "enum"
+                if values
+                else ("bitmask" if bitmask else ("float" if meta.get("type") == "Float" else "int"))
+            ),
             "default": meta.get("default"),
             "min": _num(meta.get("min")),
             "max": _num(meta.get("max")),
@@ -281,11 +291,13 @@ def build_px4(json_path: Path) -> dict[str, Any]:
             "description": str(meta.get("longDesc") or meta.get("shortDesc") or "").strip(),
         }
         if values:
-            entry["values"] = {str(v.get("value")): str(v.get("description", "")).strip()
-                               for v in values}
+            entry["values"] = {
+                str(v.get("value")): str(v.get("description", "")).strip() for v in values
+            }
         if bitmask:
-            entry["bitmask"] = {str(b.get("index")): str(b.get("description", "")).strip()
-                                for b in bitmask}
+            entry["bitmask"] = {
+                str(b.get("index")): str(b.get("description", "")).strip() for b in bitmask
+            }
         params.append(entry)
 
     return _envelope(
@@ -313,25 +325,39 @@ def build_px4(json_path: Path) -> dict[str, Any]:
 _BF_RULES: list[tuple[str, str]] = [
     (r"^(p|i|d|f)_(roll|pitch|yaw)$", "pid"),
     (r"^d_(max|min)_", "pid"),
-    (r"^(anti_gravity|iterm_|feedforward_|tpa_|abs_control|d_max|thrust_linear|pidsum|"
-     r"pid_at_min_throttle|simplified_(pid|d))", "pid"),
-    (r"^(gyro_lpf|gyro_notch|gyro_hardware_lpf|dterm_lpf|dterm_notch|dyn_notch|rpm_filter|"
-     r"acc_lpf|yaw_lowpass|simplified_(gyro|dterm)_filter)", "filter"),
+    (
+        r"^(anti_gravity|iterm_|feedforward_|tpa_|abs_control|d_max|thrust_linear|pidsum|"
+        r"pid_at_min_throttle|simplified_(pid|d))",
+        "pid",
+    ),
+    (
+        r"^(gyro_lpf|gyro_notch|gyro_hardware_lpf|dterm_lpf|dterm_notch|dyn_notch|rpm_filter|"
+        r"acc_lpf|yaw_lowpass|simplified_(gyro|dterm)_filter)",
+        "filter",
+    ),
     (r"^(roll|pitch|yaw)_(rc_rate|srate|expo)$", "rate"),
     (r"^(rates_type|thr_mid|thr_expo|throttle_limit)", "rate"),
     (r"^(vbat_|ibata|current_meter|battery_|voltage_meter|amperage_meter|bat_)", "battery"),
     (r"^(mag_|align_mag|compass)", "mag"),
-    (r"^(acc_|align_acc|gyro_[1-8]_|gyro_offset|gyro_enable|gyro_calib|gyro_to_use|"
-     r"gyro_overflow|gyro_hardware)", "imu"),
+    (
+        r"^(acc_|align_acc|gyro_[1-8]_|gyro_offset|gyro_enable|gyro_calib|gyro_to_use|"
+        r"gyro_overflow|gyro_hardware)",
+        "imu",
+    ),
     (r"^(motor_|mixer_|dshot_|min_throttle|max_throttle|idle_)", "motor"),
-    (r"^(rc_|rx_|serialrx|rssi|min_check|max_check|deadband|yaw_deadband|srxl2|spektrum|"
-     r"sbus|crsf|fport|msp_override|switch_arming|throttle_correction)", "rc"),
+    (
+        r"^(rc_|rx_|serialrx|rssi|min_check|max_check|deadband|yaw_deadband|srxl2|spektrum|"
+        r"sbus|crsf|fport|msp_override|switch_arming|throttle_correction)",
+        "rc",
+    ),
     (r"^(osd|displayport|max7456|cms)", "osd"),
     (r"^(blackbox|debug)", "logging"),
     (r"^(gps|imu_|nav_|pos_hold|alt_hold)", "navigation"),
     (r"^(failsafe|arming|small_angle|runaway|crash_recovery|gyro_cal_on_first_arm)", "safety"),
-    (r"^(vtx|led|beeper|buzzer|telemetry|frsky|smartport|ibus|jetiexbus|mavlink|hott|ltm)",
-     "peripheral"),
+    (
+        r"^(vtx|led|beeper|buzzer|telemetry|frsky|smartport|ibus|jetiexbus|mavlink|hott|ltm)",
+        "peripheral",
+    ),
 ]
 
 _BF_PG_CATEGORY = {
@@ -377,9 +403,14 @@ _BF_BOUND_HEADERS = [
 ]
 
 _C_LIMITS = {
-    "UINT8_MAX": 255, "INT8_MIN": -128, "INT8_MAX": 127,
-    "UINT16_MAX": 65535, "INT16_MIN": -32768, "INT16_MAX": 32767,
-    "UINT32_MAX": 4294967295, "XYZ_AXIS_COUNT": 3,
+    "UINT8_MAX": 255,
+    "INT8_MIN": -128,
+    "INT8_MAX": 127,
+    "UINT16_MAX": 65535,
+    "INT16_MIN": -32768,
+    "INT16_MAX": 32767,
+    "UINT32_MAX": 4294967295,
+    "XYZ_AXIS_COUNT": 3,
 }
 
 
@@ -392,7 +423,8 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
     settings_c = (bf_root / "src/main/cli/settings.c").read_text(encoding="utf-8", errors="replace")
     settings_h = (bf_root / "src/main/cli/settings.h").read_text(encoding="utf-8", errors="replace")
     names_h = (bf_root / "src/main/fc/parameter_names.h").read_text(
-        encoding="utf-8", errors="replace")
+        encoding="utf-8", errors="replace"
+    )
 
     header_text = ""
     for rel in _BF_BOUND_HEADERS:
@@ -403,9 +435,11 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
     # numeric #defines (two passes: literals, then one level of indirection)
     defines: dict[str, int] = dict(_C_LIMITS)
     literal_re = re.compile(
-        r"^\s*#define\s+([A-Z][A-Z0-9_]*)\s+\(?\s*(-?\d+)\s*\)?\s*(?://.*)?$", re.M)
+        r"^\s*#define\s+([A-Z][A-Z0-9_]*)\s+\(?\s*(-?\d+)\s*\)?\s*(?://.*)?$", re.M
+    )
     alias_re = re.compile(
-        r"^\s*#define\s+([A-Z][A-Z0-9_]*)\s+\(?\s*([A-Z][A-Z0-9_]*)\s*\)?\s*$", re.M)
+        r"^\s*#define\s+([A-Z][A-Z0-9_]*)\s+\(?\s*([A-Z][A-Z0-9_]*)\s*\)?\s*$", re.M
+    )
     for text in (header_text, settings_c, settings_h):
         for m in literal_re.finditer(text):
             defines.setdefault(m.group(1), int(m.group(2)))
@@ -431,7 +465,8 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
     tables: dict[str, list[str]] = {}
     for m in re.finditer(
         r"(?:static\s+)?const\s+char\s*\*\s*const\s+(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\}\s*;",
-        settings_c, re.S,
+        settings_c,
+        re.S,
     ):
         tables[m.group(1)] = re.findall(r'"([^"]*)"', m.group(2))
 
@@ -443,8 +478,9 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
         if candidate in tables:
             table_map[table_id] = candidate
             continue
-        loose = next((k for k in tables
-                      if k.lower().rstrip("s") == candidate.lower().rstrip("s")), None)
+        loose = next(
+            (k for k in tables if k.lower().rstrip("s") == candidate.lower().rstrip("s")), None
+        )
         if loose:
             table_map[table_id] = loose
 
@@ -473,12 +509,13 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
         values = bitmask = None
         unresolved_ref = ""
 
-        mm = (re.search(r"\.config\.minmaxUnsigned\s*=\s*\{([^}]*)\}", line)
-              or re.search(r"\.config\.minmax\s*=\s*\{([^}]*)\}", line))
+        mm = re.search(r"\.config\.minmaxUnsigned\s*=\s*\{([^}]*)\}", line) or re.search(
+            r"\.config\.minmax\s*=\s*\{([^}]*)\}", line
+        )
         if mm:
             body = mm.group(1)
             split = body.rfind(",")
-            minimum, maximum = resolve(body[:split]), resolve(body[split + 1:])
+            minimum, maximum = resolve(body[:split]), resolve(body[split + 1 :])
             if minimum is None or maximum is None:
                 unresolved_bounds += 1
 
@@ -494,8 +531,9 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
             if array:
                 values = {str(i): label for i, label in enumerate(array)}
             else:
-                unresolved_ref = (f"{lookup.group(1)} (lookup table defined outside "
-                                  f"cli/settings.c)")
+                unresolved_ref = (
+                    f"{lookup.group(1)} (lookup table defined outside " f"cli/settings.c)"
+                )
 
         bitpos = re.search(r"\.config\.bitpos\s*=\s*([^,]+),", line)
         if bitpos:
@@ -520,8 +558,12 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
         entry: dict[str, Any] = {
             "name": name,
             "group": pg[3:] if pg.startswith("PG_") else pg,
-            "category": (_first_rule(name, _BF_RULES) or _BF_PG_CATEGORY.get(pg)
-                         or _slug(pg.replace("PG_", "")).replace("_config", "") or "misc"),
+            "category": (
+                _first_rule(name, _BF_RULES)
+                or _BF_PG_CATEGORY.get(pg)
+                or _slug(pg.replace("PG_", "")).replace("_config", "")
+                or "misc"
+            ),
             "display_name": name.replace("_", " "),
             "type": ptype,
             # settings.c has no defaults — they live in each PG's pgResetTemplate
@@ -529,8 +571,11 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
             "min": minimum,
             "max": maximum,
             "increment": None,
-            "unit": "Hz" if re.search(r"_hz$|_hz_|_freq", name) else
-                    ("ms" if re.search(r"_ms$|_us$", name) else ""),
+            "unit": (
+                "Hz"
+                if re.search(r"_hz$|_hz_|_freq", name)
+                else ("ms" if re.search(r"_ms$|_us$", name) else "")
+            ),
             "user": "",
             "reboot_required": False,
             "read_only": False,
@@ -546,8 +591,11 @@ def build_betaflight(bf_root: Path, curated: dict[str, str] | None = None) -> di
             entry["unresolved_ref"] = unresolved_ref
         params.append(entry)
 
-    print(f"  betaflight: {len(params)} params, {unresolved_bounds} bounds left null "
-          f"(macro not resolvable from headers)", file=sys.stderr)
+    print(
+        f"  betaflight: {len(params)} params, {unresolved_bounds} bounds left null "
+        f"(macro not resolvable from headers)",
+        file=sys.stderr,
+    )
 
     return _envelope(
         "Betaflight",
@@ -578,13 +626,17 @@ def _existing_descriptions(platform: str) -> dict[str, str]:
     if not path.is_file():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {p["name"]: p["description"] for p in data.get("parameters", [])
-            if p.get("name") and p.get("description")}
+    return {
+        p["name"]: p["description"]
+        for p in data.get("parameters", [])
+        if p.get("name") and p.get("description")
+    }
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _check() -> int:
     from smarttune.platform.param_lint import lint_table
@@ -594,9 +646,11 @@ def _check() -> int:
     for platform in ParamTable.available_platforms():
         report = lint_table(ParamTable.from_knowledge(platform))
         status = "OK " if report["ok"] else "FAIL"
-        print(f"{status} {report['platform']:<12} schema v{report['schema_version']} "
-              f"{report['parameter_count']:>5} params  "
-              f"{report['error_count']} errors  {report['warning_count']} warnings")
+        print(
+            f"{status} {report['platform']:<12} schema v{report['schema_version']} "
+            f"{report['parameter_count']:>5} params  "
+            f"{report['error_count']} errors  {report['warning_count']} warnings"
+        )
         for check, count in sorted(report["by_check"].items(), key=lambda kv: -kv[1]):
             print(f"       {check:<28} {count}")
         failed = failed or not report["ok"]
@@ -604,11 +658,16 @@ def _check() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("platform", nargs="?", choices=["ardupilot", "px4", "betaflight"])
-    parser.add_argument("source", nargs="?", type=Path,
-                        help="apm.pdef.json / parameters.json / betaflight checkout root")
+    parser.add_argument(
+        "source",
+        nargs="?",
+        type=Path,
+        help="apm.pdef.json / parameters.json / betaflight checkout root",
+    )
     parser.add_argument("--out", type=Path, default=None, help="output path")
     parser.add_argument("--stdout", action="store_true", help="print instead of writing")
     parser.add_argument("--check", action="store_true", help="lint the tables already in the repo")
@@ -636,8 +695,10 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or (KNOWLEDGE_DIR / f"{args.platform}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
-    print(f"wrote {out} — {table['parameter_count']} parameters, "
-          f"{table['group_count']} groups", file=sys.stderr)
+    print(
+        f"wrote {out} — {table['parameter_count']} parameters, " f"{table['group_count']} groups",
+        file=sys.stderr,
+    )
     print("now run: python tools/build_param_tables.py --check", file=sys.stderr)
     return 0
 

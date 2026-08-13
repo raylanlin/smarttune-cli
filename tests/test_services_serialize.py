@@ -128,6 +128,7 @@ class TestSerializeParamRecommendation:
     def test_with_adapter(self):
         """With an adapter, platform param name should be included."""
         from smarttune.platform.registry import get_adapter
+
         adapter = get_adapter("ardupilot")
         rec = ParamRecommendation(
             param=ParamRef("pid.roll.p", axis="roll"),

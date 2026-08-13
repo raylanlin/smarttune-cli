@@ -49,11 +49,13 @@ def _make_full_flight_data(duration_s=10.0, sample_rate=250.0):
     # Mag data
     n_mag = int(duration_s * 50)
     t_mag = np.linspace(0, duration_s, n_mag)
-    mag = np.column_stack([
-        200 + np.random.randn(n_mag) * 5,
-        -100 + np.random.randn(n_mag) * 5,
-        300 + np.random.randn(n_mag) * 5,
-    ])
+    mag = np.column_stack(
+        [
+            200 + np.random.randn(n_mag) * 5,
+            -100 + np.random.randn(n_mag) * 5,
+            300 + np.random.randn(n_mag) * 5,
+        ]
+    )
 
     return FlightData(
         platform="ardupilot",
@@ -67,15 +69,29 @@ def _make_full_flight_data(duration_s=10.0, sample_rate=250.0):
         mag=mag,
         mag_timestamp_s=t_mag,
         params={
-            "ATC_RAT_RLL_P": 0.135, "ATC_RAT_RLL_I": 0.135, "ATC_RAT_RLL_D": 0.0036,
-            "ATC_RAT_PIT_P": 0.135, "ATC_RAT_PIT_I": 0.135, "ATC_RAT_PIT_D": 0.0036,
-            "ATC_RAT_YAW_P": 0.180, "ATC_RAT_YAW_I": 0.018, "ATC_RAT_YAW_D": 0.0,
+            "ATC_RAT_RLL_P": 0.135,
+            "ATC_RAT_RLL_I": 0.135,
+            "ATC_RAT_RLL_D": 0.0036,
+            "ATC_RAT_PIT_P": 0.135,
+            "ATC_RAT_PIT_I": 0.135,
+            "ATC_RAT_PIT_D": 0.0036,
+            "ATC_RAT_YAW_P": 0.180,
+            "ATC_RAT_YAW_I": 0.018,
+            "ATC_RAT_YAW_D": 0.0,
             "INS_GYRO_FILTER": 20.0,
-            "INS_HNTCH_ENABLE": 1, "INS_HNTCH_FREQ": 80.0,
-            "INS_HNTCH_BW": 40.0, "INS_HNTCH_ATT": 40.0,
-            "pid.roll.p": 0.135, "pid.roll.i": 0.135, "pid.roll.d": 0.0036,
-            "pid.pitch.p": 0.135, "pid.pitch.i": 0.135, "pid.pitch.d": 0.0036,
-            "pid.yaw.p": 0.180, "pid.yaw.i": 0.018, "pid.yaw.d": 0.0,
+            "INS_HNTCH_ENABLE": 1,
+            "INS_HNTCH_FREQ": 80.0,
+            "INS_HNTCH_BW": 40.0,
+            "INS_HNTCH_ATT": 40.0,
+            "pid.roll.p": 0.135,
+            "pid.roll.i": 0.135,
+            "pid.roll.d": 0.0036,
+            "pid.pitch.p": 0.135,
+            "pid.pitch.i": 0.135,
+            "pid.pitch.d": 0.0036,
+            "pid.yaw.p": 0.180,
+            "pid.yaw.i": 0.018,
+            "pid.yaw.d": 0.0,
         },
     )
 
@@ -85,6 +101,7 @@ class TestFullPipeline:
 
     def test_pid_analysis(self):
         from smarttune.analyzers.pid_reviewer import PIDReviewer
+
         fd = _make_full_flight_data()
         reviewer = PIDReviewer()
         result = reviewer.analyze(fd)
@@ -95,6 +112,7 @@ class TestFullPipeline:
 
     def test_fft_analysis(self):
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+
         fd = _make_full_flight_data()
         analyzer = FFTAnalyzer()
         result = analyzer.analyze(fd)
@@ -107,6 +125,7 @@ class TestFullPipeline:
 
     def test_sysid_analysis(self):
         from smarttune.analyzers.sysid_analyzer import SysIDAnalyzer
+
         fd = _make_full_flight_data()
         analyzer = SysIDAnalyzer(na=2, nb=1)
         results = analyzer.analyze(fd, axis="roll")
@@ -128,8 +147,9 @@ class TestFullPipeline:
             adapter = get_adapter(platform_name)
             for rec in result.axes["roll"].recommendations:
                 native = adapter.map_param_to_platform(rec.param.generic_name)
-                assert native != rec.param.generic_name or platform_name != "ardupilot", \
-                    f"Failed to translate {rec.param.generic_name} for {platform_name}"
+                assert (
+                    native != rec.param.generic_name or platform_name != "ardupilot"
+                ), f"Failed to translate {rec.param.generic_name} for {platform_name}"
 
     def test_knowledge_layers(self):
         """Verify knowledge base loads common + platform rules."""

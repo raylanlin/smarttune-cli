@@ -104,6 +104,7 @@ INTENSITY_TABLE = [
 # 插值
 # ---------------------------------------------------------------------------
 
+
 def _interpolate_table(
     table: list,
     latitude_deg: float,
@@ -138,6 +139,7 @@ def _interpolate_table(
 # ---------------------------------------------------------------------------
 # 公开 API
 # ---------------------------------------------------------------------------
+
 
 def get_earth_field(
     lat_deg: float,
@@ -178,16 +180,16 @@ def get_earth_field(
     inc_rad = math.radians(inclination)
 
     cos_inc = math.cos(inc_rad)
-    bx = intensity_mg * cos_inc * math.cos(dec_rad)   # North
-    by = intensity_mg * cos_inc * math.sin(dec_rad)   # East
-    bz = intensity_mg * math.sin(inc_rad)             # Down
+    bx = intensity_mg * cos_inc * math.cos(dec_rad)  # North
+    by = intensity_mg * cos_inc * math.sin(dec_rad)  # East
+    bz = intensity_mg * math.sin(inc_rad)  # Down
 
     return {
         "declination": declination,
         "inclination": inclination,
-        "intensity": intensity,            # Gauss
+        "intensity": intensity,  # Gauss
         "intensity_mgauss": intensity_mg,  # mGauss
-        "vector": [bx, by, bz],            # NED mGauss
+        "vector": [bx, by, bz],  # NED mGauss
     }
 
 

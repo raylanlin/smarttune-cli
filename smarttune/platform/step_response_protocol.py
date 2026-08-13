@@ -87,13 +87,16 @@ class ComputeStepResponseForAxisFn(Protocol):
 # filter_transfer Protocol
 # ---------------------------------------------------------------------------
 
+
 class DeriveFiltersFromParamsFn(Protocol):
     """derive_filters_from_params 函数签名约束。"""
+
     def __call__(self, params: dict) -> dict: ...
 
 
 class ComputeFilterResponseFn(Protocol):
     """compute_filter_response 函数签名约束。"""
+
     def __call__(
         self,
         freqs: np.ndarray,
@@ -106,6 +109,7 @@ class ComputeFilterResponseFn(Protocol):
 
 class BuildFilterDisplayLinesFn(Protocol):
     """build_filter_display_lines 函数签名约束。"""
+
     def __call__(self, params: dict) -> list: ...  # List[str]
 
 
@@ -113,8 +117,10 @@ class BuildFilterDisplayLinesFn(Protocol):
 # fft_analyzer Protocol
 # ---------------------------------------------------------------------------
 
+
 class FormatNotchRecommendationFn(Protocol):
     """format_notch_recommendation 函数签名约束。"""
+
     def __call__(self, generic_rec: dict) -> dict: ...
 
 
@@ -122,8 +128,8 @@ class FormatNotchRecommendationFn(Protocol):
 # hardware_report Protocol
 # ---------------------------------------------------------------------------
 
+
 class GenerateHardwareReportFn(Protocol):
     """generate_hardware_report 函数签名约束。"""
-    def __call__(
-        self, params: dict, flight_data: Optional[object] = None
-    ) -> dict: ...
+
+    def __call__(self, params: dict, flight_data: Optional[object] = None) -> dict: ...

@@ -10,21 +10,23 @@ import numpy as np
 import pytest
 
 
-def _simulate_second_order(desired: np.ndarray, sample_rate: float,
-                           wn: float, zeta: float) -> np.ndarray:
+def _simulate_second_order(
+    desired: np.ndarray, sample_rate: float, wn: float, zeta: float
+) -> np.ndarray:
     """用双线性离散化的二阶系统 G(s)=wn²/(s²+2ζwn·s+wn²) 滤 desired。"""
     from scipy import signal
-    num = [wn ** 2]
-    den = [1.0, 2.0 * zeta * wn, wn ** 2]
+
+    num = [wn**2]
+    den = [1.0, 2.0 * zeta * wn, wn**2]
     dt = 1.0 / sample_rate
     sysd = signal.cont2discrete((num, den), dt, method="bilinear")
     b, a = np.squeeze(sysd[0]), np.squeeze(sysd[1])
     return signal.lfilter(b, a, desired)
 
 
-def _make_excitation(sample_rate: float, duration_s: float,
-                     n_steps: int = 12, amp: float = 120.0,
-                     seed: int = 42) -> np.ndarray:
+def _make_excitation(
+    sample_rate: float, duration_s: float, n_steps: int = 12, amp: float = 120.0, seed: int = 42
+) -> np.ndarray:
     """生成多段阶跃 + 宽带扰动的激励信号。
 
     纯阶跃序列的频谱按 1/f² 衰减，中高频能量极低，Wiener 反卷积的
@@ -39,9 +41,9 @@ def _make_excitation(sample_rate: float, duration_s: float,
     seg = n // n_steps
     for i in range(n_steps):
         level = rng.uniform(-amp, amp)
-        if abs(level) < 40.0:   # 保证超过 minInput=20 且留余量
+        if abs(level) < 40.0:  # 保证超过 minInput=20 且留余量
             level = 40.0 * np.sign(level or 1.0)
-        sig[i * seg:(i + 1) * seg] = level
+        sig[i * seg : (i + 1) * seg] = level
     # 宽带扰动：打杆手抖 + 控制器残差的近似
     sig = sig + rng.normal(0.0, 0.08 * amp, n)
     return sig
@@ -51,11 +53,13 @@ def _make_excitation(sample_rate: float, duration_s: float,
 # Betaflight 阶跃响应 (PTstepcalc 对齐实现)
 # ---------------------------------------------------------------------------
 
+
 class TestBetaflightStepResponse:
     SAMPLE_RATE = 1000.0  # BF 典型 1kHz
 
     def _run(self, wn=60.0, zeta=0.9, duration=20.0):
         from smarttune.platform.betaflight.step_response_fft import estimate_step_response
+
         desired = _make_excitation(self.SAMPLE_RATE, duration)
         actual = _simulate_second_order(desired, self.SAMPLE_RATE, wn, zeta)
         return estimate_step_response(desired, actual, self.SAMPLE_RATE)
@@ -92,13 +96,14 @@ class TestBetaflightStepResponse:
         over = self._run(wn=50.0, zeta=1.2)
         peak_under = float(np.max(np.asarray(under["step_response"])))
         peak_over = float(np.max(np.asarray(over["step_response"])))
-        assert peak_under > peak_over * 1.04, (
-            f"欠阻尼峰值 {peak_under:.3f} 未明显高于过阻尼 {peak_over:.3f}"
-        )
+        assert (
+            peak_under > peak_over * 1.04
+        ), f"欠阻尼峰值 {peak_under:.3f} 未明显高于过阻尼 {peak_over:.3f}"
 
     def test_weak_excitation_rejected(self):
         """峰值低于 minInput=20 deg/s 的信号应没有有效段。"""
         from smarttune.platform.betaflight.step_response_fft import estimate_step_response
+
         rng = np.random.default_rng(3)
         n = int(self.SAMPLE_RATE * 10.0)
         desired = np.clip(rng.normal(0.0, 4.0, n), -15.0, 15.0)
@@ -111,11 +116,13 @@ class TestBetaflightStepResponse:
 # ArduPilot 阶跃响应 (WebTools 对齐实现)
 # ---------------------------------------------------------------------------
 
+
 class TestArdupilotStepResponse:
     SAMPLE_RATE = 400.0  # AP RATE 典型 400Hz
 
     def test_steady_state_near_unity(self):
         from smarttune.platform.ardupilot.step_response_fft import estimate_step_response
+
         desired = _make_excitation(self.SAMPLE_RATE, 30.0)
         actual = _simulate_second_order(desired, self.SAMPLE_RATE, 50.0, 0.9)
         result = estimate_step_response(desired, actual, self.SAMPLE_RATE)
@@ -131,6 +138,7 @@ class TestArdupilotStepResponse:
 # ARX 系统辨识
 # ---------------------------------------------------------------------------
 
+
 class TestARXIdentification:
     def test_recovers_natural_frequency(self):
         """ARX 应从合成数据恢复 ωn（±30% 容差 — 离散化与噪声影响）。"""
@@ -145,19 +153,19 @@ class TestARXIdentification:
         assert not info["is_fallback"]
 
         wn_est, zeta_est, _dc = discrete_to_second_order(a, b, 1.0 / sample_rate)
-        assert abs(wn_est - wn_true) / wn_true < 0.30, \
-            f"ωn 估计 {wn_est:.1f} vs 真值 {wn_true}"
+        assert abs(wn_est - wn_true) / wn_true < 0.30, f"ωn 估计 {wn_est:.1f} vs 真值 {wn_true}"
 
     def test_insufficient_data_flags_fallback(self):
         from smarttune.analyzers.arx_model import arx_identify
-        a, b, info = arx_identify(np.array([1.0, 2.0]), np.array([1.0, 2.0]),
-                                  return_info=True)
+
+        a, b, info = arx_identify(np.array([1.0, 2.0]), np.array([1.0, 2.0]), return_info=True)
         assert info["is_fallback"]
         assert "insufficient" in info["fallback_reason"]
 
     def test_backward_compatible_two_tuple(self):
         """不传 return_info 时仍返回 (a, b) 二元组。"""
         from smarttune.analyzers.arx_model import arx_identify
+
         sample_rate = 100.0
         desired = _make_excitation(sample_rate, 30.0)
         actual = _simulate_second_order(desired, sample_rate, 25.0, 0.5)
@@ -168,6 +176,7 @@ class TestARXIdentification:
 # ---------------------------------------------------------------------------
 # MAGFit 补偿模型
 # ---------------------------------------------------------------------------
+
 
 class TestCompassCompensation:
     def test_symmetric_soft_iron_roundtrip(self):
@@ -183,11 +192,13 @@ class TestCompassCompensation:
         ofs = np.array([120.0, -80.0, 45.0])
         dia = np.array([0.98, 1.03, 0.95])
         odi = np.array([0.02, -0.015, 0.01])
-        M = np.array([
-            [dia[0], odi[0], odi[1]],
-            [odi[0], dia[1], odi[2]],
-            [odi[1], odi[2], dia[2]],
-        ])
+        M = np.array(
+            [
+                [dia[0], odi[0], odi[1]],
+                [odi[0], dia[1], odi[2]],
+                [odi[1], odi[2], dia[2]],
+            ]
+        )
         # 由 truth 反推 raw：truth = M·(raw+ofs)  →  raw = M⁻¹·truth − ofs
         raw = (np.linalg.inv(M) @ truth.T).T - ofs
 
@@ -200,6 +211,7 @@ class TestCompassCompensation:
 # ---------------------------------------------------------------------------
 # PID 建议安全 cap
 # ---------------------------------------------------------------------------
+
 
 class TestRecommendationCap:
     def test_factor_clipped_to_25_percent(self):

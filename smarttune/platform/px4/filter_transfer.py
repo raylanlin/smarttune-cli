@@ -33,7 +33,7 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
         IMU_DGYRO_CUTOFF   — D 导数 LPF 截止（Hz）
     """
     lpf_hz = float(params.get("IMU_GYRO_CUTOFF", 0.0))
-    d_lpf  = float(params.get("IMU_DGYRO_CUTOFF", 0.0))
+    d_lpf = float(params.get("IMU_DGYRO_CUTOFF", 0.0))
 
     parts = []
     if lpf_hz > 0:
@@ -82,7 +82,7 @@ def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
     """构建 CLI 显示用的 PX4 滤波器配置文本行。"""
     lines: List[str] = []
     lpf_hz = params.get("IMU_GYRO_CUTOFF", 0.0)
-    d_lpf  = params.get("IMU_DGYRO_CUTOFF", 0.0)
+    d_lpf = params.get("IMU_DGYRO_CUTOFF", 0.0)
     if lpf_hz > 0:
         lines.append(f"  Gyro LPF: IMU_GYRO_CUTOFF = {lpf_hz:.0f} Hz")
     if d_lpf > 0:

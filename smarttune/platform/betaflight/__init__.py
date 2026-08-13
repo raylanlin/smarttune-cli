@@ -18,8 +18,11 @@ from smarttune.platform.base import PlatformAdapter
 from smarttune.platform.registry import register
 from smarttune.models.flight_data import AxisPIDSignal, FlightData, ModeChange
 from smarttune.errors import (
-    LogFileNotFoundError, LogFileCorruptError, ParseError,
-    InsufficientPIDDataError, SmartTuneError,
+    LogFileNotFoundError,
+    LogFileCorruptError,
+    ParseError,
+    InsufficientPIDDataError,
+    SmartTuneError,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,51 +34,57 @@ logger = logging.getLogger(__name__)
 
 _PARAM_MAP_TO_PLATFORM = {
     # PID gains (BF 4.5+ parameter names)
-    "pid.roll.p":    "p_roll",
-    "pid.roll.i":    "i_roll",
-    "pid.roll.d":    "d_roll",
-    "pid.roll.ff":   "f_roll",
-    "pid.pitch.p":   "p_pitch",
-    "pid.pitch.i":   "i_pitch",
-    "pid.pitch.d":   "d_pitch",
-    "pid.pitch.ff":  "f_pitch",
-    "pid.yaw.p":     "p_yaw",
-    "pid.yaw.i":     "i_yaw",
-    "pid.yaw.d":     "d_yaw",
-    "pid.yaw.ff":    "f_yaw",
+    "pid.roll.p": "p_roll",
+    "pid.roll.i": "i_roll",
+    "pid.roll.d": "d_roll",
+    "pid.roll.ff": "f_roll",
+    "pid.pitch.p": "p_pitch",
+    "pid.pitch.i": "i_pitch",
+    "pid.pitch.d": "d_pitch",
+    "pid.pitch.ff": "f_pitch",
+    "pid.yaw.p": "p_yaw",
+    "pid.yaw.i": "i_yaw",
+    "pid.yaw.d": "d_yaw",
+    "pid.yaw.ff": "f_yaw",
     # BF-specific (BF 4.5+ renamed d_min → d_max)
-    "pid.roll.d_min":    "d_max_roll",
-    "pid.pitch.d_min":   "d_max_pitch",
-    "pid.yaw.d_min":     "d_max_yaw",
-    "pid.anti_gravity":  "anti_gravity_gain",
+    "pid.roll.d_min": "d_max_roll",
+    "pid.pitch.d_min": "d_max_pitch",
+    "pid.yaw.d_min": "d_max_yaw",
+    "pid.anti_gravity": "anti_gravity_gain",
     "pid.feedforward_trans": "feedforward_transition",
-    "pid.iterm_relax":   "iterm_relax_cutoff",
+    "pid.iterm_relax": "iterm_relax_cutoff",
     # Filters (BF 4.5+ naming: gyro_lowpass_hz → gyro_lpf1_static_hz)
-    "filter.gyro_lpf":      "gyro_lpf1_static_hz",
-    "filter.gyro_lpf2":     "gyro_lpf2_static_hz",
-    "filter.dterm_lpf":     "dterm_lpf1_static_hz",
-    "filter.dterm_lpf2":    "dterm_lpf2_static_hz",
-    "filter.notch1.freq":   "gyro_notch1_hz",
-    "filter.notch1.bw":     "gyro_notch1_cutoff",
-    "filter.notch2.freq":   "gyro_notch2_hz",
-    "filter.notch2.bw":     "gyro_notch2_cutoff",
+    "filter.gyro_lpf": "gyro_lpf1_static_hz",
+    "filter.gyro_lpf2": "gyro_lpf2_static_hz",
+    "filter.dterm_lpf": "dterm_lpf1_static_hz",
+    "filter.dterm_lpf2": "dterm_lpf2_static_hz",
+    "filter.notch1.freq": "gyro_notch1_hz",
+    "filter.notch1.bw": "gyro_notch1_cutoff",
+    "filter.notch2.freq": "gyro_notch2_hz",
+    "filter.notch2.bw": "gyro_notch2_cutoff",
     # Dynamic notch / RPM filter
     "filter.dyn_notch_count": "dyn_notch_count",
-    "filter.dyn_notch_q":    "dyn_notch_q",
-    "filter.dyn_notch_min":  "dyn_notch_min_hz",
-    "filter.dyn_notch_max":  "dyn_notch_max_hz",
-    "filter.rpm_harmonics":  "rpm_filter_harmonics",
-    "filter.rpm_min":        "rpm_filter_min_hz",
+    "filter.dyn_notch_q": "dyn_notch_q",
+    "filter.dyn_notch_min": "dyn_notch_min_hz",
+    "filter.dyn_notch_max": "dyn_notch_max_hz",
+    "filter.rpm_harmonics": "rpm_filter_harmonics",
+    "filter.rpm_min": "rpm_filter_min_hz",
 }
 
 # Old-format fallback names (for reading logs with older BF firmware)
 _PARAM_MAP_TO_PLATFORM_LEGACY = {
-    "pid.roll.p": "pid_roll_p", "pid.roll.i": "pid_roll_i",
-    "pid.roll.d": "pid_roll_d", "pid.roll.ff": "pid_roll_f",
-    "pid.pitch.p": "pid_pitch_p", "pid.pitch.i": "pid_pitch_i",
-    "pid.pitch.d": "pid_pitch_d", "pid.pitch.ff": "pid_pitch_f",
-    "pid.yaw.p": "pid_yaw_p", "pid.yaw.i": "pid_yaw_i",
-    "pid.yaw.d": "pid_yaw_d", "pid.yaw.ff": "pid_yaw_f",
+    "pid.roll.p": "pid_roll_p",
+    "pid.roll.i": "pid_roll_i",
+    "pid.roll.d": "pid_roll_d",
+    "pid.roll.ff": "pid_roll_f",
+    "pid.pitch.p": "pid_pitch_p",
+    "pid.pitch.i": "pid_pitch_i",
+    "pid.pitch.d": "pid_pitch_d",
+    "pid.pitch.ff": "pid_pitch_f",
+    "pid.yaw.p": "pid_yaw_p",
+    "pid.yaw.i": "pid_yaw_i",
+    "pid.yaw.d": "pid_yaw_d",
+    "pid.yaw.ff": "pid_yaw_f",
     "filter.gyro_lpf": "gyro_lowpass_hz",
     "filter.gyro_lpf2": "gyro_lowpass2_hz",
     "filter.dterm_lpf": "dterm_lowpass_hz",
@@ -108,32 +117,48 @@ _BBL_MAGIC = b"H Product:Blackbox"
 # ---------------------------------------------------------------------------
 
 _GYRO_FIELD_NAMES = {
-    "roll":  ["gyroADC[0]", "gyroADC_0", "gyroData[0]"],
+    "roll": ["gyroADC[0]", "gyroADC_0", "gyroData[0]"],
     "pitch": ["gyroADC[1]", "gyroADC_1", "gyroData[1]"],
-    "yaw":   ["gyroADC[2]", "gyroADC_2", "gyroData[2]"],
+    "yaw": ["gyroADC[2]", "gyroADC_2", "gyroData[2]"],
 }
 
 _SETPOINT_FIELD_NAMES = {
-    "roll":  ["setpoint[0]", "rcCommand[0]"],
+    "roll": ["setpoint[0]", "rcCommand[0]"],
     "pitch": ["setpoint[1]", "rcCommand[1]"],
-    "yaw":   ["setpoint[2]", "rcCommand[2]"],
+    "yaw": ["setpoint[2]", "rcCommand[2]"],
 }
 
 _PID_P_FIELDS = {
-    "roll": ["axisP[0]"], "pitch": ["axisP[1]"], "yaw": ["axisP[2]"],
+    "roll": ["axisP[0]"],
+    "pitch": ["axisP[1]"],
+    "yaw": ["axisP[2]"],
 }
 _PID_I_FIELDS = {
-    "roll": ["axisI[0]"], "pitch": ["axisI[1]"], "yaw": ["axisI[2]"],
+    "roll": ["axisI[0]"],
+    "pitch": ["axisI[1]"],
+    "yaw": ["axisI[2]"],
 }
 _PID_D_FIELDS = {
-    "roll": ["axisD[0]"], "pitch": ["axisD[1]"], "yaw": ["axisD[2]"],
+    "roll": ["axisD[0]"],
+    "pitch": ["axisD[1]"],
+    "yaw": ["axisD[2]"],
 }
 _PID_F_FIELDS = {
-    "roll": ["axisF[0]"], "pitch": ["axisF[1]"], "yaw": ["axisF[2]"],
+    "roll": ["axisF[0]"],
+    "pitch": ["axisF[1]"],
+    "yaw": ["axisF[2]"],
 }
 
-_MOTOR_FIELDS = ["motor[0]", "motor[1]", "motor[2]", "motor[3]",
-                 "motor[4]", "motor[5]", "motor[6]", "motor[7]"]
+_MOTOR_FIELDS = [
+    "motor[0]",
+    "motor[1]",
+    "motor[2]",
+    "motor[3]",
+    "motor[4]",
+    "motor[5]",
+    "motor[6]",
+    "motor[7]",
+]
 
 _ACCEL_FIELDS = {
     "x": ["accSmooth[0]", "accData[0]"],
@@ -189,7 +214,9 @@ def _sanitize_signal(arr: np.ndarray, max_abs: float = 2000.0) -> np.ndarray:
 
     logger.debug(
         "Sanitized %d outlier samples (%.2f%%) from signal (max_abs=%.0f)",
-        n_bad, n_bad / len(arr) * 100, max_abs,
+        n_bad,
+        n_bad / len(arr) * 100,
+        max_abs,
     )
     return out
 
@@ -197,6 +224,7 @@ def _sanitize_signal(arr: np.ndarray, max_abs: float = 2000.0) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # BetaflightAdapter
 # ---------------------------------------------------------------------------
+
 
 @register
 class BetaflightAdapter(PlatformAdapter):
@@ -251,9 +279,12 @@ class BetaflightAdapter(PlatformAdapter):
             填充了 BF 日志数据的统一飞行数据结构
         """
         from smarttune.platform.betaflight.bbl_parser import (
-            parse_bbl_columnar, get_primary_mode,
-            EVENT_FLIGHT_MODE, BBLColumnarSegment,
-            FRAME_TYPE_I, FRAME_TYPE_P,
+            parse_bbl_columnar,
+            get_primary_mode,
+            EVENT_FLIGHT_MODE,
+            BBLColumnarSegment,
+            FRAME_TYPE_I,
+            FRAME_TYPE_P,
         )
 
         if not path.is_file():
@@ -353,9 +384,9 @@ class BetaflightAdapter(PlatformAdapter):
 
         # Account for P interval
         p_interval_str = header.properties.get("P interval", "")
-        if '/' in p_interval_str:
+        if "/" in p_interval_str:
             try:
-                parts = p_interval_str.split('/')
+                parts = p_interval_str.split("/")
                 p_num = int(parts[0])
                 p_denom = int(parts[1])
                 if p_denom > 0 and p_num > 0:
@@ -375,7 +406,9 @@ class BetaflightAdapter(PlatformAdapter):
 
         # ── Helper to get a column as float64 ──────────
         def _col_f64(name: str) -> Optional[np.ndarray]:
-            arr = merged_columns.get(name)  # noqa: F821  # closure over parse()'s local; del'd only after use
+            arr = merged_columns.get(  # noqa: F821  # closure over parse()'s local; del'd only after use
+                name
+            )
             if arr is not None:
                 return arr.astype(np.float64)
             return None
@@ -396,7 +429,7 @@ class BetaflightAdapter(PlatformAdapter):
             rate_limit = 2000.0
             try:
                 rl_str = header.properties.get("rate_limits", "1998,1998,1998")
-                rl_vals = [int(x) for x in rl_str.split(',')]
+                rl_vals = [int(x) for x in rl_str.split(",")]
                 axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}[axis]
                 if axis_idx < len(rl_vals):
                     rate_limit = float(rl_vals[axis_idx]) * 1.1
@@ -467,8 +500,7 @@ class BetaflightAdapter(PlatformAdapter):
             maxthrottle = params.get("maxthrottle", 2000)
             throttle_range = maxthrottle - minthrottle
             if throttle_range > 0:
-                motor_output = np.clip(
-                    (motor_raw - minthrottle) / throttle_range, 0.0, 1.0)
+                motor_output = np.clip((motor_raw - minthrottle) / throttle_range, 0.0, 1.0)
             else:
                 motor_output = motor_raw
             del motor_raw
@@ -485,11 +517,13 @@ class BetaflightAdapter(PlatformAdapter):
                 flags = event.data.get("flags", 0)
                 raw_mode = get_primary_mode(flags)
                 unified = _MODE_MAP.get(raw_mode, raw_mode.lower())
-                mode_changes.append(ModeChange(
-                    timestamp_s=0.0,
-                    mode_name=unified,
-                    raw_mode=raw_mode,
-                ))
+                mode_changes.append(
+                    ModeChange(
+                        timestamp_s=0.0,
+                        mode_name=unified,
+                        raw_mode=raw_mode,
+                    )
+                )
 
         # ── 组装 FlightData ─────────────────────────
         duration_s = float(timestamps_s[-1]) if len(timestamps_s) > 1 else 0.0
@@ -546,4 +580,5 @@ class BetaflightAdapter(PlatformAdapter):
 
     def param_table(self):
         from smarttune.platform.params import ParamTable
+
         return ParamTable.from_knowledge("betaflight")

@@ -15,6 +15,7 @@ import numpy as np
 # Synthetic BBL file builder
 # ---------------------------------------------------------------------------
 
+
 class BBLBuilder:
     """构建合成 BBL 二进制文件用于测试。
 
@@ -151,7 +152,7 @@ class BBLBuilder:
         i_interval = 32
 
         for frame_idx in range(n_frames):
-            is_i_frame = (frame_idx % i_interval == 0)
+            is_i_frame = frame_idx % i_interval == 0
 
             # 生成此帧的值
             t = frame_idx * looptime_us  # 微秒时间
@@ -177,18 +178,26 @@ class BBLBuilder:
                 # I terms
                 values += [gyro_r // 10, gyro_p // 10, gyro_y // 10]
                 # D terms
-                values += [int(gyro_amplitude * 0.1 * np.cos(angle * 3)),
-                           int(gyro_amplitude * 0.1 * np.cos(angle * 2)),
-                           int(gyro_amplitude * 0.05 * np.cos(angle * 5))]
+                values += [
+                    int(gyro_amplitude * 0.1 * np.cos(angle * 3)),
+                    int(gyro_amplitude * 0.1 * np.cos(angle * 2)),
+                    int(gyro_amplitude * 0.05 * np.cos(angle * 5)),
+                ]
                 # F terms (feedforward)
-                values += [sp_r // 5 if include_setpoint else 0,
-                           sp_p // 5 if include_setpoint else 0,
-                           sp_y // 5 if include_setpoint else 0]
+                values += [
+                    sp_r // 5 if include_setpoint else 0,
+                    sp_p // 5 if include_setpoint else 0,
+                    sp_y // 5 if include_setpoint else 0,
+                ]
 
             if include_motors:
                 base_motor = 1500
-                values += [base_motor + gyro_r, base_motor - gyro_r,
-                           base_motor + gyro_p, base_motor - gyro_p]
+                values += [
+                    base_motor + gyro_r,
+                    base_motor - gyro_r,
+                    base_motor + gyro_p,
+                    base_motor - gyro_p,
+                ]
 
             if include_accel:
                 values += [0, 0, 512]  # ~1g on Z axis
@@ -256,11 +265,13 @@ class BBLBuilder:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestBBLStreamReader(unittest.TestCase):
     """测试 BBL 二进制流读取器。"""
 
     def test_unsigned_vb_single_byte(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         # 值 0-127 用 1 字节编码
         reader = BBLStreamReader(bytes([0x00]))
         self.assertEqual(reader.read_unsigned_vb(), 0)
@@ -270,6 +281,7 @@ class TestBBLStreamReader(unittest.TestCase):
 
     def test_unsigned_vb_multi_byte(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         # 128 = 0x80 0x01 (low 7 bits = 0, next byte = 1)
         reader = BBLStreamReader(bytes([0x80, 0x01]))
         self.assertEqual(reader.read_unsigned_vb(), 128)
@@ -280,6 +292,7 @@ class TestBBLStreamReader(unittest.TestCase):
 
     def test_signed_vb_positive(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         # ZigZag: 1 → 2 → unsigned_vb(2)
         reader = BBLStreamReader(bytes([0x02]))
         self.assertEqual(reader.read_signed_vb(), 1)
@@ -290,6 +303,7 @@ class TestBBLStreamReader(unittest.TestCase):
 
     def test_signed_vb_negative(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         # -1 → 1 → unsigned_vb(1)
         reader = BBLStreamReader(bytes([0x01]))
         self.assertEqual(reader.read_signed_vb(), -1)
@@ -300,11 +314,13 @@ class TestBBLStreamReader(unittest.TestCase):
 
     def test_signed_vb_zero(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         reader = BBLStreamReader(bytes([0x00]))
         self.assertEqual(reader.read_signed_vb(), 0)
 
     def test_read_line(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader
+
         reader = BBLStreamReader(b"H Product:Blackbox\nH Data version:2\n")
         self.assertEqual(reader.read_line(), "H Product:Blackbox")
         self.assertEqual(reader.read_line(), "H Data version:2")
@@ -334,6 +350,7 @@ class TestBBLHeaderParsing(unittest.TestCase):
 
     def test_parse_header_basic(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader, parse_header
+
         reader = BBLStreamReader(self._make_header_data())
         header = parse_header(reader)
 
@@ -348,12 +365,15 @@ class TestBBLHeaderParsing(unittest.TestCase):
 
     def test_parse_field_definitions(self):
         from smarttune.platform.betaflight.bbl_parser import BBLStreamReader, parse_header
+
         reader = BBLStreamReader(self._make_header_data())
         header = parse_header(reader)
 
         self.assertEqual(len(header.i_field_defs), 5)
-        self.assertEqual(header.field_names_i,
-                         ["loopIteration", "time", "gyroADC[0]", "gyroADC[1]", "gyroADC[2]"])
+        self.assertEqual(
+            header.field_names_i,
+            ["loopIteration", "time", "gyroADC[0]", "gyroADC[1]", "gyroADC[2]"],
+        )
         self.assertEqual(header.i_field_defs[0].signed, 0)  # loopIteration unsigned
         self.assertEqual(header.i_field_defs[2].signed, 1)  # gyroADC[0] signed
 
@@ -363,7 +383,9 @@ class TestBBLFrameDecoding(unittest.TestCase):
 
     def test_decode_i_frame_simple(self):
         from smarttune.platform.betaflight.bbl_parser import (
-            BBLStreamReader, parse_header, decode_i_frame,
+            BBLStreamReader,
+            parse_header,
+            decode_i_frame,
         )
 
         # 构建一个简单的 header + I-frame
@@ -386,9 +408,9 @@ class TestBBLFrameDecoding(unittest.TestCase):
         # time=1000 (unsigned_vb)
         # gyroADC[0]=42 (signed_vb, zigzag: 84=0x54)
         frame_data = bytearray()
-        frame_data.extend(BBLBuilder._encode_unsigned_vb(0))     # loopIteration=0
+        frame_data.extend(BBLBuilder._encode_unsigned_vb(0))  # loopIteration=0
         frame_data.extend(BBLBuilder._encode_unsigned_vb(1000))  # time=1000
-        frame_data.extend(BBLBuilder._encode_signed_vb(42))      # gyroADC[0]=42
+        frame_data.extend(BBLBuilder._encode_signed_vb(42))  # gyroADC[0]=42
 
         reader2 = BBLStreamReader(bytes(frame_data))
         values = decode_i_frame(reader2, header, {})
@@ -399,7 +421,9 @@ class TestBBLFrameDecoding(unittest.TestCase):
 
     def test_decode_p_frame_with_predictor_previous(self):
         from smarttune.platform.betaflight.bbl_parser import (
-            BBLStreamReader, parse_header, decode_p_frame,
+            BBLStreamReader,
+            parse_header,
+            decode_p_frame,
         )
 
         header_text = (
@@ -421,16 +445,16 @@ class TestBBLFrameDecoding(unittest.TestCase):
         # P-frame: 差值 = [1, 250, -3]
         # PREDICTOR_PREVIOUS: 实际值 = prev + delta
         frame_data = bytearray()
-        frame_data.extend(BBLBuilder._encode_signed_vb(1))    # delta loopIteration=+1
+        frame_data.extend(BBLBuilder._encode_signed_vb(1))  # delta loopIteration=+1
         frame_data.extend(BBLBuilder._encode_signed_vb(250))  # delta time=+250
-        frame_data.extend(BBLBuilder._encode_signed_vb(-3))   # delta gyro=-3
+        frame_data.extend(BBLBuilder._encode_signed_vb(-3))  # delta gyro=-3
 
         reader2 = BBLStreamReader(bytes(frame_data))
         values = decode_p_frame(reader2, header, prev)
 
-        self.assertEqual(values["loopIteration"], 11)   # 10 + 1
-        self.assertEqual(values["time"], 1250)           # 1000 + 250
-        self.assertEqual(values["gyroADC[0]"], 39)       # 42 + (-3)
+        self.assertEqual(values["loopIteration"], 11)  # 10 + 1
+        self.assertEqual(values["time"], 1250)  # 1000 + 250
+        self.assertEqual(values["gyroADC[0]"], 39)  # 42 + (-3)
 
 
 class TestBBLFullParse(unittest.TestCase):
@@ -542,8 +566,7 @@ class TestBetaflightAdapterParse(unittest.TestCase):
         from smarttune.platform.betaflight import BetaflightAdapter
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=200,
-                                              include_pid_terms=True)
+            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=200, include_pid_terms=True)
             adapter = BetaflightAdapter()
             fd = adapter.parse(path)
 
@@ -569,16 +592,17 @@ class TestBetaflightAdapterParse(unittest.TestCase):
         from smarttune.platform.betaflight import BetaflightAdapter
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=100,
-                                              include_accel=True)
+            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=100, include_accel=True)
             adapter = BetaflightAdapter()
             fd = adapter.parse(path)
 
             self.assertIsNotNone(fd.accel)
             # accSmooth[2] = 512 → 应转换为 ~9.8 m/s²
             z_accel = fd.accel[:, 2]
-            self.assertTrue(np.allclose(z_accel, 9.80665, atol=0.1),
-                            f"Z accel should be ~9.8, got {z_accel[0]:.2f}")
+            self.assertTrue(
+                np.allclose(z_accel, 9.80665, atol=0.1),
+                f"Z accel should be ~9.8, got {z_accel[0]:.2f}",
+            )
 
     def test_parse_file_not_found(self):
         from smarttune.platform.betaflight import BetaflightAdapter
@@ -631,8 +655,7 @@ class TestBetaflightAdapterParse(unittest.TestCase):
         from smarttune.platform.betaflight import BetaflightAdapter
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=100,
-                                              include_mode_event=True)
+            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=100, include_mode_event=True)
             adapter = BetaflightAdapter()
             fd = adapter.parse(path)
 
@@ -647,8 +670,7 @@ class TestBetaflightAdapterParse(unittest.TestCase):
         from smarttune.platform.betaflight import BetaflightAdapter
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=500,
-                                              include_accel=True)
+            path = self._write_synthetic_bbl(Path(tmpdir), n_frames=500, include_accel=True)
             adapter = BetaflightAdapter()
             fd = adapter.parse(path)
 
@@ -688,30 +710,36 @@ class TestBBLFlightModeDecode(unittest.TestCase):
 
     def test_acro_mode(self):
         from smarttune.platform.betaflight.bbl_parser import get_primary_mode
+
         # ARM only (bit 0) → ACRO
         self.assertEqual(get_primary_mode(0x01), "ACRO")
 
     def test_angle_mode(self):
         from smarttune.platform.betaflight.bbl_parser import get_primary_mode
+
         # ARM + ANGLE (bit 0 + bit 1) → ANGLE
         self.assertEqual(get_primary_mode(0x03), "ANGLE")
 
     def test_horizon_mode(self):
         from smarttune.platform.betaflight.bbl_parser import get_primary_mode
+
         # ARM + HORIZON (bit 0 + bit 2) → HORIZON
         self.assertEqual(get_primary_mode(0x05), "HORIZON")
 
     def test_failsafe(self):
         from smarttune.platform.betaflight.bbl_parser import get_primary_mode
+
         # ARM + FAILSAFE (bit 0 + bit 15)
         self.assertEqual(get_primary_mode(0x01 | (1 << 15)), "FAILSAFE")
 
     def test_disarmed(self):
         from smarttune.platform.betaflight.bbl_parser import get_primary_mode
+
         self.assertEqual(get_primary_mode(0x00), "DISARMED")
 
     def test_decode_flight_modes_multiple(self):
         from smarttune.platform.betaflight.bbl_parser import decode_flight_modes
+
         # ARM + AIRMODE (bit 0 + bit 19)
         modes = decode_flight_modes(0x01 | (1 << 19))
         self.assertIn("ARM", modes)

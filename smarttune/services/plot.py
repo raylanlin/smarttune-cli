@@ -24,9 +24,11 @@ logger = logging.getLogger(__name__)
 def _check_matplotlib():
     """Import matplotlib with Agg backend; return (plt, np) or raise ImportError."""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+
     return plt, np
 
 
@@ -42,6 +44,7 @@ def _fig_to_base64(fig) -> str:
 # ---------------------------------------------------------------------------
 # PID step response plot
 # ---------------------------------------------------------------------------
+
 
 def generate_pid_plot(
     pid_result,  # PIDAnalysisResult dataclass
@@ -71,9 +74,15 @@ def generate_pid_plot(
         for axis_name, ax_result in pid_result.axes.items():
             axes_data[axis_name] = {
                 "fft_step": ax_result.fft_step,
-                "assessment": ax_result.assessment.value if hasattr(ax_result.assessment, "value") else str(ax_result.assessment),
+                "assessment": (
+                    ax_result.assessment.value
+                    if hasattr(ax_result.assessment, "value")
+                    else str(ax_result.assessment)
+                ),
                 "step_count": ax_result.step_count,
-                "metrics": ax_result.metrics.to_dict() if hasattr(ax_result.metrics, "to_dict") else {},
+                "metrics": (
+                    ax_result.metrics.to_dict() if hasattr(ax_result.metrics, "to_dict") else {}
+                ),
             }
     elif isinstance(pid_result, dict):
         # Serialized dict format
@@ -97,8 +106,16 @@ def generate_pid_plot(
         step_resp = fft_step.get("step_response", [])
 
         if not time_s or not step_resp:
-            ax.text(0.5, 0.5, "No FFT step response data", ha="center", va="center",
-                    transform=ax.transAxes, fontsize=11, color="#888888")
+            ax.text(
+                0.5,
+                0.5,
+                "No FFT step response data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=11,
+                color="#888888",
+            )
             ax.set_title(f"{axis_name.capitalize()} Step Response ({assessment})")
             continue
 
@@ -132,10 +149,20 @@ def generate_pid_plot(
             info_parts.append(f"Settle: {metrics['settling_time_ms']:.0f}ms")
         if info_parts:
             info_text = "  |  ".join(info_parts)
-            ax.text(0.02, 0.95, info_text, transform=ax.transAxes,
-                    fontsize=8, verticalalignment="top",
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white" if theme == "light" else "#333333",
-                              alpha=0.8, edgecolor="#cccccc"))
+            ax.text(
+                0.02,
+                0.95,
+                info_text,
+                transform=ax.transAxes,
+                fontsize=8,
+                verticalalignment="top",
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="white" if theme == "light" else "#333333",
+                    alpha=0.8,
+                    edgecolor="#cccccc",
+                ),
+            )
 
         max_time_ms = max(t) if len(t) > 0 else 500
         ax.set_xlim(0, max(500, min(2000, max_time_ms * 1.1)))
@@ -160,6 +187,7 @@ def generate_pid_plot(
 # ---------------------------------------------------------------------------
 # FFT spectrum plot
 # ---------------------------------------------------------------------------
+
 
 def generate_fft_plot(
     fft_result: Dict[str, Any],
@@ -201,10 +229,16 @@ def generate_fft_plot(
 
         if mags.size > 0:
             sorted_mag = np.sort(mags)
-            noise_floor = float(np.mean(sorted_mag[:max(1, mags.size // 5)]))
+            noise_floor = float(np.mean(sorted_mag[: max(1, mags.size // 5)]))
             nf_color = "#888888" if theme == "dark" else "gray"
-            ax.axhline(noise_floor, color=nf_color, linestyle="--",
-                       linewidth=0.8, alpha=0.5, label=f"Noise floor ({noise_floor:.0f}dB)")
+            ax.axhline(
+                noise_floor,
+                color=nf_color,
+                linestyle="--",
+                linewidth=0.8,
+                alpha=0.5,
+                label=f"Noise floor ({noise_floor:.0f}dB)",
+            )
     else:
         # Fallback: bar chart from peaks
         peaks = fft_result.get("peaks", [])
@@ -224,9 +258,15 @@ def generate_fft_plot(
         if src:
             label += f" ({src})"
 
-        ax.annotate(label, (f, m), textcoords="offset points",
-                    xytext=(5, 8), ha="left", fontsize=8,
-                    color="darkred" if theme == "light" else "#ff6b6b")
+        ax.annotate(
+            label,
+            (f, m),
+            textcoords="offset points",
+            xytext=(5, 8),
+            ha="left",
+            fontsize=8,
+            color="darkred" if theme == "light" else "#ff6b6b",
+        )
         marker_color = "#ff0000" if theme == "dark" else "red"
         ax.plot(f, m, "o", color=marker_color, markersize=6, alpha=0.7)
 
@@ -257,6 +297,7 @@ def generate_fft_plot(
 # ---------------------------------------------------------------------------
 # Filter Bode plot
 # ---------------------------------------------------------------------------
+
 
 def generate_filter_bode_plot(
     filter_result: Dict[str, Any],
@@ -328,6 +369,7 @@ def generate_filter_bode_plot(
 # Unified plot dispatcher
 # ---------------------------------------------------------------------------
 
+
 def generate_plot(
     log_path: Path,
     platform: str = "auto",
@@ -367,6 +409,7 @@ def generate_plot(
             )
         from smarttune.analyzers.pid_reviewer import PIDReviewer
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform=adapter.name)
         reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
         # Get raw dataclass for plot (not serialized dict)
@@ -386,6 +429,7 @@ def generate_plot(
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
         from smarttune.services.serialize import serialize_fft_result
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform=adapter.name)
         analyzer = FFTAnalyzer(knowledge=kb.get("filter_rules", {}))
         result = analyzer.analyze(fd)
@@ -406,6 +450,7 @@ def generate_plot(
             )
         # Run filter analysis with bode_data included
         from smarttune.services.analysis import analyze_filter as _analyze_filter
+
         result = _analyze_filter(
             log_path=_lp,
             platform=platform,

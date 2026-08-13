@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-
 # ---------------------------------------------------------------------------
 # 通用评估等级
 # ---------------------------------------------------------------------------
+
 
 class Assessment(str, Enum):
     EXCELLENT = "EXCELLENT"
@@ -33,6 +33,7 @@ class Confidence(str, Enum):
 # ---------------------------------------------------------------------------
 # 参数引用 — 平台无关的参数标识
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ParamRef:
@@ -56,8 +57,8 @@ class ParamRef:
     """
 
     generic_name: str
-    axis: Optional[str] = None    # "roll", "pitch", "yaw", "x", "y", "z"
-    category: str = ""            # "pid", "filter", "mag", "general"
+    axis: Optional[str] = None  # "roll", "pitch", "yaw", "x", "y", "z"
+    category: str = ""  # "pid", "filter", "mag", "general"
 
     def __post_init__(self):
         if not self.category:
@@ -68,9 +69,11 @@ class ParamRef:
 # PID 分析结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StepMetrics:
     """单个阶跃响应的性能指标。"""
+
     rise_time_ms: float = -1.0
     overshoot_percent: float = -1.0
     settling_time_ms: float = -1.0
@@ -96,8 +99,9 @@ class StepMetrics:
 @dataclass
 class DiagnosisEntry:
     """单条诊断结果。"""
+
     symptom: str
-    severity: str          # "high", "medium", "low"
+    severity: str  # "high", "medium", "low"
     affected_metric: str
     rule_id: str = ""
 
@@ -113,12 +117,13 @@ class DiagnosisEntry:
 @dataclass
 class ParamRecommendation:
     """单条参数修改建议 — 平台无关。"""
+
     param: ParamRef
     current: float
     suggested: float
     reason: str
     confidence: Confidence = Confidence.MEDIUM
-    action: str = ""       # "increase", "decrease", "set"
+    action: str = ""  # "increase", "decrease", "set"
 
     @property
     def change_percent(self) -> float:
@@ -130,6 +135,7 @@ class ParamRecommendation:
 @dataclass
 class AxisPIDResult:
     """单轴 PID 分析结果。"""
+
     axis: str
     metrics: StepMetrics
     assessment: Assessment = Assessment.GOOD
@@ -149,8 +155,13 @@ class AxisPIDResult:
             "metrics": self.metrics.to_dict(),
             "assessment": self.assessment.value,
             "recommendations": [
-                {"param": r.param.generic_name, "current": r.current,
-                 "suggested": r.suggested, "reason": r.reason, "action": r.action}
+                {
+                    "param": r.param.generic_name,
+                    "current": r.current,
+                    "suggested": r.suggested,
+                    "reason": r.reason,
+                    "action": r.action,
+                }
                 for r in self.recommendations
             ],
             "step_count": self.step_count,
@@ -162,6 +173,7 @@ class AxisPIDResult:
 @dataclass
 class PIDAnalysisResult:
     """完整 PID 分析结果。"""
+
     axes: Dict[str, AxisPIDResult] = field(default_factory=dict)
     overall_assessment: Assessment = Assessment.GOOD
 
@@ -170,20 +182,23 @@ class PIDAnalysisResult:
 # FFT 分析结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VibrationPeak:
     """单个振动峰值。"""
+
     frequency_hz: float
-    amplitude: float           # m/s²
-    source_guess: str = ""     # "motor", "propeller", "frame", "unknown"
+    amplitude: float  # m/s²
+    source_guess: str = ""  # "motor", "propeller", "frame", "unknown"
     harmonic_of: Optional[float] = None  # 如果是某频率的谐波
 
 
 @dataclass
 class FFTAnalysisResult:
     """FFT 频谱分析结果。"""
+
     peaks: List[VibrationPeak] = field(default_factory=list)
-    noise_floor: float = 0.0   # m/s²
+    noise_floor: float = 0.0  # m/s²
     vibration_level: Assessment = Assessment.GOOD
     recommendations: List[ParamRecommendation] = field(default_factory=list)
     # 原始频谱数据（用于绘图）
@@ -195,9 +210,11 @@ class FFTAnalysisResult:
 # 滤波器分析结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FilterAnalysisResult:
     """滤波器传递函数分析结果。"""
+
     cutoff_3db_hz: Optional[float] = None
     config_summary: str = ""
     recommendations: List[ParamRecommendation] = field(default_factory=list)
@@ -211,9 +228,11 @@ class FilterAnalysisResult:
 # 磁力计分析结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MagFitResult:
     """磁力计校准分析结果。"""
+
     fitness_mgauss: float = 0.0
     assessment: Assessment = Assessment.GOOD
     offsets: Dict[str, float] = field(default_factory=dict)  # {"x": ..., "y": ..., "z": ...}
@@ -224,24 +243,28 @@ class MagFitResult:
 # 系统辨识结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SysIDResult:
     """系统辨识（ARX 模型）结果。"""
+
     axis: str
     natural_freq_hz: float = 0.0
     damping_ratio: float = 0.0
     bandwidth_hz: float = 0.0
-    model_order: str = ""      # e.g. "ARX(3,2)"
-    fit_quality: float = 0.0   # R² or similar
+    model_order: str = ""  # e.g. "ARX(3,2)"
+    fit_quality: float = 0.0  # R² or similar
 
 
 # ---------------------------------------------------------------------------
 # 硬件报告
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class HardwareReport:
     """硬件配置报告 — 包含飞控、传感器、参数概要。"""
+
     firmware_version: str = ""
     board_name: str = ""
     imu_configs: List[Dict[str, Any]] = field(default_factory=list)
@@ -257,9 +280,11 @@ class HardwareReport:
 # 综合分析结果
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FullAnalysisResult:
     """综合分析结果容器。"""
+
     platform: str = ""
     log_file: str = ""
     pid: Optional[PIDAnalysisResult] = None

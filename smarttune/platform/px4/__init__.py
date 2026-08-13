@@ -33,34 +33,37 @@ from smarttune.platform.base import PlatformAdapter
 from smarttune.platform.registry import register
 from smarttune.models.flight_data import AxisPIDSignal, FlightData
 from smarttune.errors import (
-    LogFileNotFoundError, LogFileCorruptError, ParseError,
-    InsufficientPIDDataError, SmartTuneError,
+    LogFileNotFoundError,
+    LogFileCorruptError,
+    ParseError,
+    InsufficientPIDDataError,
+    SmartTuneError,
 )
 
 logger = logging.getLogger(__name__)
 
 _PARAM_MAP_TO_PLATFORM = {
-    "pid.roll.p":    "MC_ROLLRATE_P",
-    "pid.roll.i":    "MC_ROLLRATE_I",
-    "pid.roll.d":    "MC_ROLLRATE_D",
-    "pid.roll.ff":   "MC_ROLLRATE_FF",
-    "pid.pitch.p":   "MC_PITCHRATE_P",
-    "pid.pitch.i":   "MC_PITCHRATE_I",
-    "pid.pitch.d":   "MC_PITCHRATE_D",
-    "pid.pitch.ff":  "MC_PITCHRATE_FF",
-    "pid.yaw.p":     "MC_YAWRATE_P",
-    "pid.yaw.i":     "MC_YAWRATE_I",
-    "pid.yaw.d":     "MC_YAWRATE_D",
-    "pid.yaw.ff":    "MC_YAWRATE_FF",
+    "pid.roll.p": "MC_ROLLRATE_P",
+    "pid.roll.i": "MC_ROLLRATE_I",
+    "pid.roll.d": "MC_ROLLRATE_D",
+    "pid.roll.ff": "MC_ROLLRATE_FF",
+    "pid.pitch.p": "MC_PITCHRATE_P",
+    "pid.pitch.i": "MC_PITCHRATE_I",
+    "pid.pitch.d": "MC_PITCHRATE_D",
+    "pid.pitch.ff": "MC_PITCHRATE_FF",
+    "pid.yaw.p": "MC_YAWRATE_P",
+    "pid.yaw.i": "MC_YAWRATE_I",
+    "pid.yaw.d": "MC_YAWRATE_D",
+    "pid.yaw.ff": "MC_YAWRATE_FF",
     "filter.gyro_lpf": "IMU_GYRO_CUTOFF",
     "filter.dterm_lpf": "IMU_DGYRO_CUTOFF",
     "filter.accel_lpf": "IMU_ACCEL_CUTOFF",
     # 静态陷波（PX4 无 mode/REF/HMC/ATT 概念，FFT 分析器已按平台分支
     # 只输出 freq/bw；enable 无独立参数 — NF0_FRQ=0 即禁用）
     "filter.notch1.freq": "IMU_GYRO_NF0_FRQ",
-    "filter.notch1.bw":   "IMU_GYRO_NF0_BW",
+    "filter.notch1.bw": "IMU_GYRO_NF0_BW",
     "filter.notch2.freq": "IMU_GYRO_NF1_FRQ",
-    "filter.notch2.bw":   "IMU_GYRO_NF1_BW",
+    "filter.notch2.bw": "IMU_GYRO_NF1_BW",
 }
 
 _PARAM_MAP_TO_GENERIC = {v: k for k, v in _PARAM_MAP_TO_PLATFORM.items()}
@@ -74,6 +77,7 @@ _RAD2DEG = 180.0 / np.pi
 def _import_pyulog():
     try:
         from pyulog import ULog  # type: ignore
+
         return ULog
     except ImportError:
         raise SmartTuneError(
@@ -168,17 +172,19 @@ class PX4Adapter(PlatformAdapter):
         else:
             raise ParseError(
                 message="No angular velocity topic in ULog "
-                        "(vehicle_angular_velocity / sensor_combined)",
+                "(vehicle_angular_velocity / sensor_combined)",
                 hint="Ensure the log was recorded with default PX4 logger topics.",
             )
 
         t0_us = float(src["timestamp"][0])
         t_gyro = _ts_seconds(src, t0_us)
-        gyro = np.column_stack([
-            src[gyro_keys[0]].astype(np.float64) * _RAD2DEG,
-            src[gyro_keys[1]].astype(np.float64) * _RAD2DEG,
-            src[gyro_keys[2]].astype(np.float64) * _RAD2DEG,
-        ])
+        gyro = np.column_stack(
+            [
+                src[gyro_keys[0]].astype(np.float64) * _RAD2DEG,
+                src[gyro_keys[1]].astype(np.float64) * _RAD2DEG,
+                src[gyro_keys[2]].astype(np.float64) * _RAD2DEG,
+            ]
+        )
 
         if len(t_gyro) < 100:
             raise InsufficientPIDDataError(
@@ -191,9 +197,7 @@ class PX4Adapter(PlatformAdapter):
         pid_data: Dict[str, AxisPIDSignal] = {}
         if d_sp is not None and "roll" in d_sp.data:
             t_sp = _ts_seconds(d_sp.data, t0_us)
-            for axis, key, col in (("roll", "roll", 0),
-                                   ("pitch", "pitch", 1),
-                                   ("yaw", "yaw", 2)):
+            for axis, key, col in (("roll", "roll", 0), ("pitch", "pitch", 1), ("yaw", "yaw", 2)):
                 sp_deg = d_sp.data[key].astype(np.float64) * _RAD2DEG
                 desired = np.interp(t_gyro, t_sp, sp_deg)
                 pid_data[axis] = AxisPIDSignal(
@@ -211,33 +215,51 @@ class PX4Adapter(PlatformAdapter):
         accel = None
         d_acc = _get_dataset(ulog, "vehicle_acceleration")
         if d_acc is not None and "xyz[0]" in d_acc.data:
-            accel = np.column_stack([
-                d_acc.data["xyz[0]"], d_acc.data["xyz[1]"], d_acc.data["xyz[2]"],
-            ]).astype(np.float64)
+            accel = np.column_stack(
+                [
+                    d_acc.data["xyz[0]"],
+                    d_acc.data["xyz[1]"],
+                    d_acc.data["xyz[2]"],
+                ]
+            ).astype(np.float64)
         elif d_sensor is not None and "accelerometer_m_s2[0]" in d_sensor.data:
-            accel = np.column_stack([
-                d_sensor.data["accelerometer_m_s2[0]"],
-                d_sensor.data["accelerometer_m_s2[1]"],
-                d_sensor.data["accelerometer_m_s2[2]"],
-            ]).astype(np.float64)
+            accel = np.column_stack(
+                [
+                    d_sensor.data["accelerometer_m_s2[0]"],
+                    d_sensor.data["accelerometer_m_s2[1]"],
+                    d_sensor.data["accelerometer_m_s2[2]"],
+                ]
+            ).astype(np.float64)
 
         # ── 磁力计（Gauss → mGauss，对齐 FlightData 单位契约）──
         mag = None
         mag_ts = None
         d_mag = _get_dataset(ulog, "sensor_mag")
         if d_mag is not None and "x" in d_mag.data:
-            mag = np.column_stack([
-                d_mag.data["x"], d_mag.data["y"], d_mag.data["z"],
-            ]).astype(np.float64) * 1000.0
+            mag = (
+                np.column_stack(
+                    [
+                        d_mag.data["x"],
+                        d_mag.data["y"],
+                        d_mag.data["z"],
+                    ]
+                ).astype(np.float64)
+                * 1000.0
+            )
             mag_ts = _ts_seconds(d_mag.data, t0_us)
         elif d_sensor is not None and "magnetometer_ga[0]" in d_sensor.data:
             # 老固件（≤v1.8）无独立 sensor_mag 主题，磁力计在
             # sensor_combined.magnetometer_ga（已用 pyulog sample.ulg 验证）
-            mag = np.column_stack([
-                d_sensor.data["magnetometer_ga[0]"],
-                d_sensor.data["magnetometer_ga[1]"],
-                d_sensor.data["magnetometer_ga[2]"],
-            ]).astype(np.float64) * 1000.0
+            mag = (
+                np.column_stack(
+                    [
+                        d_sensor.data["magnetometer_ga[0]"],
+                        d_sensor.data["magnetometer_ga[1]"],
+                        d_sensor.data["magnetometer_ga[2]"],
+                    ]
+                ).astype(np.float64)
+                * 1000.0
+            )
             mag_ts = _ts_seconds(d_sensor.data, t0_us)
 
         # ── 电机输出 ─────────────────────────────────────────
@@ -245,8 +267,7 @@ class PX4Adapter(PlatformAdapter):
         motor_ts = None
         d_motors = _get_dataset(ulog, "actuator_motors")
         if d_motors is not None:
-            cols = [k for k in sorted(d_motors.data.keys())
-                    if k.startswith("control[")]
+            cols = [k for k in sorted(d_motors.data.keys()) if k.startswith("control[")]
             arrs = [d_motors.data[c].astype(np.float64) for c in cols]
             arrs = [a for a in arrs if np.any(np.isfinite(a)) and np.nanmax(np.abs(a)) > 0]
             if arrs:
@@ -259,7 +280,7 @@ class PX4Adapter(PlatformAdapter):
                 arrs = []
                 for c in cols:
                     a = d_out.data[c].astype(np.float64)
-                    if np.nanmax(a) > 800:        # 活跃 PWM 通道
+                    if np.nanmax(a) > 800:  # 活跃 PWM 通道
                         arrs.append(np.clip((a - 1000.0) / 1000.0, 0.0, 1.0))
                 if arrs:
                     motor_output = np.column_stack(arrs)
@@ -299,10 +320,14 @@ class PX4Adapter(PlatformAdapter):
         if d_att is not None and "q[0]" in d_att.data:
             extras["attitude_quat"] = {
                 "time": _ts_seconds(d_att.data, t0_us),
-                "q": np.column_stack([
-                    d_att.data["q[0]"], d_att.data["q[1]"],
-                    d_att.data["q[2]"], d_att.data["q[3]"],
-                ]).astype(np.float64),
+                "q": np.column_stack(
+                    [
+                        d_att.data["q[0]"],
+                        d_att.data["q[1]"],
+                        d_att.data["q[2]"],
+                        d_att.data["q[3]"],
+                    ]
+                ).astype(np.float64),
             }
 
         # ── 采样率 / 时长 ─────────────────────────────────────
@@ -355,4 +380,5 @@ class PX4Adapter(PlatformAdapter):
 
     def param_table(self):
         from smarttune.platform.params import ParamTable
+
         return ParamTable.from_knowledge("px4")

@@ -36,14 +36,14 @@ from typing import Dict, Any, List, Optional
 import numpy as np
 
 # PTstepcalc.m 常数
-_MIN_INPUT_DEG_S = 20.0      # minInput — 段内 SP 峰值下限
-_MAX_INPUT_DEG_S = 500.0     # maxInput — 段内 SP 峰值上限
-_SEGMENT_DURATION_S = 2.0    # 2 秒分析段
-_RESPONSE_DURATION_S = 0.5   # 500 ms 阶跃响应窗
-_PAD_SAMPLES = 100           # FFT 前零填充
-_QC_STEADY_LO = 0.5          # 稳态 QC 下限（理想值 1.0）
-_QC_STEADY_HI = 3.0          # 稳态 QC 上限
-_REG_FACTOR = 1e-4           # Wiener 正则化 λ = _REG_FACTOR × max(Pxx)
+_MIN_INPUT_DEG_S = 20.0  # minInput — 段内 SP 峰值下限
+_MAX_INPUT_DEG_S = 500.0  # maxInput — 段内 SP 峰值上限
+_SEGMENT_DURATION_S = 2.0  # 2 秒分析段
+_RESPONSE_DURATION_S = 0.5  # 500 ms 阶跃响应窗
+_PAD_SAMPLES = 100  # FFT 前零填充
+_QC_STEADY_LO = 0.5  # 稳态 QC 下限（理想值 1.0）
+_QC_STEADY_HI = 3.0  # 稳态 QC 上限
+_REG_FACTOR = 1e-4  # Wiener 正则化 λ = _REG_FACTOR × max(Pxx)
 
 
 def estimate_step_response(
@@ -207,8 +207,11 @@ def compute_step_response_for_axis(
             from scipy import interpolate
 
             interp_desired = interpolate.interp1d(
-                time_rate, desired, kind="linear",
-                bounds_error=False, fill_value=(desired[0], desired[-1]),
+                time_rate,
+                desired,
+                kind="linear",
+                bounds_error=False,
+                fill_value=(desired[0], desired[-1]),
             )
             desired_resampled = interp_desired(time_imu)
 

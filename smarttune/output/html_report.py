@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-
 # ---------------------------------------------------------------------------
 # 辅助
 # ---------------------------------------------------------------------------
+
 
 def _b64_img(fig) -> str:
     """将 matplotlib figure 转为 base64 PNG data URL。"""
@@ -34,31 +34,32 @@ def _assessment_color(level: str) -> str:
     """评估等级 → CSS 颜色。"""
     return {
         "EXCELLENT": "#22c55e",
-        "GOOD":      "#86efac",
-        "ACCEPTABLE":"#fbbf24",
-        "MARGINAL":  "#f97316",
-        "POOR":      "#ef4444",
-        "BAD":       "#ef4444",
-        "NO_DATA":   "#94a3b8",
+        "GOOD": "#86efac",
+        "ACCEPTABLE": "#fbbf24",
+        "MARGINAL": "#f97316",
+        "POOR": "#ef4444",
+        "BAD": "#ef4444",
+        "NO_DATA": "#94a3b8",
     }.get(level.upper() if level else "", "#94a3b8")
 
 
 def _vib_color(level: str) -> str:
     return {
         "EXCELLENT": "#22c55e",
-        "GOOD":      "#86efac",
-        "MARGINAL":  "#fbbf24",
-        "POOR":      "#f97316",
-        "UNUSABLE":  "#ef4444",
+        "GOOD": "#86efac",
+        "MARGINAL": "#fbbf24",
+        "POOR": "#f97316",
+        "UNUSABLE": "#ef4444",
         # 旧 5 级标签向后兼容（vibration_level_raw / 旧报告）
-        "SEVERE":    "#f97316",
-        "CRITICAL":  "#ef4444",
+        "SEVERE": "#f97316",
+        "CRITICAL": "#ef4444",
     }.get(level.upper() if level else "", "#94a3b8")
 
 
 # ---------------------------------------------------------------------------
 # HTML 生成主函数
 # ---------------------------------------------------------------------------
+
 
 def generate_html_report(
     pid_results=None,
@@ -107,13 +108,17 @@ def generate_html_report(
 
     if pid_plot_fig is not None:
         try:
-            pid_img_tag = f'<img src="{_b64_img(pid_plot_fig)}" class="chart-img" alt="PID Step Response">'
+            pid_img_tag = (
+                f'<img src="{_b64_img(pid_plot_fig)}" class="chart-img" alt="PID Step Response">'
+            )
         except Exception:
             pass
 
     if fft_plot_fig is not None:
         try:
-            fft_img_tag = f'<img src="{_b64_img(fft_plot_fig)}" class="chart-img" alt="FFT Spectrum">'
+            fft_img_tag = (
+                f'<img src="{_b64_img(fft_plot_fig)}" class="chart-img" alt="FFT Spectrum">'
+            )
         except Exception:
             pass
 
@@ -225,21 +230,35 @@ def _build_pid_html(results) -> str:
     axes_data: dict = {}
 
     # Check if it's the new PIDAnalysisResult dataclass
-    if hasattr(results, 'axes') and hasattr(results, 'overall_assessment'):
+    if hasattr(results, "axes") and hasattr(results, "overall_assessment"):
         # New dataclass format: PIDAnalysisResult
         for axis_name, ax_result in results.axes.items():
-            metrics = ax_result.metrics.to_dict() if hasattr(ax_result.metrics, 'to_dict') else {}
+            metrics = ax_result.metrics.to_dict() if hasattr(ax_result.metrics, "to_dict") else {}
             recs = []
             for r in ax_result.recommendations:
-                recs.append({
-                    "param": r.param.generic_name if hasattr(r.param, 'generic_name') else str(r.param),
-                    "current": r.current,
-                    "recommended": r.suggested,
-                    "reason": r.reason,
-                    "confidence": r.confidence.value if hasattr(r.confidence, 'value') else str(r.confidence),
-                })
+                recs.append(
+                    {
+                        "param": (
+                            r.param.generic_name
+                            if hasattr(r.param, "generic_name")
+                            else str(r.param)
+                        ),
+                        "current": r.current,
+                        "recommended": r.suggested,
+                        "reason": r.reason,
+                        "confidence": (
+                            r.confidence.value
+                            if hasattr(r.confidence, "value")
+                            else str(r.confidence)
+                        ),
+                    }
+                )
             axes_data[axis_name] = {
-                "assessment": ax_result.assessment.value if hasattr(ax_result.assessment, 'value') else str(ax_result.assessment),
+                "assessment": (
+                    ax_result.assessment.value
+                    if hasattr(ax_result.assessment, "value")
+                    else str(ax_result.assessment)
+                ),
                 "metrics": metrics,
                 "recommendations": recs,
                 "step_count": ax_result.step_count,
@@ -270,7 +289,9 @@ def _build_pid_html(results) -> str:
         ]:
             val = metrics.get(key, -1)
             if val >= 0:
-                m_parts.append(f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{fmt.format(val)}</div></div>')
+                m_parts.append(
+                    f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{fmt.format(val)}</div></div>'
+                )
 
         metrics_html = f'<div class="metrics">{"".join(m_parts)}</div>'
 
@@ -288,7 +309,9 @@ def _build_pid_html(results) -> str:
                 delta = f"{direction}{pct:.1f}%"
             else:
                 delta = direction
-            conf_color = _assessment_color("EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR"))
+            conf_color = _assessment_color(
+                "EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR")
+            )
             rec_items.append(
                 f'<li class="rec-item"><span class="rec-param">{param}</span>'
                 f'<span class="rec-arrow"> {cur:.4g} → {recom:.4g} </span>'
@@ -296,7 +319,8 @@ def _build_pid_html(results) -> str:
                 f'<div class="rec-reason">{reason} · Confidence: <span class="confidence-{conf}">{conf}</span></div></li>'
             )
         recs_html = (
-            f'<ul class="rec-list">{"".join(rec_items)}</ul>' if rec_items
+            f'<ul class="rec-list">{"".join(rec_items)}</ul>'
+            if rec_items
             else '<p style="color:#22c55e;font-size:0.87rem;margin-top:8px">✓ Parameters are within target — no adjustments needed</p>'
         )
 
@@ -328,9 +352,13 @@ def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
     for p in peaks:
         src = p.get("source", "unknown")
         is_h = "✓" if p.get("is_harmonic") else "—"
-        mag = p.get("magnitude_db", p.get("amplitude_dbfs", p.get("magnitude", p.get("amplitude", 0))))
+        mag = p.get(
+            "magnitude_db", p.get("amplitude_dbfs", p.get("magnitude", p.get("amplitude", 0)))
+        )
         freq = p.get("freq", p.get("frequency_hz", 0))
-        peak_rows += f"<tr><td>{freq:.1f} Hz</td><td>{mag:.1f} dBFS</td><td>{src}</td><td>{is_h}</td></tr>"
+        peak_rows += (
+            f"<tr><td>{freq:.1f} Hz</td><td>{mag:.1f} dBFS</td><td>{src}</td><td>{is_h}</td></tr>"
+        )
 
     peaks_html = ""
     if peaks:
@@ -345,8 +373,15 @@ def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
 
     recs = results.get("recommendations", {})
     rec_params = ""
-    for k in ["INS_HNTCH_ENABLE","INS_HNTCH_MODE","INS_HNTCH_FREQ","INS_HNTCH_BW",
-              "INS_HNTCH_ATT","INS_HNTCH_HMC","INS_GYRO_FILTER"]:
+    for k in [
+        "INS_HNTCH_ENABLE",
+        "INS_HNTCH_MODE",
+        "INS_HNTCH_FREQ",
+        "INS_HNTCH_BW",
+        "INS_HNTCH_ATT",
+        "INS_HNTCH_HMC",
+        "INS_GYRO_FILTER",
+    ]:
         if k in recs:
             rec_params += f'<tr><td class="name">{k}</td><td class="val">{recs[k]}</td></tr>'
 
@@ -362,7 +397,9 @@ def _build_fft_html(results: Optional[Dict[str, Any]]) -> str:
     warn_html = ""
     if warnings:
         items = "".join(f"<li>{w}</li>" for w in warnings)
-        warn_html = f'<div class="safety-block"><div class="s-title">⚠ 警告</div><ul>{items}</ul></div>'
+        warn_html = (
+            f'<div class="safety-block"><div class="s-title">⚠ 警告</div><ul>{items}</ul></div>'
+        )
 
     return f"""<div class="section">
   <div class="section-title">📊 FFT 振动分析</div>
@@ -391,8 +428,12 @@ def _build_magfit_html(results) -> str:
         fitness = results.fitness_mGauss
     if fitness is None and hasattr(results, "get"):
         fitness = results.get("fitness_mgauss", results.get("fitness_mGauss"))
-    assessment = getattr(results, "assessment", None) or (results.get("assessment") if hasattr(results, "get") else None) or "?"
-    if hasattr(assessment, 'value'):
+    assessment = (
+        getattr(results, "assessment", None)
+        or (results.get("assessment") if hasattr(results, "get") else None)
+        or "?"
+    )
+    if hasattr(assessment, "value"):
         assessment = assessment.value
     color = _assessment_color(assessment)
 
@@ -414,7 +455,9 @@ def _build_magfit_html(results) -> str:
     ofs_rows = ""
     if hasattr(results, "ofs") and results.ofs:
         for label, val in zip(["OFS_X", "OFS_Y", "OFS_Z"], results.ofs):
-            ofs_rows += f'<tr><td class="name">COMPASS_{label}</td><td class="val">{val:.2f}</td></tr>'
+            ofs_rows += (
+                f'<tr><td class="name">COMPASS_{label}</td><td class="val">{val:.2f}</td></tr>'
+            )
     elif hasattr(results, "offsets") and results.offsets:
         for axis, val in results.offsets.items():
             ofs_rows += f'<tr><td class="name">COMPASS_OFS_{axis.upper()}</td><td class="val">{val:.2f}</td></tr>'
@@ -440,8 +483,9 @@ def _build_filter_html(results) -> str:
     cutoff = getattr(results, "cutoff_3db_hz", None)
     if cutoff is None and hasattr(results, "get"):
         cutoff = results.get("cutoff_3db_hz")
-    config = (getattr(results, "config_summary", "") or
-              (results.get("config_summary", "") if hasattr(results, "get") else ""))
+    config = getattr(results, "config_summary", "") or (
+        results.get("config_summary", "") if hasattr(results, "get") else ""
+    )
     recs = getattr(results, "recommendations", [])
     if not recs and hasattr(results, "get"):
         recs = results.get("recommendations", [])
@@ -467,18 +511,31 @@ def _build_filter_html(results) -> str:
     if recs:
         items = ""
         for r in recs:
-            param = r.param.generic_name if hasattr(r, "param") and hasattr(r.param, "generic_name") else (r.get("param", "?") if hasattr(r, "get") else str(r))
+            param = (
+                r.param.generic_name
+                if hasattr(r, "param") and hasattr(r.param, "generic_name")
+                else (r.get("param", "?") if hasattr(r, "get") else str(r))
+            )
             cur = r.current if hasattr(r, "current") else r.get("current", 0)
-            sug = r.suggested if hasattr(r, "suggested") else r.get("suggested", r.get("recommended", cur))
+            sug = (
+                r.suggested
+                if hasattr(r, "suggested")
+                else r.get("suggested", r.get("recommended", cur))
+            )
             reason = r.reason if hasattr(r, "reason") else r.get("reason", "")
-            conf = (r.confidence.value if hasattr(r.confidence, "value")
-                    else (r.get("confidence", "medium") if hasattr(r, "get") else "medium"))
+            conf = (
+                r.confidence.value
+                if hasattr(r.confidence, "value")
+                else (r.get("confidence", "medium") if hasattr(r, "get") else "medium")
+            )
             direction = "↑" if sug > cur else "↓"
             if cur > 0:
                 delta = f"{direction}{abs(sug - cur) / cur * 100:.1f}%"
             else:
                 delta = direction
-            conf_color = _assessment_color("EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR"))
+            conf_color = _assessment_color(
+                "EXCELLENT" if conf == "high" else ("MARGINAL" if conf == "medium" else "POOR")
+            )
             items += (
                 f'<li class="rec-item"><span class="rec-param">{param}</span>'
                 f'<span class="rec-arrow"> {cur:.4g} → {sug:.4g} </span>'
@@ -512,13 +569,23 @@ def _build_sysid_html(results) -> str:
         axis = getattr(r, "axis", "unknown")
         if hasattr(r, "get") and not hasattr(r, "axis"):
             axis = r.get("axis", "?")
-        nf = getattr(r, "natural_freq_hz", 0) or (r.get("natural_freq_hz", 0) if hasattr(r, "get") else 0)
-        dr = getattr(r, "damping_ratio", 0) or (r.get("damping_ratio", 0) if hasattr(r, "get") else 0)
+        nf = getattr(r, "natural_freq_hz", 0) or (
+            r.get("natural_freq_hz", 0) if hasattr(r, "get") else 0
+        )
+        dr = getattr(r, "damping_ratio", 0) or (
+            r.get("damping_ratio", 0) if hasattr(r, "get") else 0
+        )
         bw = getattr(r, "bandwidth_hz", 0) or (r.get("bandwidth_hz", 0) if hasattr(r, "get") else 0)
-        order = getattr(r, "model_order", "") or (r.get("model_order", "") if hasattr(r, "get") else "")
+        order = getattr(r, "model_order", "") or (
+            r.get("model_order", "") if hasattr(r, "get") else ""
+        )
         fit = getattr(r, "fit_quality", 0) or (r.get("fit_quality", 0) if hasattr(r, "get") else 0)
-        fit_color = _assessment_color("EXCELLENT" if fit > 0.9 else ("GOOD" if fit > 0.7 else ("MARGINAL" if fit > 0.5 else "POOR")))
-        damping_assess = ("Under-damped" if dr < 0.7 else ("Good" if dr < 1.0 else "Over-damped"))
+        fit_color = _assessment_color(
+            "EXCELLENT"
+            if fit > 0.9
+            else ("GOOD" if fit > 0.7 else ("MARGINAL" if fit > 0.5 else "POOR"))
+        )
+        damping_assess = "Under-damped" if dr < 0.7 else ("Good" if dr < 1.0 else "Over-damped")
         if dr == 0:
             damping_assess = "—"
         rows += f"""<tr>
@@ -551,8 +618,12 @@ def _build_hardware_html(results) -> str:
         return ""
 
     # support both dataclass and dict
-    firmware = getattr(results, "firmware_version", "") or (results.get("firmware_version", "") if hasattr(results, "get") else "")
-    board = getattr(results, "board_name", "") or (results.get("board_name", "") if hasattr(results, "get") else "")
+    firmware = getattr(results, "firmware_version", "") or (
+        results.get("firmware_version", "") if hasattr(results, "get") else ""
+    )
+    board = getattr(results, "board_name", "") or (
+        results.get("board_name", "") if hasattr(results, "get") else ""
+    )
 
     imus = getattr(results, "imu_configs", None)
     if imus is None and hasattr(results, "get"):
@@ -579,16 +650,26 @@ def _build_hardware_html(results) -> str:
     if firmware:
         header_parts.append(f'<span style="color:#93c5fd;font-family:monospace">{firmware}</span>')
     if board:
-        header_parts.append(f'<span style="color:#64748b">on</span> <span style="color:#e2e8f0">{board}</span>')
+        header_parts.append(
+            f'<span style="color:#64748b">on</span> <span style="color:#e2e8f0">{board}</span>'
+        )
 
     # IMU table
     imu_rows = ""
     if imus:
         for imu in imus:
             name = imu.get("name", "?") if isinstance(imu, dict) else getattr(imu, "name", "?")
-            rate = imu.get("sample_rate_hz", "?") if isinstance(imu, dict) else getattr(imu, "sample_rate_hz", "?")
-            health = imu.get("health", "?") if isinstance(imu, dict) else getattr(imu, "health", "?")
-            health_color = "#22c55e" if str(health).upper() in ("OK", "GOOD", "HEALTHY") else "#fbbf24"
+            rate = (
+                imu.get("sample_rate_hz", "?")
+                if isinstance(imu, dict)
+                else getattr(imu, "sample_rate_hz", "?")
+            )
+            health = (
+                imu.get("health", "?") if isinstance(imu, dict) else getattr(imu, "health", "?")
+            )
+            health_color = (
+                "#22c55e" if str(health).upper() in ("OK", "GOOD", "HEALTHY") else "#fbbf24"
+            )
             imu_rows += f"""<tr>
     <td style="font-family:monospace;color:#93c5fd">{name}</td>
     <td>{rate} Hz</td>
@@ -611,7 +692,15 @@ def _build_hardware_html(results) -> str:
     if compass:
         for c in compass:
             name = c.get("name", "?") if isinstance(c, dict) else getattr(c, "name", "?")
-            ext = "✓" if (c.get("external", False) if isinstance(c, dict) else getattr(c, "external", False)) else "—"
+            ext = (
+                "✓"
+                if (
+                    c.get("external", False)
+                    if isinstance(c, dict)
+                    else getattr(c, "external", False)
+                )
+                else "—"
+            )
             comp_rows += f'<tr><td style="font-family:monospace;color:#93c5fd">{name}</td><td>{ext}</td></tr>'
 
     comp_section = ""
@@ -630,9 +719,21 @@ def _build_hardware_html(results) -> str:
     if pid_params:
         for axis in ["roll", "pitch", "yaw"]:
             if axis in pid_params:
-                p = pid_params[axis].get("P", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "P", 0)
-                i = pid_params[axis].get("I", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "I", 0)
-                d = pid_params[axis].get("D", 0) if isinstance(pid_params[axis], dict) else getattr(pid_params[axis], "D", 0)
+                p = (
+                    pid_params[axis].get("P", 0)
+                    if isinstance(pid_params[axis], dict)
+                    else getattr(pid_params[axis], "P", 0)
+                )
+                i = (
+                    pid_params[axis].get("I", 0)
+                    if isinstance(pid_params[axis], dict)
+                    else getattr(pid_params[axis], "I", 0)
+                )
+                d = (
+                    pid_params[axis].get("D", 0)
+                    if isinstance(pid_params[axis], dict)
+                    else getattr(pid_params[axis], "D", 0)
+                )
                 pid_rows += f'<tr><td style="font-weight:600;color:#e2e8f0">{axis.capitalize()}</td><td>{p:.4f}</td><td>{i:.4f}</td><td>{d:.4f}</td></tr>'
         if pid_rows:
             pid_rows = f"""
@@ -650,7 +751,11 @@ def _build_hardware_html(results) -> str:
         items = "".join(f"<li>{w}</li>" for w in issues)
         issue_section = f'<div class="safety-block"><div class="s-title">⚠ 完整性警告</div><ul>{items}</ul></div>'
 
-    header_str = " · ".join(header_parts) if header_parts else '<span style="color:#64748b">No hardware info</span>'
+    header_str = (
+        " · ".join(header_parts)
+        if header_parts
+        else '<span style="color:#64748b">No hardware info</span>'
+    )
 
     return f"""<div class="section">
   <div class="section-title">💻 硬件配置</div>

@@ -25,10 +25,9 @@ from smarttune.output import json_output
 # 序列化层
 # ---------------------------------------------------------------------------
 
+
 def test_sanitize_replaces_non_finite():
-    out = json_output.sanitize(
-        {"a": float("nan"), "b": [float("inf"), 1.5], "c": {"d": -math.inf}}
-    )
+    out = json_output.sanitize({"a": float("nan"), "b": [float("inf"), 1.5], "c": {"d": -math.inf}})
     assert out == {"a": None, "b": [None, 1.5], "c": {"d": None}}
 
 
@@ -73,6 +72,7 @@ def test_error_envelope_carries_code_and_hint():
 # CLI 集成 —— JSON 写入 -o 文件（避开 stdout/stderr 混流的 runner 差异）
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def fake_log(tmp_path):
     p = tmp_path / "flight.bin"
@@ -83,12 +83,16 @@ def fake_log(tmp_path):
 def test_analyze_json_success(fake_log, tmp_path, monkeypatch):
     import smarttune.services.analysis as svc
 
-    monkeypatch.setattr(svc, "analyze_log", lambda *a, **k: {
-        "platform": "ardupilot",
-        "log_file": "flight.bin",
-        "modules": {"pid": {"overall_assessment": "GOOD"}},
-        "nan_field": float("nan"),
-    })
+    monkeypatch.setattr(
+        svc,
+        "analyze_log",
+        lambda *a, **k: {
+            "platform": "ardupilot",
+            "log_file": "flight.bin",
+            "modules": {"pid": {"overall_assessment": "GOOD"}},
+            "nan_field": float("nan"),
+        },
+    )
 
     out = tmp_path / "out.json"
     result = CliRunner().invoke(
@@ -125,11 +129,15 @@ def test_analyze_json_error_is_json_and_exits_1(fake_log, tmp_path, monkeypatch)
 def test_quality_json_success(fake_log, tmp_path, monkeypatch):
     import smarttune.services.analysis as svc
 
-    monkeypatch.setattr(svc, "get_log_quality", lambda *a, **k: {
-        "platform": "ardupilot",
-        "quality": {"score": 82, "rating": "GOOD", "advice": "usable"},
-        "duration_s": 240.0,
-    })
+    monkeypatch.setattr(
+        svc,
+        "get_log_quality",
+        lambda *a, **k: {
+            "platform": "ardupilot",
+            "quality": {"score": 82, "rating": "GOOD", "advice": "usable"},
+            "duration_s": 240.0,
+        },
+    )
 
     out = tmp_path / "q.json"
     result = CliRunner().invoke(
@@ -145,7 +153,7 @@ def test_quality_json_success(fake_log, tmp_path, monkeypatch):
 def test_platforms_json_on_stdout():
     result = CliRunner().invoke(main, ["platforms", "-f", "json"])
     assert result.exit_code == 0, result.output
-    data = json.loads(result.stdout[result.stdout.index("{"):])
+    data = json.loads(result.stdout[result.stdout.index("{") :])
     assert data["command"] == "platforms"
     assert isinstance(data["platforms"], list) and data["platforms"]
     assert {"name", "display_name"} <= set(data["platforms"][0])
@@ -156,7 +164,7 @@ def test_params_validate_json_rejects_unknown_param():
         main, ["params", "--validate", "NO_SUCH_PARAM_XYZ", "1", "-p", "ardupilot", "-f", "json"]
     )
     assert result.exit_code == 1
-    data = json.loads(result.stdout[result.stdout.index("{"):])
+    data = json.loads(result.stdout[result.stdout.index("{") :])
     assert data["command"] == "params.validate"
     assert data["valid"] is False
 

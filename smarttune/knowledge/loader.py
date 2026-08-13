@@ -54,19 +54,22 @@ class KnowledgeBase:
         self.platform = platform
         self._rules: Dict[str, Any] = {}
         self._source_info: Dict[str, bool] = {
-            "builtin_common": False, "builtin_platform": False,
-            "user_common": False, "user_platform": False,
-            "pro_common": False, "pro_platform": False,
+            "builtin_common": False,
+            "builtin_platform": False,
+            "user_common": False,
+            "user_platform": False,
+            "pro_common": False,
+            "pro_platform": False,
         }
         self._load()
 
     def _load(self) -> None:
         rules: Dict[str, Any] = {}
         for label, path in [
-            ("builtin_common",   _BUILTIN_RULES_DIR / "common"),
+            ("builtin_common", _BUILTIN_RULES_DIR / "common"),
             ("builtin_platform", _BUILTIN_RULES_DIR / self.platform),
-            ("user_common",      _USER_RULES_DIR / "common"),
-            ("user_platform",    _USER_RULES_DIR / self.platform),
+            ("user_common", _USER_RULES_DIR / "common"),
+            ("user_platform", _USER_RULES_DIR / self.platform),
         ]:
             loaded = _load_json_dir(path)
             if loaded:
@@ -75,6 +78,7 @@ class KnowledgeBase:
 
         try:
             from smarttune_knowledge_pro import load as pro_load
+
             pro_rules = pro_load(platform=self.platform)
             if pro_rules:
                 for label, key in [("pro_common", "common"), ("pro_platform", self.platform)]:

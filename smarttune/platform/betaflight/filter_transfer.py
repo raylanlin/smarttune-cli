@@ -29,10 +29,10 @@ from smarttune.analyzers.filter_transfer import (
     simulate_filtered_spectrum as _simulate_filtered_spectrum,
 )
 
-
 # ---------------------------------------------------------------------------
 # BF 参数名 → 通用滤波器模型映射
 # ---------------------------------------------------------------------------
+
 
 def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     """
@@ -52,25 +52,28 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     Dict with keys: gyro_lpf, notch_filters, config_summary, _bf_raw
     """
     # Support both old (BF <4.5) and new (BF 4.5+) param names
-    lpf1 = float(params.get("gyro_lpf1_static_hz",
-                           params.get("gyro_lowpass_hz", 0.0)))
-    lpf2 = float(params.get("gyro_lpf2_static_hz",
-                           params.get("gyro_lowpass2_hz", 0.0)))
-    dterm_lpf = float(params.get("dterm_lpf1_static_hz",
-                               params.get("dterm_lowpass_hz", 0.0)))
+    lpf1 = float(params.get("gyro_lpf1_static_hz", params.get("gyro_lowpass_hz", 0.0)))
+    lpf2 = float(params.get("gyro_lpf2_static_hz", params.get("gyro_lowpass2_hz", 0.0)))
+    dterm_lpf = float(params.get("dterm_lpf1_static_hz", params.get("dterm_lowpass_hz", 0.0)))
 
     # 等效 LPF：取两级中的较低（更保守）截止频率
-    effective_lpf = min(f for f in [lpf1, lpf2] if f > 0) if any(f > 0 for f in [lpf1, lpf2]) else 0.0
+    effective_lpf = (
+        min(f for f in [lpf1, lpf2] if f > 0) if any(f > 0 for f in [lpf1, lpf2]) else 0.0
+    )
 
     # 固定陷波：gyro_notch1
-    notch1_hz     = float(params.get("gyro_notch1_hz",     0.0))
+    notch1_hz = float(params.get("gyro_notch1_hz", 0.0))
     notch1_cutoff = float(params.get("gyro_notch1_cutoff", 0.0))
-    notch1_bw = abs(notch1_hz - notch1_cutoff) * 2.0 if notch1_cutoff > 0 and notch1_hz > 0 else 20.0
+    notch1_bw = (
+        abs(notch1_hz - notch1_cutoff) * 2.0 if notch1_cutoff > 0 and notch1_hz > 0 else 20.0
+    )
 
     # gyro_notch2（可选）
-    notch2_hz     = float(params.get("gyro_notch2_hz",     0.0))
+    notch2_hz = float(params.get("gyro_notch2_hz", 0.0))
     notch2_cutoff = float(params.get("gyro_notch2_cutoff", 0.0))
-    notch2_bw = abs(notch2_hz - notch2_cutoff) * 2.0 if notch2_cutoff > 0 and notch2_hz > 0 else 20.0
+    notch2_bw = (
+        abs(notch2_hz - notch2_cutoff) * 2.0 if notch2_cutoff > 0 and notch2_hz > 0 else 20.0
+    )
 
     parts = []
     if effective_lpf > 0:
@@ -85,30 +88,44 @@ def derive_filters_from_params(params: Dict[str, float]) -> Dict[str, Any]:
     # Use original names found in params for display
     display_lpf1 = "gyro_lpf1_static_hz" if "gyro_lpf1_static_hz" in params else "gyro_lowpass_hz"
     display_lpf2 = "gyro_lpf2_static_hz" if "gyro_lpf2_static_hz" in params else "gyro_lowpass2_hz"
-    display_dlpf = "dterm_lpf1_static_hz" if "dterm_lpf1_static_hz" in params else "dterm_lowpass_hz"
+    display_dlpf = (
+        "dterm_lpf1_static_hz" if "dterm_lpf1_static_hz" in params else "dterm_lowpass_hz"
+    )
 
     # 构造近似 notch_filters 列表
     notch_filters_approx = []
     if notch1_hz > 0:
-        notch_filters_approx.append({
-            "enabled": True, "freq": notch1_hz, "bw": notch1_bw,
-            "att": 40.0, "mode": 1,
-        })
+        notch_filters_approx.append(
+            {
+                "enabled": True,
+                "freq": notch1_hz,
+                "bw": notch1_bw,
+                "att": 40.0,
+                "mode": 1,
+            }
+        )
     if notch2_hz > 0:
-        notch_filters_approx.append({
-            "enabled": True, "freq": notch2_hz, "bw": notch2_bw,
-            "att": 40.0, "mode": 1,
-        })
+        notch_filters_approx.append(
+            {
+                "enabled": True,
+                "freq": notch2_hz,
+                "bw": notch2_bw,
+                "att": 40.0,
+                "mode": 1,
+            }
+        )
 
     return {
         "gyro_lpf_hz": effective_lpf,
         "notch_filters_approx": notch_filters_approx,
         "config_summary": ", ".join(parts),
         "_bf_raw": {
-            display_lpf1:  lpf1,
+            display_lpf1: lpf1,
             display_lpf2: lpf2,
-            "notch1_hz": notch1_hz, "notch1_bw": notch1_bw,
-            "notch2_hz": notch2_hz, "notch2_bw": notch2_bw,
+            "notch1_hz": notch1_hz,
+            "notch1_bw": notch1_bw,
+            "notch2_hz": notch2_hz,
+            "notch2_bw": notch2_bw,
             display_dlpf: dterm_lpf,
         },
     }
@@ -186,7 +203,7 @@ def build_filter_display_lines(params: Dict[str, float]) -> List[str]:
         lines.append(f"  D-term LPF: {dlpf_name} = {dterm_lpf:.0f} Hz")
 
     for idx in [1, 2]:
-        hz  = params.get(f"gyro_notch{idx}_hz",     0.0)
+        hz = params.get(f"gyro_notch{idx}_hz", 0.0)
         cut = params.get(f"gyro_notch{idx}_cutoff", 0.0)
         if hz > 0:
             lines.append(f"  Notch{idx}: gyro_notch{idx}_hz = {hz:.0f} Hz, cutoff = {cut:.0f} Hz")
@@ -211,7 +228,7 @@ def get_fallback_gyro_filter_hz(params: Dict[str, float]) -> float:
 
 def get_notch_bandwidth_hz(params: Dict[str, float], notch_index: int = 1) -> float:
     """返回指定固定陷波的近似带宽（Hz）。"""
-    hz  = float(params.get(f"gyro_notch{notch_index}_hz",     0.0))
+    hz = float(params.get(f"gyro_notch{notch_index}_hz", 0.0))
     cut = float(params.get(f"gyro_notch{notch_index}_cutoff", 0.0))
     if hz > 0 and cut > 0:
         return abs(hz - cut) * 2.0

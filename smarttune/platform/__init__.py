@@ -48,6 +48,7 @@ def __getattr__(name: str):
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
+
     value = getattr(import_module(target[0]), target[1])
     globals()[name] = value  # 只解析一次
     return value

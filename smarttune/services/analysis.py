@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 # Load / parse
 # ---------------------------------------------------------------------------
 
+
 def load_flight_data(
     log_path: Path,
     platform: str = "auto",
@@ -66,6 +67,7 @@ def load_flight_data(
 # ---------------------------------------------------------------------------
 # Log quality — full parity with CLI quality command
 # ---------------------------------------------------------------------------
+
 
 def get_log_quality(
     log_path: Path,
@@ -103,9 +105,25 @@ def get_log_quality(
     n_gyro = len(fd.gyro) if has_gyro else 0
     completeness.append({"name": "IMU/Gyro", "samples": n_gyro, "ok": n_gyro > 0, "required": True})
 
-    completeness.append({"name": "Magnetometer", "samples": 1 if has_mag else 0, "ok": has_mag, "required": False})
-    completeness.append({"name": "Motor", "samples": len(fd.motor_output) if has_motor else 0, "ok": has_motor, "required": False})
-    completeness.append({"name": "Battery", "samples": len(fd.battery_voltage) if has_battery else 0, "ok": has_battery, "required": False})
+    completeness.append(
+        {"name": "Magnetometer", "samples": 1 if has_mag else 0, "ok": has_mag, "required": False}
+    )
+    completeness.append(
+        {
+            "name": "Motor",
+            "samples": len(fd.motor_output) if has_motor else 0,
+            "ok": has_motor,
+            "required": False,
+        }
+    )
+    completeness.append(
+        {
+            "name": "Battery",
+            "samples": len(fd.battery_voltage) if has_battery else 0,
+            "ok": has_battery,
+            "required": False,
+        }
+    )
 
     for item in completeness:
         if not item["ok"] and item["required"]:
@@ -189,12 +207,14 @@ def get_log_quality(
                     jitter_pct = std_dt / median_dt * 100 if median_dt > 0 else 0
                     drop_count = int(np.sum(dts_valid > median_dt * 1.5))
                     drop_rate = drop_count / len(dts_valid) * 100
-                    rate_consistency.append({
-                        "source": "RATE/PID",
-                        "sample_rate_hz": round(sr, 1),
-                        "jitter_percent": round(jitter_pct, 1),
-                        "drop_rate_percent": round(drop_rate, 1),
-                    })
+                    rate_consistency.append(
+                        {
+                            "source": "RATE/PID",
+                            "sample_rate_hz": round(sr, 1),
+                            "jitter_percent": round(jitter_pct, 1),
+                            "drop_rate_percent": round(drop_rate, 1),
+                        }
+                    )
                     if drop_rate > 5:
                         issues.append(f"RATE message drop rate is high ({drop_rate:.1f}%)")
                         score -= 8
@@ -213,7 +233,10 @@ def get_log_quality(
     elif score >= 55:
         rating, advice = "MARGINAL", "Analysis possible but results may be incomplete"
     else:
-        rating, advice = "POOR", "Log quality is low; consider re-flying with better logging settings"
+        rating, advice = (
+            "POOR",
+            "Log quality is low; consider re-flying with better logging settings",
+        )
 
     file_size_mb = _lp.stat().st_size / (1024 * 1024)
 
@@ -251,11 +274,11 @@ def get_log_quality(
 # ---------------------------------------------------------------------------
 
 _MODULE_ERROR_CODES = {
-    "pid":      ("E5010", "E5011"),
-    "fft":      ("E5020", "E5021"),
-    "magfit":   ("E5030", "E5031"),
-    "sysid":    ("E5040", "E5041"),
-    "filter":   ("E5050", "E5051"),
+    "pid": ("E5010", "E5011"),
+    "fft": ("E5020", "E5021"),
+    "magfit": ("E5030", "E5031"),
+    "sysid": ("E5040", "E5041"),
+    "filter": ("E5050", "E5051"),
     "hardware": ("E5060", "E5061"),
 }
 
@@ -301,6 +324,7 @@ def run_module(
                 code=data_code,
             )
         from smarttune.analyzers.pid_reviewer import PIDReviewer
+
         reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
         return reviewer.analyze(fd, axis=_axis)
 
@@ -312,6 +336,7 @@ def run_module(
                 code=data_code,
             )
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+
         analyzer = FFTAnalyzer(knowledge=kb.get("filter_rules", {}))
         return analyzer.analyze(fd)
 
@@ -323,6 +348,7 @@ def run_module(
                 code=data_code,
             )
         from smarttune.analyzers.magfit import MAGFit
+
         magfit = MAGFit(knowledge=kb.get("magfit_rules", {}))
         return magfit.analyze(fd)
 
@@ -334,14 +360,13 @@ def run_module(
                 code=data_code,
             )
         from smarttune.analyzers.sysid_analyzer import SysIDAnalyzer
+
         analyzer = SysIDAnalyzer(na=na, nb=nb)
         return analyzer.analyze(fd, axis=_axis)
 
     if module == "hardware":
         try:
-            _hr_mod = importlib.import_module(
-                f"smarttune.platform.{adapter.name}.hardware_report"
-            )
+            _hr_mod = importlib.import_module(f"smarttune.platform.{adapter.name}.hardware_report")
         except ImportError:
             raise SmartTuneError(
                 message=f"Hardware report module not available for {adapter.display_name}",
@@ -355,6 +380,7 @@ def run_module(
 # ---------------------------------------------------------------------------
 # Individual analysis functions (matching each CLI command)
 # ---------------------------------------------------------------------------
+
 
 def analyze_pid(
     log_path: Path,
@@ -470,9 +496,7 @@ def analyze_filter(
         )
 
     try:
-        _ft_mod = importlib.import_module(
-            f"smarttune.platform.{adapter.name}.filter_transfer"
-        )
+        _ft_mod = importlib.import_module(f"smarttune.platform.{adapter.name}.filter_transfer")
     except ImportError:
         raise SmartTuneError(
             message=f"Filter transfer module not available for {adapter.display_name}",
@@ -492,7 +516,9 @@ def analyze_filter(
     use_manual = (gyro_filter_hz is not None or notch_freq_hz is not None) or not auto_derive
 
     if use_manual:
-        current_gyro = gyro_filter_hz if gyro_filter_hz is not None else get_fallback_gyro_filter_hz(params)
+        current_gyro = (
+            gyro_filter_hz if gyro_filter_hz is not None else get_fallback_gyro_filter_hz(params)
+        )
         notch_params = None
         if notch_freq_hz is not None and notch_freq_hz > 0:
             notch_params = {
@@ -501,9 +527,7 @@ def analyze_filter(
                 "attenuation_db": 30,
                 "harmonics": 3,
             }
-        mag_db, phase_deg = compute_filter_response(
-            freqs, sample_rate, current_gyro, notch_params
-        )
+        mag_db, phase_deg = compute_filter_response(freqs, sample_rate, current_gyro, notch_params)
         config_summary = f"GYRO_FILTER={current_gyro:.0f}Hz"
         if notch_freq_hz:
             config_summary += f", Notch={notch_freq_hz:.0f}Hz"
@@ -523,11 +547,13 @@ def analyze_filter(
         if fk >= freqs[-1]:
             break
         idx = int(np.argmin(np.abs(freqs - fk)))
-        key_points.append({
-            "frequency_hz": fk,
-            "magnitude_db": round(float(mag_db[idx]), 1),
-            "phase_deg": round(float(phase_deg[idx]), 1),
-        })
+        key_points.append(
+            {
+                "frequency_hz": fk,
+                "magnitude_db": round(float(mag_db[idx]), 1),
+                "phase_deg": round(float(phase_deg[idx]), 1),
+            }
+        )
 
     # Filter chain info (auto mode)
     filter_chain = None
@@ -580,6 +606,7 @@ def analyze_hardware(
 # ---------------------------------------------------------------------------
 # Full analysis — comprehensive (matches `stune analyze`)
 # ---------------------------------------------------------------------------
+
 
 def analyze_log(
     log_path: Path,
@@ -673,9 +700,7 @@ def analyze_log(
     filter_dict = None
     if "filter" in requested and "filter" in capabilities:
         try:
-            _ft_mod = importlib.import_module(
-                f"smarttune.platform.{adapter.name}.filter_transfer"
-            )
+            _ft_mod = importlib.import_module(f"smarttune.platform.{adapter.name}.filter_transfer")
             params = fd.params or {}
             sample_rate = fd.sample_rate_hz or 400
             freqs = np.linspace(1, sample_rate / 2, 500)
@@ -705,7 +730,7 @@ def analyze_log(
     if extra_analyzers:
         extra_results = {}
         for ea in extra_analyzers:
-            name = getattr(ea, 'name', type(ea).__name__)
+            name = getattr(ea, "name", type(ea).__name__)
             try:
                 ea_result = ea.analyze(fd)
                 extra_results[name] = ea_result
@@ -716,10 +741,17 @@ def analyze_log(
             extra_results = None
 
     # Check that at least one module succeeded
-    has_any = any([
-        full_result.pid, full_result.fft, full_result.magfit,
-        hw_dict, sysid_dict, filter_dict, extra_results,
-    ])
+    has_any = any(
+        [
+            full_result.pid,
+            full_result.fft,
+            full_result.magfit,
+            hw_dict,
+            sysid_dict,
+            filter_dict,
+            extra_results,
+        ]
+    )
     if not has_any:
         if module_failures:
             raise SmartTuneError(

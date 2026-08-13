@@ -48,12 +48,12 @@ def generate_hardware_report(
 
     if flight_data is not None:
         firmware_version = getattr(flight_data, "firmware_version", "") or ""
-        board_info       = getattr(flight_data, "board_name", "") or ""
-        extras           = getattr(flight_data, "extras", {}) or {}
-        craft_name       = extras.get("craft_name", "")
-        firmware_type    = extras.get("firmware_type", "")
-        data_version     = extras.get("data_version", 0)
-        frame_count      = extras.get("frame_count", 0)
+        board_info = getattr(flight_data, "board_name", "") or ""
+        extras = getattr(flight_data, "extras", {}) or {}
+        craft_name = extras.get("craft_name", "")
+        firmware_type = extras.get("firmware_type", "")
+        data_version = extras.get("data_version", 0)
+        frame_count = extras.get("frame_count", 0)
 
     # ── 循环率 ────────────────────────────────────────────────
     looptime = params.get("looptime", 0.0)
@@ -71,22 +71,22 @@ def generate_hardware_report(
     pid_params: Dict[str, Dict] = {}
     for axis in ["roll", "pitch", "yaw"]:
         pid_params[axis] = {
-            "P":  params.get(f"pid_{axis}_p", 0.0),
-            "I":  params.get(f"pid_{axis}_i", 0.0),
-            "D":  params.get(f"pid_{axis}_d", 0.0),
+            "P": params.get(f"pid_{axis}_p", 0.0),
+            "I": params.get(f"pid_{axis}_i", 0.0),
+            "D": params.get(f"pid_{axis}_d", 0.0),
             "FF": params.get(f"pid_{axis}_f", params.get(f"pid_{axis}_FF", 0.0)),
         }
 
     # ── 滤波器参数 ────────────────────────────────────────────
     filter_config = {
-        "gyro_lowpass_hz":   params.get("gyro_lowpass_hz",   0.0),
-        "gyro_lowpass2_hz":  params.get("gyro_lowpass2_hz",  0.0),
-        "dterm_lowpass_hz":  params.get("dterm_lowpass_hz",  0.0),
+        "gyro_lowpass_hz": params.get("gyro_lowpass_hz", 0.0),
+        "gyro_lowpass2_hz": params.get("gyro_lowpass2_hz", 0.0),
+        "dterm_lowpass_hz": params.get("dterm_lowpass_hz", 0.0),
         "dterm_lowpass2_hz": params.get("dterm_lowpass2_hz", 0.0),
-        "gyro_notch1_hz":    params.get("gyro_notch1_hz",    0.0),
-        "gyro_notch1_cutoff":params.get("gyro_notch1_cutoff",0.0),
-        "gyro_notch2_hz":    params.get("gyro_notch2_hz",    0.0),
-        "gyro_notch2_cutoff":params.get("gyro_notch2_cutoff",0.0),
+        "gyro_notch1_hz": params.get("gyro_notch1_hz", 0.0),
+        "gyro_notch1_cutoff": params.get("gyro_notch1_cutoff", 0.0),
+        "gyro_notch2_hz": params.get("gyro_notch2_hz", 0.0),
+        "gyro_notch2_cutoff": params.get("gyro_notch2_cutoff", 0.0),
         "rpm_filter_min_hz": params.get("rpm_filter_min_hz", 0.0),
     }
 
@@ -98,10 +98,10 @@ def generate_hardware_report(
             bc = getattr(flight_data, "battery_current", None)
             rep: Dict[str, Any] = {
                 "id": 0,
-                "voltage_min":  float(np.min(bv)),
-                "voltage_max":  float(np.max(bv)),
+                "voltage_min": float(np.min(bv)),
+                "voltage_max": float(np.max(bv)),
                 "voltage_mean": float(np.mean(bv)),
-                "current_max":  float(np.max(bc)) if bc is not None and len(bc) > 0 else 0.0,
+                "current_max": float(np.max(bc)) if bc is not None and len(bc) > 0 else 0.0,
                 "current_mean": float(np.mean(bc)) if bc is not None and len(bc) > 0 else 0.0,
             }
             battery_reports.append(rep)
@@ -166,7 +166,7 @@ def build_hardware_display_sections(report: Dict[str, Any]) -> List[str]:
     if fc:
         lines.append("[bold]Filters:[/bold]")
         for key, label in [
-            ("gyro_lowpass_hz",  "Gyro LPF1"),
+            ("gyro_lowpass_hz", "Gyro LPF1"),
             ("gyro_lowpass2_hz", "Gyro LPF2"),
             ("dterm_lowpass_hz", "D-term LPF"),
         ]:
@@ -174,8 +174,8 @@ def build_hardware_display_sections(report: Dict[str, Any]) -> List[str]:
             if val > 0:
                 lines.append(f"  {label}: {val:.0f} Hz")
         for idx in [1, 2]:
-            hz  = fc.get(f"gyro_notch{idx}_hz",     0.0)
-            cut = fc.get(f"gyro_notch{idx}_cutoff",  0.0)
+            hz = fc.get(f"gyro_notch{idx}_hz", 0.0)
+            cut = fc.get(f"gyro_notch{idx}_cutoff", 0.0)
             if hz > 0:
                 lines.append(f"  Notch{idx}: {hz:.0f} Hz, cutoff={cut:.0f} Hz")
         rpm = fc.get("rpm_filter_min_hz", 0.0)

@@ -11,7 +11,9 @@ import numpy as np
 import pytest
 
 from smarttune.platform.px4 import (
-    PX4Adapter, _PARAM_MAP_TO_PLATFORM, _ULOG_MAGIC,
+    PX4Adapter,
+    _PARAM_MAP_TO_PLATFORM,
+    _ULOG_MAGIC,
 )
 
 
@@ -62,6 +64,7 @@ class TestStepResponseDispatch:
     def test_px4_dispatch_module_importable(self):
         """pid_reviewer 的动态分派目标必须存在且导出标准接口。"""
         import importlib
+
         mod = importlib.import_module("smarttune.platform.px4.step_response_fft")
         assert hasattr(mod, "estimate_step_response")
         assert hasattr(mod, "compute_step_response_for_axis")

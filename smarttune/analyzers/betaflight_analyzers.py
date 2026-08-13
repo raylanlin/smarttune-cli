@@ -33,13 +33,15 @@ _log = logging.getLogger(__name__)
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FeedforwardResult:
     """Feedforward 分析结果。"""
+
     axis: str
-    ff_contribution_percent: float = 0.0   # FF 在总 PID 输出中的占比
-    ff_overshoot_detected: bool = False     # FF 是否导致过冲
-    ff_tracking_error_rms: float = 0.0      # setpoint → actual 的 RMS 追踪误差
+    ff_contribution_percent: float = 0.0  # FF 在总 PID 输出中的占比
+    ff_overshoot_detected: bool = False  # FF 是否导致过冲
+    ff_tracking_error_rms: float = 0.0  # setpoint → actual 的 RMS 追踪误差
     assessment: Assessment = Assessment.GOOD
     recommendations: List[ParamRecommendation] = field(default_factory=list)
     details: Dict[str, Any] = field(default_factory=dict)
@@ -48,8 +50,9 @@ class FeedforwardResult:
 @dataclass
 class RPMFilterResult:
     """RPM 滤波器效果评估结果。"""
+
     rpm_filter_detected: bool = False
-    noise_reduction_db: float = 0.0         # 估计的噪声衰减 (dB)
+    noise_reduction_db: float = 0.0  # 估计的噪声衰减 (dB)
     motor_noise_peaks_hz: List[float] = field(default_factory=list)
     residual_noise_level: float = 0.0
     assessment: Assessment = Assessment.GOOD
@@ -60,11 +63,12 @@ class RPMFilterResult:
 @dataclass
 class DTermNoiseResult:
     """D-term 噪声分析结果。"""
+
     axis: str
-    d_noise_rms: float = 0.0               # D-term 信号的 RMS
-    d_to_output_ratio: float = 0.0          # D-term RMS / P-term RMS
-    d_min_active_percent: float = 0.0       # d_min 激活时间占比
-    high_freq_energy_ratio: float = 0.0     # 高频噪声能量占比
+    d_noise_rms: float = 0.0  # D-term 信号的 RMS
+    d_to_output_ratio: float = 0.0  # D-term RMS / P-term RMS
+    d_min_active_percent: float = 0.0  # d_min 激活时间占比
+    high_freq_energy_ratio: float = 0.0  # 高频噪声能量占比
     assessment: Assessment = Assessment.GOOD
     recommendations: List[ParamRecommendation] = field(default_factory=list)
     details: Dict[str, Any] = field(default_factory=dict)
@@ -73,6 +77,7 @@ class DTermNoiseResult:
 # ---------------------------------------------------------------------------
 # 1. Feedforward Analyzer
 # ---------------------------------------------------------------------------
+
 
 class FeedforwardAnalyzer:
     """分析 Betaflight Feedforward (FF) 项的效果。
@@ -163,39 +168,45 @@ class FeedforwardAnalyzer:
 
             # ── 追踪误差 ──
             tracking_error = actual - desired
-            result.ff_tracking_error_rms = float(np.sqrt(np.mean(tracking_error ** 2)))
+            result.ff_tracking_error_rms = float(np.sqrt(np.mean(tracking_error**2)))
 
             # ── 评估 ──
             if result.ff_overshoot_detected:
                 result.assessment = Assessment.MARGINAL
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(f"pid.{ax}.ff", axis=ax),
-                    current=fd.params.get(f"pid_{ax}_f", 0),
-                    suggested=fd.params.get(f"pid_{ax}_f", 120) * 0.85,
-                    reason=f"FF causes overshoot on {ax} — reduce FF by ~15%",
-                    confidence=Confidence.MEDIUM,
-                    action="decrease",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(f"pid.{ax}.ff", axis=ax),
+                        current=fd.params.get(f"pid_{ax}_f", 0),
+                        suggested=fd.params.get(f"pid_{ax}_f", 120) * 0.85,
+                        reason=f"FF causes overshoot on {ax} — reduce FF by ~15%",
+                        confidence=Confidence.MEDIUM,
+                        action="decrease",
+                    )
+                )
             elif ff_ratio < 10 and sig.ff_term is not None:
                 result.assessment = Assessment.MARGINAL
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(f"pid.{ax}.ff", axis=ax),
-                    current=fd.params.get(f"pid_{ax}_f", 0),
-                    suggested=fd.params.get(f"pid_{ax}_f", 120) * 1.2,
-                    reason=f"FF contribution very low ({ff_ratio:.0f}%) — consider increasing FF",
-                    confidence=Confidence.LOW,
-                    action="increase",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(f"pid.{ax}.ff", axis=ax),
+                        current=fd.params.get(f"pid_{ax}_f", 0),
+                        suggested=fd.params.get(f"pid_{ax}_f", 120) * 1.2,
+                        reason=f"FF contribution very low ({ff_ratio:.0f}%) — consider increasing FF",
+                        confidence=Confidence.LOW,
+                        action="increase",
+                    )
+                )
             elif ff_ratio > 50:
                 result.assessment = Assessment.MARGINAL
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(f"pid.{ax}.ff", axis=ax),
-                    current=fd.params.get(f"pid_{ax}_f", 0),
-                    suggested=fd.params.get(f"pid_{ax}_f", 120) * 0.8,
-                    reason=f"FF dominates output ({ff_ratio:.0f}%) — P term may be too low or FF too high",
-                    confidence=Confidence.MEDIUM,
-                    action="decrease",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(f"pid.{ax}.ff", axis=ax),
+                        current=fd.params.get(f"pid_{ax}_f", 0),
+                        suggested=fd.params.get(f"pid_{ax}_f", 120) * 0.8,
+                        reason=f"FF dominates output ({ff_ratio:.0f}%) — P term may be too low or FF too high",
+                        confidence=Confidence.MEDIUM,
+                        action="decrease",
+                    )
+                )
 
             result.details = {
                 "ff_contribution_percent": round(ff_ratio, 1),
@@ -212,6 +223,7 @@ class FeedforwardAnalyzer:
 # ---------------------------------------------------------------------------
 # 2. RPM Filter Analyzer
 # ---------------------------------------------------------------------------
+
 
 class RPMFilterAnalyzer:
     """评估 RPM 滤波器的效果。
@@ -281,14 +293,18 @@ class RPMFilterAnalyzer:
             # 简单峰值检测
             peaks = []
             for i in range(1, len(motor_power) - 1):
-                if (motor_power[i] > motor_power[i-1] and
-                    motor_power[i] > motor_power[i+1] and
-                    motor_power[i] > noise_floor_db + 10):
-                    peaks.append({
-                        "freq": float(motor_freqs[i]),
-                        "power_db": float(motor_power[i]),
-                        "above_floor_db": float(motor_power[i] - noise_floor_db),
-                    })
+                if (
+                    motor_power[i] > motor_power[i - 1]
+                    and motor_power[i] > motor_power[i + 1]
+                    and motor_power[i] > noise_floor_db + 10
+                ):
+                    peaks.append(
+                        {
+                            "freq": float(motor_freqs[i]),
+                            "power_db": float(motor_power[i]),
+                            "above_floor_db": float(motor_power[i] - noise_floor_db),
+                        }
+                    )
 
             # 按功率排序
             peaks.sort(key=lambda x: x["power_db"], reverse=True)
@@ -306,25 +322,29 @@ class RPMFilterAnalyzer:
                         result.assessment = Assessment.GOOD
                     else:
                         result.assessment = Assessment.MARGINAL
-                        result.recommendations.append(ParamRecommendation(
-                            param=ParamRef("filter.gyro_lpf"),
-                            current=fd.params.get("gyro_lowpass_hz", 200),
-                            suggested=max(100, fd.params.get("gyro_lowpass_hz", 200) - 50),
-                            reason="Residual motor noise high despite RPM filter — lower gyro LPF",
-                            confidence=Confidence.MEDIUM,
-                            action="decrease",
-                        ))
+                        result.recommendations.append(
+                            ParamRecommendation(
+                                param=ParamRef("filter.gyro_lpf"),
+                                current=fd.params.get("gyro_lowpass_hz", 200),
+                                suggested=max(100, fd.params.get("gyro_lowpass_hz", 200) - 50),
+                                reason="Residual motor noise high despite RPM filter — lower gyro LPF",
+                                confidence=Confidence.MEDIUM,
+                                action="decrease",
+                            )
+                        )
                 else:
                     if max_peak_above_floor > 20:
                         result.assessment = Assessment.MARGINAL
-                        result.recommendations.append(ParamRecommendation(
-                            param=ParamRef("filter.gyro_lpf"),
-                            current=fd.params.get("gyro_lowpass_hz", 200),
-                            suggested=max(80, fd.params.get("gyro_lowpass_hz", 200) * 0.7),
-                            reason="Significant motor noise without RPM filter — consider enabling RPM filter or lowering gyro LPF",
-                            confidence=Confidence.MEDIUM,
-                            action="decrease",
-                        ))
+                        result.recommendations.append(
+                            ParamRecommendation(
+                                param=ParamRef("filter.gyro_lpf"),
+                                current=fd.params.get("gyro_lowpass_hz", 200),
+                                suggested=max(80, fd.params.get("gyro_lowpass_hz", 200) * 0.7),
+                                reason="Significant motor noise without RPM filter — consider enabling RPM filter or lowering gyro LPF",
+                                confidence=Confidence.MEDIUM,
+                                action="decrease",
+                            )
+                        )
             else:
                 result.assessment = Assessment.EXCELLENT
                 result.details["note"] = "No significant motor noise peaks detected"
@@ -334,12 +354,14 @@ class RPMFilterAnalyzer:
         if np.sum(high_freq_mask) > 0:
             result.residual_noise_level = float(np.sqrt(np.mean(power[high_freq_mask])))
 
-        result.details.update({
-            "sample_rate_hz": float(fs),
-            "noise_floor_db": round(noise_floor_db, 1),
-            "peak_count": len(result.motor_noise_peaks_hz),
-            "rpm_filter_enabled": result.rpm_filter_detected,
-        })
+        result.details.update(
+            {
+                "sample_rate_hz": float(fs),
+                "noise_floor_db": round(noise_floor_db, 1),
+                "peak_count": len(result.motor_noise_peaks_hz),
+                "rpm_filter_enabled": result.rpm_filter_detected,
+            }
+        )
 
         return result
 
@@ -347,6 +369,7 @@ class RPMFilterAnalyzer:
 # ---------------------------------------------------------------------------
 # 3. D-Term Noise Analyzer
 # ---------------------------------------------------------------------------
+
 
 class DTermNoiseAnalyzer:
     """分析 D-term 噪声和 d_min/d_max 行为。
@@ -382,12 +405,12 @@ class DTermNoiseAnalyzer:
             n = len(d)
 
             # ── D-term RMS ──
-            result.d_noise_rms = float(np.sqrt(np.mean(d ** 2)))
+            result.d_noise_rms = float(np.sqrt(np.mean(d**2)))
 
             # ── D/P 比率 ──
             if sig.p_term is not None:
                 p = sig.p_term.astype(np.float64)
-                p_rms = np.sqrt(np.mean(p ** 2))
+                p_rms = np.sqrt(np.mean(p**2))
                 if p_rms > 1e-6:
                     result.d_to_output_ratio = result.d_noise_rms / p_rms
                 else:
@@ -426,34 +449,40 @@ class DTermNoiseAnalyzer:
             if result.d_to_output_ratio > 0.5:
                 result.assessment = Assessment.POOR
                 d_min_param = f"pid.{ax}.d_min"
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(d_min_param, axis=ax),
-                    current=fd.params.get(f"d_min_{ax}", 0),
-                    suggested=max(0, fd.params.get(f"d_min_{ax}", 25) * 0.7),
-                    reason=f"D-term noise very high on {ax} (D/P ratio = {result.d_to_output_ratio:.2f}) — reduce d_min",
-                    confidence=Confidence.HIGH,
-                    action="decrease",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(d_min_param, axis=ax),
+                        current=fd.params.get(f"d_min_{ax}", 0),
+                        suggested=max(0, fd.params.get(f"d_min_{ax}", 25) * 0.7),
+                        reason=f"D-term noise very high on {ax} (D/P ratio = {result.d_to_output_ratio:.2f}) — reduce d_min",
+                        confidence=Confidence.HIGH,
+                        action="decrease",
+                    )
+                )
             elif result.d_to_output_ratio > 0.3:
                 result.assessment = Assessment.MARGINAL
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(f"filter.dterm_lpf"),
-                    current=fd.params.get("dterm_lowpass_hz", 150),
-                    suggested=max(80, fd.params.get("dterm_lowpass_hz", 150) * 0.8),
-                    reason=f"D-term noise elevated on {ax} — consider lowering D-term LPF",
-                    confidence=Confidence.MEDIUM,
-                    action="decrease",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(f"filter.dterm_lpf"),
+                        current=fd.params.get("dterm_lowpass_hz", 150),
+                        suggested=max(80, fd.params.get("dterm_lowpass_hz", 150) * 0.8),
+                        reason=f"D-term noise elevated on {ax} — consider lowering D-term LPF",
+                        confidence=Confidence.MEDIUM,
+                        action="decrease",
+                    )
+                )
             elif result.high_freq_energy_ratio > 0.3:
                 result.assessment = Assessment.MARGINAL
-                result.recommendations.append(ParamRecommendation(
-                    param=ParamRef(f"filter.dterm_lpf"),
-                    current=fd.params.get("dterm_lowpass_hz", 150),
-                    suggested=max(80, fd.params.get("dterm_lowpass_hz", 150) * 0.85),
-                    reason=f"High-frequency energy in D-term on {ax} ({result.high_freq_energy_ratio*100:.0f}%) — lower D-term LPF",
-                    confidence=Confidence.MEDIUM,
-                    action="decrease",
-                ))
+                result.recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(f"filter.dterm_lpf"),
+                        current=fd.params.get("dterm_lowpass_hz", 150),
+                        suggested=max(80, fd.params.get("dterm_lowpass_hz", 150) * 0.85),
+                        reason=f"High-frequency energy in D-term on {ax} ({result.high_freq_energy_ratio*100:.0f}%) — lower D-term LPF",
+                        confidence=Confidence.MEDIUM,
+                        action="decrease",
+                    )
+                )
             else:
                 result.assessment = Assessment.GOOD
 

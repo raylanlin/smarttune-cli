@@ -43,6 +43,7 @@ def tables():
 # 数据完整性
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_table_is_schema_v2_with_provenance(tables, platform):
     tbl = tables[platform]
@@ -61,8 +62,9 @@ def test_lint_reports_no_errors(tables, platform):
 
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_no_placeholder_leaks_in_descriptions(tables, platform):
-    leaked = [p.name for p in tables[platform].list_all()
-              if re.search(r"@[A-Z_]+@", p.description or "")]
+    leaked = [
+        p.name for p in tables[platform].list_all() if re.search(r"@[A-Z_]+@", p.description or "")
+    ]
     assert leaked == [], f"unexpanded upstream placeholders in {leaked[:5]}"
 
 
@@ -90,8 +92,9 @@ def test_descriptions_are_not_offset_by_one(tables):
 def test_defaults_are_not_all_identical(tables, platform):
     """A single repeated default across the table means they were fabricated."""
     defaults = {repr(p.default) for p in tables[platform].list_all()}
-    assert len(defaults) > 1 or defaults == {"None"}, (
-        "every parameter shares one default value — data looks fabricated")
+    assert len(defaults) > 1 or defaults == {
+        "None"
+    }, "every parameter shares one default value — data looks fabricated"
 
 
 def test_px4_has_real_defaults(tables):
@@ -104,6 +107,7 @@ def test_px4_has_real_defaults(tables):
 # ---------------------------------------------------------------------------
 # 枚举含义（AI 把参数表当知识库用的前提）
 # ---------------------------------------------------------------------------
+
 
 def test_enum_members_carry_meaning(tables):
     monitor = tables["ardupilot"].query("BATT_MONITOR")
@@ -122,13 +126,15 @@ def test_bitmask_members_present(tables):
 def test_every_enum_has_members_or_a_documented_gap(tables, platform):
     for p in tables[platform].list_all():
         if p.type in ("enum", "bitmask") and not p.values and not p.bitmask:
-            assert p.unresolved_ref or p.min is not None or p.max is not None, (
-                f"{p.name}: discrete parameter with no members, no range, no note")
+            assert (
+                p.unresolved_ref or p.min is not None or p.max is not None
+            ), f"{p.name}: discrete parameter with no members, no range, no note"
 
 
 # ---------------------------------------------------------------------------
 # 校验：闸门必须真的关着
 # ---------------------------------------------------------------------------
+
 
 def test_enum_validate_checks_membership(tables):
     tbl = tables["ardupilot"]
@@ -180,14 +186,22 @@ def test_legacy_validate_wrapper_still_returns_tuple(tables):
 
 
 def test_loader_tolerates_unknown_keys():
-    pd = ParamDef.from_dict({"name": "X", "category": "misc", "type": "float",
-                             "future_field": 1, "values": [{"value": 2, "label": "Two"}]})
+    pd = ParamDef.from_dict(
+        {
+            "name": "X",
+            "category": "misc",
+            "type": "float",
+            "future_field": 1,
+            "values": [{"value": 2, "label": "Two"}],
+        }
+    )
     assert pd.name == "X" and pd.values == {"2": "Two"}
 
 
 # ---------------------------------------------------------------------------
 # 组 / 搜索 / 返回体形状
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_groups_are_indexed(tables, platform):
@@ -231,8 +245,9 @@ def test_slim_dict_is_small_and_full_dict_is_complete(tables):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _json_out(result):
-    return json.loads(result.stdout[result.stdout.index("{"):])
+    return json.loads(result.stdout[result.stdout.index("{") :])
 
 
 def test_cli_groups_json():
@@ -259,13 +274,15 @@ def test_cli_get_param_json_has_enum_values():
 
 
 def test_cli_validate_enum_member_json():
-    ok = CliRunner().invoke(main, ["params", "--validate", "BATT_MONITOR", "4",
-                                   "-p", "ap", "-f", "json"])
+    ok = CliRunner().invoke(
+        main, ["params", "--validate", "BATT_MONITOR", "4", "-p", "ap", "-f", "json"]
+    )
     assert ok.exit_code == 0
     assert _json_out(ok)["valid"] is True
 
-    bad = CliRunner().invoke(main, ["params", "--validate", "BATT_MONITOR", "99",
-                                    "-p", "ap", "-f", "json"])
+    bad = CliRunner().invoke(
+        main, ["params", "--validate", "BATT_MONITOR", "99", "-p", "ap", "-f", "json"]
+    )
     assert bad.exit_code == 1
     body = _json_out(bad)
     assert body["status"] == STATUS_NOT_A_MEMBER and body["options"]

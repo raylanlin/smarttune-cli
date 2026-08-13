@@ -48,7 +48,9 @@ def _make_step_signal(
             zeta = 0.5 if overshoot > 0.1 else 0.7
             wd = wn * np.sqrt(max(1e-6, 1 - zeta**2))
             env = np.exp(-zeta * wn * tau)
-            resp = 1.0 - env * (np.cos(wd * tau) + (zeta / np.sqrt(max(1e-6, 1 - zeta**2))) * np.sin(wd * tau))
+            resp = 1.0 - env * (
+                np.cos(wd * tau) + (zeta / np.sqrt(max(1e-6, 1 - zeta**2))) * np.sin(wd * tau)
+            )
             actual[j] = prev_val + step_amp * resp
 
     # Add some noise

@@ -79,13 +79,27 @@ def _make_bf_flight_data(
         imu_timestamp_s=t,
         params={
             "looptime": 250,
-            "pid_roll_p": 45, "pid_roll_i": 80, "pid_roll_d": 40, "pid_roll_f": 120,
-            "pid_pitch_p": 47, "pid_pitch_i": 84, "pid_pitch_d": 46, "pid_pitch_f": 125,
-            "pid_yaw_p": 45, "pid_yaw_i": 80, "pid_yaw_d": 0, "pid_yaw_f": 120,
-            "d_min_roll": 25, "d_min_pitch": 28, "d_min_yaw": 0,
-            "gyro_lowpass_hz": 200, "gyro_lowpass2_hz": 250,
-            "dterm_lowpass_hz": 150, "dterm_lowpass2_hz": 0,
-            "rpm_filter": 0, "dshot_bidir": 0,
+            "pid_roll_p": 45,
+            "pid_roll_i": 80,
+            "pid_roll_d": 40,
+            "pid_roll_f": 120,
+            "pid_pitch_p": 47,
+            "pid_pitch_i": 84,
+            "pid_pitch_d": 46,
+            "pid_pitch_f": 125,
+            "pid_yaw_p": 45,
+            "pid_yaw_i": 80,
+            "pid_yaw_d": 0,
+            "pid_yaw_f": 120,
+            "d_min_roll": 25,
+            "d_min_pitch": 28,
+            "d_min_yaw": 0,
+            "gyro_lowpass_hz": 200,
+            "gyro_lowpass2_hz": 250,
+            "dterm_lowpass_hz": 150,
+            "dterm_lowpass2_hz": 0,
+            "rpm_filter": 0,
+            "dshot_bidir": 0,
             "anti_gravity_gain": 80,
         },
     )
@@ -96,6 +110,7 @@ class TestFeedforwardAnalyzer(unittest.TestCase):
 
     def test_analyze_all_axes(self):
         from smarttune.analyzers.betaflight_analyzers import FeedforwardAnalyzer
+
         fd = _make_bf_flight_data(ff_strength=1.0)
         analyzer = FeedforwardAnalyzer()
         results = analyzer.analyze(fd)
@@ -108,6 +123,7 @@ class TestFeedforwardAnalyzer(unittest.TestCase):
 
     def test_analyze_single_axis(self):
         from smarttune.analyzers.betaflight_analyzers import FeedforwardAnalyzer
+
         fd = _make_bf_flight_data()
         analyzer = FeedforwardAnalyzer()
         results = analyzer.analyze(fd, axis="roll")
@@ -117,6 +133,7 @@ class TestFeedforwardAnalyzer(unittest.TestCase):
 
     def test_no_ff_data(self):
         from smarttune.analyzers.betaflight_analyzers import FeedforwardAnalyzer
+
         fd = _make_bf_flight_data()
         # 清除 FF 数据
         for ax in fd.pid.values():
@@ -129,6 +146,7 @@ class TestFeedforwardAnalyzer(unittest.TestCase):
 
     def test_high_ff_strength_detection(self):
         from smarttune.analyzers.betaflight_analyzers import FeedforwardAnalyzer
+
         # 使用正弦波 desired 以确保 FF (基于梯度) 持续非零
         fd = _make_bf_flight_data(ff_strength=5.0)
         n = len(fd.pid["roll"].timestamp_s)
@@ -145,6 +163,7 @@ class TestFeedforwardAnalyzer(unittest.TestCase):
 
     def test_zero_ff(self):
         from smarttune.analyzers.betaflight_analyzers import FeedforwardAnalyzer
+
         fd = _make_bf_flight_data(ff_strength=0.0)
         analyzer = FeedforwardAnalyzer()
         results = analyzer.analyze(fd)
@@ -159,6 +178,7 @@ class TestRPMFilterAnalyzer(unittest.TestCase):
 
     def test_analyze_basic(self):
         from smarttune.analyzers.betaflight_analyzers import RPMFilterAnalyzer
+
         fd = _make_bf_flight_data(motor_noise_hz=150)
         analyzer = RPMFilterAnalyzer()
         result = analyzer.analyze(fd)
@@ -169,18 +189,19 @@ class TestRPMFilterAnalyzer(unittest.TestCase):
 
     def test_detect_motor_peaks(self):
         from smarttune.analyzers.betaflight_analyzers import RPMFilterAnalyzer
+
         fd = _make_bf_flight_data(motor_noise_hz=180)
         analyzer = RPMFilterAnalyzer()
         result = analyzer.analyze(fd)
 
         # 应该检测到 180Hz 附近的峰值
         if result.motor_noise_peaks_hz:
-            closest = min(result.motor_noise_peaks_hz,
-                          key=lambda f: abs(f - 180))
+            closest = min(result.motor_noise_peaks_hz, key=lambda f: abs(f - 180))
             self.assertAlmostEqual(closest, 180, delta=30)
 
     def test_rpm_filter_detected(self):
         from smarttune.analyzers.betaflight_analyzers import RPMFilterAnalyzer
+
         fd = _make_bf_flight_data()
         fd.params["rpm_filter"] = 1
         fd.params["dshot_bidir"] = 1
@@ -191,6 +212,7 @@ class TestRPMFilterAnalyzer(unittest.TestCase):
 
     def test_insufficient_gyro_data(self):
         from smarttune.analyzers.betaflight_analyzers import RPMFilterAnalyzer
+
         fd = _make_bf_flight_data()
         fd.gyro = np.zeros((10, 3))  # 太少
         analyzer = RPMFilterAnalyzer()
@@ -204,6 +226,7 @@ class TestDTermNoiseAnalyzer(unittest.TestCase):
 
     def test_analyze_all_axes(self):
         from smarttune.analyzers.betaflight_analyzers import DTermNoiseAnalyzer
+
         fd = _make_bf_flight_data(d_noise_level=0.1)
         analyzer = DTermNoiseAnalyzer()
         results = analyzer.analyze(fd)
@@ -216,6 +239,7 @@ class TestDTermNoiseAnalyzer(unittest.TestCase):
 
     def test_high_d_noise(self):
         from smarttune.analyzers.betaflight_analyzers import DTermNoiseAnalyzer
+
         fd = _make_bf_flight_data(d_noise_level=5.0)  # 非常高的噪声
         analyzer = DTermNoiseAnalyzer()
         results = analyzer.analyze(fd)
@@ -226,6 +250,7 @@ class TestDTermNoiseAnalyzer(unittest.TestCase):
 
     def test_no_d_term(self):
         from smarttune.analyzers.betaflight_analyzers import DTermNoiseAnalyzer
+
         fd = _make_bf_flight_data()
         for sig in fd.pid.values():
             sig.d_term = None
@@ -237,6 +262,7 @@ class TestDTermNoiseAnalyzer(unittest.TestCase):
 
     def test_d_min_active_percent(self):
         from smarttune.analyzers.betaflight_analyzers import DTermNoiseAnalyzer
+
         fd = _make_bf_flight_data(d_noise_level=0.1)
         analyzer = DTermNoiseAnalyzer()
         results = analyzer.analyze(fd)
@@ -251,7 +277,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
     """测试 Betaflight 知识库加载和规则完整性。"""
 
     def test_pid_rules_load(self):
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         pid_path = rules_dir / "pid_rules.json"
         self.assertTrue(pid_path.exists(), f"pid_rules.json not found at {pid_path}")
 
@@ -267,7 +295,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
         self.assertIn("param_change_rules", rules)
 
     def test_pid_rules_thresholds(self):
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         with open(rules_dir / "pid_rules.json") as f:
             rules = json.load(f)
 
@@ -283,7 +313,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
 
     def test_pid_rules_bf_specific(self):
         """验证 BF 特有规则存在。"""
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         with open(rules_dir / "pid_rules.json") as f:
             rules = json.load(f)
 
@@ -302,7 +334,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
 
     def test_pid_rules_default_ranges(self):
         """验证 PID 默认范围合理。"""
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         with open(rules_dir / "pid_rules.json") as f:
             rules = json.load(f)
 
@@ -316,7 +350,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
             self.assertLessEqual(spec["typical"], spec["max"])
 
     def test_filter_rules_load(self):
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         filter_path = rules_dir / "filter_rules.json"
         self.assertTrue(filter_path.exists(), f"filter_rules.json not found")
 
@@ -333,7 +369,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
 
     def test_filter_rules_rpm_filter(self):
         """验证 RPM filter 规则完整。"""
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         with open(rules_dir / "filter_rules.json") as f:
             rules = json.load(f)
 
@@ -345,7 +383,9 @@ class TestBFKnowledgeBase(unittest.TestCase):
 
     def test_filter_rules_filter_stack_order(self):
         """验证滤波器链顺序正确。"""
-        rules_dir = Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        rules_dir = (
+            Path(__file__).parent.parent / "smarttune" / "knowledge" / "rules" / "betaflight"
+        )
         with open(rules_dir / "filter_rules.json") as f:
             rules = json.load(f)
 
@@ -359,6 +399,7 @@ class TestBFKnowledgeBase(unittest.TestCase):
     def test_knowledge_base_loads_bf_rules(self):
         """通过 KnowledgeBase 加载 BF 规则。"""
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform="betaflight")
 
         self.assertIn("pid_rules", kb.rules)
@@ -377,7 +418,9 @@ class TestBFAnalyzerWithKnowledgeBase(unittest.TestCase):
     def test_full_bf_analysis_pipeline(self):
         """端到端: 合成数据 → FF/RPM/D-term 分析。"""
         from smarttune.analyzers.betaflight_analyzers import (
-            FeedforwardAnalyzer, RPMFilterAnalyzer, DTermNoiseAnalyzer,
+            FeedforwardAnalyzer,
+            RPMFilterAnalyzer,
+            DTermNoiseAnalyzer,
         )
 
         fd = _make_bf_flight_data(duration_s=3.0)

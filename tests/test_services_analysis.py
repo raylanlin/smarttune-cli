@@ -76,6 +76,7 @@ class TestGetLogQuality:
         log_file.write_bytes(b"\x00" * 1024)
 
         from smarttune.services.analysis import get_log_quality
+
         result = get_log_quality(log_file)
 
         assert "platform" in result
@@ -98,6 +99,7 @@ class TestGetLogQuality:
         log_file.write_bytes(b"\x00" * 512)
 
         from smarttune.services.analysis import get_log_quality
+
         result = get_log_quality(log_file)
 
         assert result["quality"]["score"] < 50
@@ -150,7 +152,9 @@ class TestAnalyzeLog:
                     MockFFT.return_value.analyze.return_value = mock_fft
                     with patch("smarttune.analyzers.magfit.MAGFit") as MockMag:
                         MockMag.return_value.analyze.return_value = mock_mag
-                        with patch("smarttune.analyzers.hardware_report.generate_hardware_report") as MockHW:
+                        with patch(
+                            "smarttune.analyzers.hardware_report.generate_hardware_report"
+                        ) as MockHW:
                             MockHW.return_value = {
                                 "imu_configs": [],
                                 "compass_configs": [],
@@ -168,6 +172,7 @@ class TestAnalyzeLog:
                             }
 
                             from smarttune.services.analysis import analyze_log
+
                             result = analyze_log(log_file)
 
         assert result["platform"] == "ardupilot"
@@ -208,6 +213,7 @@ class TestAnalyzeLog:
                     MockFFT.return_value.analyze.return_value = mock_fft
 
                     from smarttune.services.analysis import analyze_log
+
                     result = analyze_log(log_file, include_modules=["pid", "fft"])
 
         assert "pid" not in result["modules"]
@@ -234,5 +240,6 @@ class TestAnalyzeLog:
                 MockPID.return_value.analyze.side_effect = RuntimeError("PID boom")
 
                 from smarttune.services.analysis import analyze_log
+
                 with pytest.raises(SmartTuneError, match="All requested analysis modules failed"):
                     analyze_log(log_file, include_modules=["pid"])

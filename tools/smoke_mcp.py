@@ -90,15 +90,12 @@ class MCPClient:
             try:
                 return json.loads(line)
             except json.JSONDecodeError:
-                raise RuntimeError(
-                    "NON-JSON LINE ON STDOUT (this breaks stdio MCP): " + line[:400]
-                )
+                raise RuntimeError("NON-JSON LINE ON STDOUT (this breaks stdio MCP): " + line[:400])
         raise TimeoutError("no response within timeout")
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._id += 1
-        self._send({"jsonrpc": "2.0", "id": self._id, "method": method,
-                    "params": params or {}})
+        self._send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
         while True:
             frame = self._read()
             if frame.get("id") == self._id:
@@ -149,11 +146,14 @@ def run(log_path: Path | None, command: list[str]) -> int:
     client = MCPClient(command, env)
     try:
         # ── handshake ──
-        init = client.request("initialize", {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "smarttune-smoke", "version": "1.0"},
-        })
+        init = client.request(
+            "initialize",
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "smarttune-smoke", "version": "1.0"},
+            },
+        )
         check("initialize handshake", "result" in init, str(init.get("error", ""))[:200])
         client.notify("notifications/initialized")
 
@@ -161,124 +161,185 @@ def run(log_path: Path | None, command: list[str]) -> int:
         listed = client.request("tools/list")
         tools = {t["name"] for t in listed.get("result", {}).get("tools", [])}
         missing = EXPECTED_TOOLS - tools
-        check(f"tools/list exposes {len(EXPECTED_TOOLS)} tools", not missing,
-              f"missing: {sorted(missing)}" if missing else f"got {len(tools)}")
+        check(
+            f"tools/list exposes {len(EXPECTED_TOOLS)} tools",
+            not missing,
+            f"missing: {sorted(missing)}" if missing else f"got {len(tools)}",
+        )
 
         annotations = {
             t["name"]: (t.get("annotations") or {})
             for t in listed.get("result", {}).get("tools", [])
         }
         not_readonly = [n for n, a in annotations.items() if a.get("readOnlyHint") is not True]
-        check("every tool is annotated readOnlyHint=True", not not_readonly,
-              f"not read-only: {not_readonly}" if not_readonly else "")
+        check(
+            "every tool is annotated readOnlyHint=True",
+            not not_readonly,
+            f"not read-only: {not_readonly}" if not_readonly else "",
+        )
 
         # ── platforms ──
         payload, _ = client.call_tool("smarttune_list_platforms", {})
-        check("list_platforms envelope has ok=true",
-              envelope_ok(payload) and payload.get("ok") is True)
-        check("list_platforms returns 3 platforms",
-              len(payload.get("platforms", [])) >= 3,
-              f"got {len(payload.get('platforms', []))}")
+        check(
+            "list_platforms envelope has ok=true",
+            envelope_ok(payload) and payload.get("ok") is True,
+        )
+        check(
+            "list_platforms returns 3 platforms",
+            len(payload.get("platforms", [])) >= 3,
+            f"got {len(payload.get('platforms', []))}",
+        )
 
         # ── parameter groups ──
         payload, _ = client.call_tool("smarttune_list_param_groups", {"platform": "ardupilot"})
         groups = payload.get("groups", [])
-        check("list_param_groups(ardupilot) returns the group index",
-              payload.get("ok") is True and len(groups) > 100, f"{len(groups)} groups")
-        check("group index records upstream provenance",
-              bool((payload.get("source") or {}).get("upstream")))
+        check(
+            "list_param_groups(ardupilot) returns the group index",
+            payload.get("ok") is True and len(groups) > 100,
+            f"{len(groups)} groups",
+        )
+        check(
+            "group index records upstream provenance",
+            bool((payload.get("source") or {}).get("upstream")),
+        )
 
         # ── refuse to dump a whole table ──
         payload, raw = client.call_tool("smarttune_list_params", {"platform": "ardupilot"})
-        check("list_params without a filter is refused (payload-size guard)",
-              payload.get("ok") is False and payload.get("error_code") == "E4000",
-              f"ok={payload.get('ok')} code={payload.get('error_code')}")
+        check(
+            "list_params without a filter is refused (payload-size guard)",
+            payload.get("ok") is False and payload.get("error_code") == "E4000",
+            f"ok={payload.get('ok')} code={payload.get('error_code')}",
+        )
 
         # ── slim group listing ──
         payload, raw = client.call_tool(
-            "smarttune_list_params", {"platform": "ardupilot", "group": "ATC_", "limit": 50})
+            "smarttune_list_params", {"platform": "ardupilot", "group": "ATC_", "limit": 50}
+        )
         params = payload.get("params", [])
-        check("list_params(group=ATC_) returns compact rows",
-              payload.get("ok") is True and params and "description" not in params[0],
-              f"{len(params)} rows, {len(raw)} bytes")
+        check(
+            "list_params(group=ATC_) returns compact rows",
+            payload.get("ok") is True and params and "description" not in params[0],
+            f"{len(params)} rows, {len(raw)} bytes",
+        )
         check("compact group listing stays under 32 KB", len(raw) < 32_000, f"{len(raw)} bytes")
 
         # ── one parameter, full detail + enum meanings ──
         payload, _ = client.call_tool("smarttune_get_param", {"param_name": "BATT_MONITOR"})
         match = (payload.get("matches") or [{}])[0]
-        check("get_param(BATT_MONITOR) carries description + enum members",
-              payload.get("ok") is True and bool(match.get("description"))
-              and match.get("values", {}).get("4") == "Analog Voltage and Current",
-              f"values[4]={match.get('values', {}).get('4')!r}")
+        check(
+            "get_param(BATT_MONITOR) carries description + enum members",
+            payload.get("ok") is True
+            and bool(match.get("description"))
+            and match.get("values", {}).get("4") == "Analog Voltage and Current",
+            f"values[4]={match.get('values', {}).get('4')!r}",
+        )
 
         # ── ranked search reaches enum labels ──
         payload, _ = client.call_tool(
-            "smarttune_search_params", {"keyword": "analog voltage", "platform": "ardupilot"})
-        hits = [p["name"] for p in
-                (payload.get("platforms", {}).get("ArduPilot", {}).get("params") or [])]
-        check("search_params matches enum labels", "BATT_MONITOR" in hits,
-              f"top hits: {hits[:5]}")
+            "smarttune_search_params", {"keyword": "analog voltage", "platform": "ardupilot"}
+        )
+        hits = [
+            p["name"]
+            for p in (payload.get("platforms", {}).get("ArduPilot", {}).get("params") or [])
+        ]
+        check("search_params matches enum labels", "BATT_MONITOR" in hits, f"top hits: {hits[:5]}")
 
         # ── validation: the safety gate ──
-        payload, _ = client.call_tool("smarttune_validate_param", {
-            "param_name": "BATT_MONITOR", "param_value": 4, "platform": "ardupilot"})
-        check("validate_param accepts a legal enum member",
-              payload.get("ok") is True and payload.get("valid") is True
-              and payload.get("status") == "ok")
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {"param_name": "BATT_MONITOR", "param_value": 4, "platform": "ardupilot"},
+        )
+        check(
+            "validate_param accepts a legal enum member",
+            payload.get("ok") is True
+            and payload.get("valid") is True
+            and payload.get("status") == "ok",
+        )
 
-        payload, _ = client.call_tool("smarttune_validate_param", {
-            "param_name": "BATT_MONITOR", "param_value": 99, "platform": "ardupilot"})
-        check("validate_param REJECTS an undefined enum value (v3.1 accepted it)",
-              payload.get("valid") is False and payload.get("status") == "not_a_member",
-              f"status={payload.get('status')}")
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {"param_name": "BATT_MONITOR", "param_value": 99, "platform": "ardupilot"},
+        )
+        check(
+            "validate_param REJECTS an undefined enum value (v3.1 accepted it)",
+            payload.get("valid") is False and payload.get("status") == "not_a_member",
+            f"status={payload.get('status')}",
+        )
         check("rejection tells the agent what is allowed", bool(payload.get("options")))
 
-        payload, _ = client.call_tool("smarttune_validate_param", {
-            "param_name": "ATC_RAT_RLL_P", "param_value": 999, "platform": "ardupilot"})
-        check("validate_param enforces numeric range",
-              payload.get("valid") is False and payload.get("status") == "out_of_range",
-              f"status={payload.get('status')}")
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {"param_name": "ATC_RAT_RLL_P", "param_value": 999, "platform": "ardupilot"},
+        )
+        check(
+            "validate_param enforces numeric range",
+            payload.get("valid") is False and payload.get("status") == "out_of_range",
+            f"status={payload.get('status')}",
+        )
 
-        payload, _ = client.call_tool("smarttune_validate_param", {
-            "param_name": "NO_SUCH_PARAM_XYZ", "param_value": 1, "platform": "ardupilot"})
-        check("validate_param rejects unknown names",
-              payload.get("valid") is False and payload.get("status") == "not_found")
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {"param_name": "NO_SUCH_PARAM_XYZ", "param_value": 1, "platform": "ardupilot"},
+        )
+        check(
+            "validate_param rejects unknown names",
+            payload.get("valid") is False and payload.get("status") == "not_found",
+        )
 
         # ── unified error shape ──
         payload, _ = client.call_tool("smarttune_get_param", {"param_name": "NOPE_XYZ"})
         keys = {"ok", "error_code", "message", "hint", "retryable"}
-        check("failures use the unified error shape",
-              payload.get("ok") is False and keys <= set(payload),
-              f"missing: {sorted(keys - set(payload))}")
-        check("deterministic failures are marked non-retryable",
-              payload.get("retryable") is False)
+        check(
+            "failures use the unified error shape",
+            payload.get("ok") is False and keys <= set(payload),
+            f"missing: {sorted(keys - set(payload))}",
+        )
+        check("deterministic failures are marked non-retryable", payload.get("retryable") is False)
 
-        payload, _ = client.call_tool("smarttune_log_quality",
-                                      {"log_path": "/etc/passwd"})
-        check("path validation rejects a file outside the allowed roots",
-              payload.get("ok") is False, f"code={payload.get('error_code')}")
+        payload, _ = client.call_tool("smarttune_log_quality", {"log_path": "/etc/passwd"})
+        check(
+            "path validation rejects a file outside the allowed roots",
+            payload.get("ok") is False,
+            f"code={payload.get('error_code')}",
+        )
 
         # ── log-dependent tools ──
         if log_path:
-            payload, raw = client.call_tool("smarttune_log_quality",
-                                            {"log_path": str(log_path)})
-            check("log_quality on a real log", payload.get("ok") is True,
-                  payload.get("message", "")[:160])
+            payload, raw = client.call_tool("smarttune_log_quality", {"log_path": str(log_path)})
+            check(
+                "log_quality on a real log",
+                payload.get("ok") is True,
+                payload.get("message", "")[:160],
+            )
 
-            payload, raw = client.call_tool("smarttune_analyze_log", {
-                "log_path": str(log_path), "max_recommendations": 10})
-            check("analyze_log on a real log", payload.get("ok") is True,
-                  payload.get("message", "")[:160])
+            payload, raw = client.call_tool(
+                "smarttune_analyze_log", {"log_path": str(log_path), "max_recommendations": 10}
+            )
+            check(
+                "analyze_log on a real log",
+                payload.get("ok") is True,
+                payload.get("message", "")[:160],
+            )
             if payload.get("ok"):
-                check("analyze_log returns modules",
-                      bool(payload.get("modules")), f"{list(payload.get('modules', {}))}")
-                check("analyze_log payload stays under 256 KB",
-                      len(raw) < 262_144, f"{len(raw)} bytes")
+                check(
+                    "analyze_log returns modules",
+                    bool(payload.get("modules")),
+                    f"{list(payload.get('modules', {}))}",
+                )
+                check(
+                    "analyze_log payload stays under 256 KB",
+                    len(raw) < 262_144,
+                    f"{len(raw)} bytes",
+                )
 
-            _, md = client.call_tool("smarttune_analyze_log", {
-                "log_path": str(log_path), "response_format": "markdown"})
-            check("markdown report still renders", md.lstrip().startswith("#"),
-                  md[:80].replace("\n", " "))
+            _, md = client.call_tool(
+                "smarttune_analyze_log", {"log_path": str(log_path), "response_format": "markdown"}
+            )
+            check(
+                "markdown report still renders",
+                md.lstrip().startswith("#"),
+                md[:80].replace("\n", " "),
+            )
         else:
             print("  [SKIP] log-dependent tools (pass --log to include them)", file=sys.stderr)
 
@@ -302,16 +363,20 @@ def run(log_path: Path | None, command: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--log", type=Path, default=None,
-                        help="Flight log to exercise the analysis tools with")
-    parser.add_argument("--command", default=None,
-                        help="Server command (default: python -m smarttune.mcp_server)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--log", type=Path, default=None, help="Flight log to exercise the analysis tools with"
+    )
+    parser.add_argument(
+        "--command", default=None, help="Server command (default: python -m smarttune.mcp_server)"
+    )
     args = parser.parse_args(argv)
 
-    command = args.command.split() if args.command else [
-        sys.executable, "-m", "smarttune.mcp_server"]
+    command = (
+        args.command.split() if args.command else [sys.executable, "-m", "smarttune.mcp_server"]
+    )
     if args.log and not args.log.exists():
         parser.error(f"log not found: {args.log}")
     return run(args.log, command)

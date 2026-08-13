@@ -166,6 +166,7 @@ def resolve_adapter(platform: str, log_path: Path) -> PlatformAdapter:
 # 自动发现并注册内置适配器
 # ---------------------------------------------------------------------------
 
+
 def _auto_discover():
     """导入所有内置平台模块，触发 @register 装饰器。"""
     # 延迟导入，避免循环依赖

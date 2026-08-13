@@ -11,8 +11,14 @@ from rich.console import Console
 
 from smarttune.models.flight_data import FlightData, AxisPIDSignal
 from smarttune.models.analysis_result import (
-    Assessment, ParamRef, ParamRecommendation, Confidence,
-    StepMetrics, AxisPIDResult, PIDAnalysisResult, FullAnalysisResult,
+    Assessment,
+    ParamRef,
+    ParamRecommendation,
+    Confidence,
+    StepMetrics,
+    AxisPIDResult,
+    PIDAnalysisResult,
+    FullAnalysisResult,
 )
 from smarttune.output.formatter import OutputFormatter
 from smarttune.platform.registry import get_adapter

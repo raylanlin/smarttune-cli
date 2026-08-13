@@ -20,14 +20,14 @@ def generate_hardware_report(
     return {
         "firmware_version": firmware_version,
         "filter_config": {
-            "IMU_GYRO_CUTOFF":  params.get("IMU_GYRO_CUTOFF",  0.0),
+            "IMU_GYRO_CUTOFF": params.get("IMU_GYRO_CUTOFF", 0.0),
             "IMU_DGYRO_CUTOFF": params.get("IMU_DGYRO_CUTOFF", 0.0),
         },
         "pid_params": {
             axis: {
-                "P":  params.get(f"MC_{axis.upper()}RATE_P",  0.0),
-                "I":  params.get(f"MC_{axis.upper()}RATE_I",  0.0),
-                "D":  params.get(f"MC_{axis.upper()}RATE_D",  0.0),
+                "P": params.get(f"MC_{axis.upper()}RATE_P", 0.0),
+                "I": params.get(f"MC_{axis.upper()}RATE_I", 0.0),
+                "D": params.get(f"MC_{axis.upper()}RATE_D", 0.0),
                 "FF": params.get(f"MC_{axis.upper()}RATE_FF", 0.0),
             }
             for axis in ["roll", "pitch", "yaw"]

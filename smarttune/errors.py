@@ -18,10 +18,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-
 # ---------------------------------------------------------------------------
 # 基类
 # ---------------------------------------------------------------------------
+
 
 class SmartTuneError(Exception):
     """所有 SmartTune 自定义异常的基类。"""
@@ -61,14 +61,17 @@ class SmartTuneError(Exception):
 # E10xx - 文件/日志相关
 # ---------------------------------------------------------------------------
 
+
 class LogFileError(SmartTuneError):
     code = "E1000"
     message = "Log file operation failed"
+
 
 class LogFileNotFoundError(LogFileError):
     code = "E1001"
     message = "Log file not found"
     hint = "Check the file path and ensure the file exists."
+
 
 class LogFileCorruptError(LogFileError):
     code = "E1002"
@@ -80,18 +83,22 @@ class LogFileCorruptError(LogFileError):
 # E20xx - 解析相关
 # ---------------------------------------------------------------------------
 
+
 class ParseError(SmartTuneError):
     code = "E2000"
     message = "Log parse failed"
+
 
 class LogFormatError(ParseError):
     code = "E2001"
     message = "Unrecognized log format"
     hint = "SmartTune supports ArduPilot (.bin), Betaflight (.bbl), and PX4 (.ulg) logs."
 
+
 class LogVersionError(ParseError):
     code = "E2002"
     message = "Log firmware version may be incompatible"
+
 
 class ParseIncompleteError(ParseError):
     code = "E2003"
@@ -102,21 +109,26 @@ class ParseIncompleteError(ParseError):
 # E30xx - 数据不足
 # ---------------------------------------------------------------------------
 
+
 class InsufficientDataError(SmartTuneError):
     code = "E3000"
     message = "Insufficient data for analysis"
+
 
 class InsufficientIMUDataError(InsufficientDataError):
     code = "E3001"
     message = "Insufficient IMU data in log"
 
+
 class InsufficientPIDDataError(InsufficientDataError):
     code = "E3002"
     message = "Insufficient PID data in log"
 
+
 class InsufficientCompassDataError(InsufficientDataError):
     code = "E3004"
     message = "Insufficient compass data in log"
+
 
 class InsufficientAttitudeDataError(InsufficientDataError):
     code = "E3005"
@@ -127,13 +139,16 @@ class InsufficientAttitudeDataError(InsufficientDataError):
 # E40xx - 参数/输入
 # ---------------------------------------------------------------------------
 
+
 class InvalidParameterError(SmartTuneError):
     code = "E4000"
     message = "Invalid parameter"
 
+
 class InvalidAxisError(InvalidParameterError):
     code = "E4001"
     message = "Invalid axis — expected roll, pitch, or yaw"
+
 
 class UnsupportedPlatformError(InvalidParameterError):
     code = "E4010"
@@ -144,21 +159,26 @@ class UnsupportedPlatformError(InvalidParameterError):
 # E50xx - 分析模块
 # ---------------------------------------------------------------------------
 
+
 class AnalysisError(SmartTuneError):
     code = "E5000"
     message = "Analysis failed"
+
 
 class FFTAnalysisError(AnalysisError):
     code = "E5001"
     message = "FFT analysis failed"
 
+
 class PIDAnalysisError(AnalysisError):
     code = "E5002"
     message = "PID analysis failed"
 
+
 class MAGFitError(AnalysisError):
     code = "E5003"
     message = "Magnetometer calibration analysis failed"
+
 
 class CapabilityNotSupportedError(AnalysisError):
     code = "E5010"

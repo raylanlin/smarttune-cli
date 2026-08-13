@@ -44,6 +44,7 @@ def _make_imu_data(
 class TestFFTAnalyzer:
     def test_analyze_basic(self):
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+
         fd = _make_imu_data()
         analyzer = FFTAnalyzer()
         result = analyzer.analyze(fd)
@@ -53,6 +54,7 @@ class TestFFTAnalyzer:
 
     def test_detects_known_frequency(self):
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+
         fd = _make_imu_data(vib_freq_hz=120.0, vib_amplitude=5.0)
         analyzer = FFTAnalyzer()
         result = analyzer.analyze(fd)
@@ -60,11 +62,11 @@ class TestFFTAnalyzer:
         if peaks:
             # The dominant peak should be near 120 Hz
             freqs = [p["frequency_hz"] for p in peaks]
-            assert any(abs(f - 120.0) < 10 for f in freqs), \
-                f"Expected peak near 120Hz, got {freqs}"
+            assert any(abs(f - 120.0) < 10 for f in freqs), f"Expected peak near 120Hz, got {freqs}"
 
     def test_insufficient_data(self):
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer, InsufficientDataError
+
         fd = FlightData(platform="ardupilot")  # No IMU data
         analyzer = FFTAnalyzer()
         with pytest.raises(InsufficientDataError):
@@ -72,6 +74,7 @@ class TestFFTAnalyzer:
 
     def test_get_spectrum_data(self):
         from smarttune.analyzers.fft_analyzer import FFTAnalyzer
+
         fd = _make_imu_data()
         analyzer = FFTAnalyzer()
         analyzer.analyze(fd)

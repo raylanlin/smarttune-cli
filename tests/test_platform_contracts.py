@@ -13,7 +13,9 @@ import numpy as np
 import pytest
 
 from smarttune.analyzers.pid_reviewer import (
-    PIDReviewer, _DEFAULT_THRESHOLDS, _DEFAULT_BOUNDS,
+    PIDReviewer,
+    _DEFAULT_THRESHOLDS,
+    _DEFAULT_BOUNDS,
 )
 
 
@@ -22,6 +24,7 @@ class TestGenericKeyInjection:
 
     def test_ardupilot_injects_generic_pid_keys(self):
         from smarttune.platform.ardupilot import _PARAM_MAP_TO_PLATFORM
+
         # 模拟 parse() 内的注入逻辑（与适配器同源）
         params = {"ATC_RAT_RLL_P": 0.135, "ATC_RAT_RLL_D": 0.0036}
         for generic, plat in _PARAM_MAP_TO_PLATFORM.items():
@@ -40,7 +43,7 @@ class TestGenericKeyInjection:
     def test_missing_generic_key_yields_zero(self):
         """未注入时取到 0.0 —— 这正是 C4 跳过伪建议依赖的前提。"""
         reviewer = PIDReviewer()
-        params = {"ATC_RAT_RLL_P": 0.135}   # 只有原生名
+        params = {"ATC_RAT_RLL_P": 0.135}  # 只有原生名
         current = reviewer._get_current_pid(params, "roll")
         assert current["p"] == 0.0
 
@@ -63,6 +66,7 @@ class TestThresholdShapeGuard:
 
     def test_real_betaflight_knowledge_falls_back(self):
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform="betaflight")
         reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
         # BF pid_rules 的 thresholds 是指标形 → 必须回退到按轴默认
@@ -71,6 +75,7 @@ class TestThresholdShapeGuard:
     def test_betaflight_bounds_are_bf_scale(self):
         """BF pid_rules.json 的 pid_bounds 必须是 BF 整数尺度（非 AP 的 0.01~0.5）。"""
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform="betaflight")
         reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
         p_hi = reviewer._bounds["p"][1]
@@ -81,6 +86,7 @@ class TestRecommendationScale:
     def test_bf_gain_not_clipped_to_ap_scale(self):
         """BF 增益 45 在 BF bounds 下不应被夹到 0.5（AP 尺度）。"""
         from smarttune.knowledge import KnowledgeBase
+
         kb = KnowledgeBase(platform="betaflight")
         reviewer = PIDReviewer(knowledge=kb.get("pid_rules", {}))
         bounds = reviewer._bounds.get("p", (0.0, 10.0))

@@ -16,10 +16,10 @@ from typing import Any, Dict
 
 # generic key → BF 参数名（尽量对应 Betaflight CLI set 命令）
 _GENERIC_TO_BF: Dict[str, str] = {
-    "filter.notch1.freq":   "gyro_notch1_hz",
-    "filter.notch1.bw":     "gyro_notch1_cutoff",   # BF 用 cutoff 而非 BW
+    "filter.notch1.freq": "gyro_notch1_hz",
+    "filter.notch1.bw": "gyro_notch1_cutoff",  # BF 用 cutoff 而非 BW
     "filter.notch1.enable": "gyro_notch1_enabled",
-    "filter.gyro_lpf":      "gyro_lowpass_hz",
+    "filter.gyro_lpf": "gyro_lowpass_hz",
     # BF 没有直接等价的 accel_lpf 参数
 }
 
@@ -33,7 +33,7 @@ def format_notch_recommendation(generic_rec: Dict[str, Any]) -> Dict[str, Any]:
     """
     result: Dict[str, Any] = {}
     freq = generic_rec.get("filter.notch1.freq", 0.0)
-    bw   = generic_rec.get("filter.notch1.bw",   0.0)
+    bw = generic_rec.get("filter.notch1.bw", 0.0)
 
     for k, v in generic_rec.items():
         bf_key = _GENERIC_TO_BF.get(k)
@@ -67,8 +67,7 @@ def build_fft_recommendation_summary(
     """
     bf = format_notch_recommendation(generic_rec)
     lines = []
-    for key in ("gyro_lowpass_hz", "gyro_notch1_hz", "gyro_notch1_cutoff",
-                "gyro_notch1_enabled"):
+    for key in ("gyro_lowpass_hz", "gyro_notch1_hz", "gyro_notch1_cutoff", "gyro_notch1_enabled"):
         if key in bf:
             lines.append(f"  set {key} = {bf[key]}")
     return "\n".join(lines) if lines else "  (no Betaflight-specific recommendations)"

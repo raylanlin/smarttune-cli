@@ -17,25 +17,51 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # 传感器 DEV ID 解码（简化版，参考 WebTools DecodeDevID.js）
 # ---------------------------------------------------------------------------
 
 _IMU_TYPES = {
-    1: "LSM9DS0", 2: "LSM9DS1", 3: "MPU6000", 4: "ICM20689",
-    5: "BMI055", 6: "BMI088", 7: "ICM20649", 8: "ICM20948",
-    9: "ICM20602", 10: "ICM42688", 11: "ICM42605", 12: "ICM40609",
-    13: "BMI270", 14: "ICM45686", 15: "LSM6DSL", 16: "LSM6DSOQ1",
-    21: "MPU9250", 24: "ICM20789", 25: "ICM20689",
+    1: "LSM9DS0",
+    2: "LSM9DS1",
+    3: "MPU6000",
+    4: "ICM20689",
+    5: "BMI055",
+    6: "BMI088",
+    7: "ICM20649",
+    8: "ICM20948",
+    9: "ICM20602",
+    10: "ICM42688",
+    11: "ICM42605",
+    12: "ICM40609",
+    13: "BMI270",
+    14: "ICM45686",
+    15: "LSM6DSL",
+    16: "LSM6DSOQ1",
+    21: "MPU9250",
+    24: "ICM20789",
+    25: "ICM20689",
 }
 
 _COMPASS_TYPES = {
-    1: "HMC5843", 2: "LSM303D", 3: "AK8963", 4: "BMM150",
-    5: "LSM9DS1", 6: "LIS3MDL", 7: "AK09916", 8: "IST8310",
-    9: "ICM20948", 10: "MMC3416", 11: "QMC5883L", 12: "MAG3110",
-    13: "IST8308", 14: "RM3100", 15: "QMC5883",
-    16: "AK09918", 17: "MMC5603", 18: "MMC5983",
+    1: "HMC5843",
+    2: "LSM303D",
+    3: "AK8963",
+    4: "BMM150",
+    5: "LSM9DS1",
+    6: "LIS3MDL",
+    7: "AK09916",
+    8: "IST8310",
+    9: "ICM20948",
+    10: "MMC3416",
+    11: "QMC5883L",
+    12: "MAG3110",
+    13: "IST8308",
+    14: "RM3100",
+    15: "QMC5883",
+    16: "AK09918",
+    17: "MMC5603",
+    18: "MMC5983",
 }
 
 _BUS_TYPES = {0: "UNKNOWN", 1: "I2C", 2: "SPI", 3: "UAVCAN", 4: "SITL", 5: "MSP", 6: "SERIAL"}
@@ -45,28 +71,52 @@ _BUS_TYPES = {0: "UNKNOWN", 1: "I2C", 2: "SPI", 3: "UAVCAN", 4: "SITL", 5: "MSP"
 # ---------------------------------------------------------------------------
 
 _BOARD_TYPES = {
-    5: "PX4 FMU V1", 9: "PX4 FMU V2/V3/CubeBlack",
-    11: "PX4 FMU V4", 13: "PX4 FMU V4 Pro",
-    20: "Uvify Core / F4BY", 28: "FMUK66 V3",
-    29: "AV V1", 32: "SmartAP Pro",
-    33: "AUAV X2V1", 42: "OmnibusF4SD",
-    50: "PX4 FMU V5 / Pixhawk4", 51: "PX4 FMU V5X",
-    52: "PX4 FMU V6", 53: "PX4 FMU V6X",
-    55: "SmartAP AirLink", 57: "ARK FMU V6X",
-    64: "TAP V1", 65: "AeroFC V1", 78: "Holybro Pix32 V5",
+    5: "PX4 FMU V1",
+    9: "PX4 FMU V2/V3/CubeBlack",
+    11: "PX4 FMU V4",
+    13: "PX4 FMU V4 Pro",
+    20: "Uvify Core / F4BY",
+    28: "FMUK66 V3",
+    29: "AV V1",
+    32: "SmartAP Pro",
+    33: "AUAV X2V1",
+    42: "OmnibusF4SD",
+    50: "PX4 FMU V5 / Pixhawk4",
+    51: "PX4 FMU V5X",
+    52: "PX4 FMU V6",
+    53: "PX4 FMU V6X",
+    55: "SmartAP AirLink",
+    57: "ARK FMU V6X",
+    64: "TAP V1",
+    65: "AeroFC V1",
+    78: "Holybro Pix32 V5",
     88: "MindPX V2",
-    120: "CubeYellow", 121: "OmnibusF7V2", 122: "KakuteF4",
-    123: "KakuteF7", 124: "Revolution", 125: "MatekF405",
-    127: "MatekF405-Wing", 130: "SparkyV2",
-    131: "OmnibusF4Pro", 134: "SpeedyBeeF4",
-    139: "Durandal", 140: "CubeOrange",
-    143: "MatekF765-Wing", 146: "H757I-Eval",
-    1009: "CUAV Nora", 1010: "CUAV X7 Pro",
-    1013: "MatekH743", 1036: "QioTek ZealotH743",
-    1048: "KakuteH7", 1058: "KakuteH7Mini",
-    1063: "CubeOrange+", 1082: "SpeedyBeeF4V3",
-    1105: "KakuteH7-Wing", 1106: "SpeedyBeeF405WING",
-    1117: "BlitzF7", 1136: "T-MotorH7",
+    120: "CubeYellow",
+    121: "OmnibusF7V2",
+    122: "KakuteF4",
+    123: "KakuteF7",
+    124: "Revolution",
+    125: "MatekF405",
+    127: "MatekF405-Wing",
+    130: "SparkyV2",
+    131: "OmnibusF4Pro",
+    134: "SpeedyBeeF4",
+    139: "Durandal",
+    140: "CubeOrange",
+    143: "MatekF765-Wing",
+    146: "H757I-Eval",
+    1009: "CUAV Nora",
+    1010: "CUAV X7 Pro",
+    1013: "MatekH743",
+    1036: "QioTek ZealotH743",
+    1048: "KakuteH7",
+    1058: "KakuteH7Mini",
+    1063: "CubeOrange+",
+    1082: "SpeedyBeeF4V3",
+    1105: "KakuteH7-Wing",
+    1106: "SpeedyBeeF405WING",
+    1117: "BlitzF7",
+    1136: "T-MotorH7",
 }
 
 
@@ -102,6 +152,7 @@ def decode_devid(devid: int, is_compass: bool = False) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # IMU 配置
 # ---------------------------------------------------------------------------
+
 
 def get_ins_config(params: Dict[str, float], imu_index: int = 0) -> Dict[str, Any]:
     """获取指定 IMU 的配置信息。"""
@@ -148,6 +199,7 @@ def get_ins_config(params: Dict[str, float], imu_index: int = 0) -> Dict[str, An
 # 磁力计配置
 # ---------------------------------------------------------------------------
 
+
 def get_compass_config(params: Dict[str, float], compass_index: int = 0) -> Dict[str, Any]:
     """获取磁力计配置。"""
     idx = compass_index + 1
@@ -178,6 +230,7 @@ def get_compass_config(params: Dict[str, float], compass_index: int = 0) -> Dict
 # ---------------------------------------------------------------------------
 # 滤波器配置（含 HNTCH / HNTC2）
 # ---------------------------------------------------------------------------
+
 
 def get_filter_config(params: Dict[str, float]) -> Dict[str, Any]:
     """获取完整滤波器配置。"""
@@ -229,12 +282,13 @@ def get_filter_config(params: Dict[str, float]) -> Dict[str, Any]:
 # 电池报告
 # ---------------------------------------------------------------------------
 
+
 def get_battery_report(parser_or_flight_data: Any) -> List[Dict[str, Any]]:
     """从 LogParser 或 FlightData 生成电池统计报告。"""
     reports = []
 
     # Support old LogParser interface
-    if hasattr(parser_or_flight_data, 'get_battery_data'):
+    if hasattr(parser_or_flight_data, "get_battery_data"):
         parser = parser_or_flight_data
         for bat_id in range(2):
             data = parser.get_battery_data(bat_id)
@@ -256,7 +310,11 @@ def get_battery_report(parser_or_flight_data: Any) -> List[Dict[str, Any]]:
 
     # Support new FlightData interface
     fd = parser_or_flight_data
-    if hasattr(fd, 'battery_voltage') and fd.battery_voltage is not None and len(fd.battery_voltage) > 0:
+    if (
+        hasattr(fd, "battery_voltage")
+        and fd.battery_voltage is not None
+        and len(fd.battery_voltage) > 0
+    ):
         v = fd.battery_voltage
         report = {
             "id": 0,
@@ -267,7 +325,11 @@ def get_battery_report(parser_or_flight_data: Any) -> List[Dict[str, Any]]:
             "current_mean": 0.0,
             "consumed_mah": 0,
         }
-        if hasattr(fd, 'battery_current') and fd.battery_current is not None and len(fd.battery_current) > 0:
+        if (
+            hasattr(fd, "battery_current")
+            and fd.battery_current is not None
+            and len(fd.battery_current) > 0
+        ):
             c = fd.battery_current
             report["current_max"] = float(np.max(c))
             report["current_mean"] = float(np.mean(c))
@@ -280,12 +342,13 @@ def get_battery_report(parser_or_flight_data: Any) -> List[Dict[str, Any]]:
 # 日志完整性检查
 # ---------------------------------------------------------------------------
 
+
 def check_log_integrity(parser_or_flight_data: Any) -> List[str]:
     """扫描日志数据完整性。支持 LogParser 和 FlightData。"""
     issues = []
 
     # Support old LogParser interface
-    if hasattr(parser_or_flight_data, 'get_time_range'):
+    if hasattr(parser_or_flight_data, "get_time_range"):
         parser = parser_or_flight_data
         t_min, t_max = parser.get_time_range()
         duration = t_max - t_min
@@ -300,7 +363,7 @@ def check_log_integrity(parser_or_flight_data: Any) -> List[str]:
         if imu["time"].size < 100:
             issues.append(f"IMU data sparse: {imu['time'].size} samples")
 
-        if hasattr(parser, 'get_messages'):
+        if hasattr(parser, "get_messages"):
             for m in parser.get_messages():
                 txt = m.get("text", "").lower()
                 if any(kw in txt for kw in ["error", "fail", "crash", "watchdog", "reset"]):
@@ -309,11 +372,11 @@ def check_log_integrity(parser_or_flight_data: Any) -> List[str]:
 
     # Support new FlightData interface
     fd = parser_or_flight_data
-    if hasattr(fd, 'duration_s'):
+    if hasattr(fd, "duration_s"):
         if fd.duration_s < 5.0:
             issues.append(f"Log duration too short: {fd.duration_s:.1f}s (recommend > 30s)")
 
-    if hasattr(fd, 'validate'):
+    if hasattr(fd, "validate"):
         issues.extend(fd.validate())
 
     return issues
@@ -322,6 +385,7 @@ def check_log_integrity(parser_or_flight_data: Any) -> List[str]:
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
+
 
 def generate_hardware_report(
     params: Dict[str, float],
@@ -389,17 +453,17 @@ def generate_hardware_report(
     # 固件版本
     version_info = {}
     if flight_data:
-        version_info = {"firmware": getattr(flight_data, 'firmware_version', '')}
+        version_info = {"firmware": getattr(flight_data, "firmware_version", "")}
 
     # 电池报告
     battery_reports = []
-    if flight_data and getattr(flight_data, 'has_battery', False):
+    if flight_data and getattr(flight_data, "has_battery", False):
         battery_reports = _battery_report_from_flight_data(flight_data)
 
     # 日志完整性
     integrity_issues = []
     if flight_data:
-        issues = flight_data.validate() if hasattr(flight_data, 'validate') else []
+        issues = flight_data.validate() if hasattr(flight_data, "validate") else []
         integrity_issues = issues
 
     return {

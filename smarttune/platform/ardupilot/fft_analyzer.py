@@ -21,14 +21,14 @@ from typing import Any, Dict
 # generic key → AP 参数名
 _GENERIC_TO_AP: Dict[str, str] = {
     "filter.notch1.enable": "INS_HNTCH_ENABLE",
-    "filter.notch1.mode":   "INS_HNTCH_MODE",
-    "filter.notch1.freq":   "INS_HNTCH_FREQ",
-    "filter.notch1.bw":     "INS_HNTCH_BW",
-    "filter.notch1.att":    "INS_HNTCH_ATT",
-    "filter.notch1.ref":    "INS_HNTCH_REF",
-    "filter.notch1.hmc":    "INS_HNTCH_HMNCS",
-    "filter.gyro_lpf":      "INS_GYRO_FILTER",
-    "filter.accel_lpf":     "INS_ACCEL_FILTER",
+    "filter.notch1.mode": "INS_HNTCH_MODE",
+    "filter.notch1.freq": "INS_HNTCH_FREQ",
+    "filter.notch1.bw": "INS_HNTCH_BW",
+    "filter.notch1.att": "INS_HNTCH_ATT",
+    "filter.notch1.ref": "INS_HNTCH_REF",
+    "filter.notch1.hmc": "INS_HNTCH_HMNCS",
+    "filter.gyro_lpf": "INS_GYRO_FILTER",
+    "filter.accel_lpf": "INS_ACCEL_FILTER",
 }
 
 
@@ -66,9 +66,16 @@ def build_fft_recommendation_summary(
     """
     ap = format_notch_recommendation(generic_rec)
     parts = []
-    for key in ("INS_HNTCH_ENABLE", "INS_HNTCH_MODE", "INS_HNTCH_FREQ",
-                "INS_HNTCH_BW", "INS_HNTCH_ATT", "INS_HNTCH_REF",
-                "INS_HNTCH_HMNCS", "INS_GYRO_FILTER"):
+    for key in (
+        "INS_HNTCH_ENABLE",
+        "INS_HNTCH_MODE",
+        "INS_HNTCH_FREQ",
+        "INS_HNTCH_BW",
+        "INS_HNTCH_ATT",
+        "INS_HNTCH_REF",
+        "INS_HNTCH_HMNCS",
+        "INS_GYRO_FILTER",
+    ):
         if key in ap:
             val = ap[key]
             short = key.replace("INS_HNTCH_", "").replace("INS_", "")

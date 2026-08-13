@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[ardupilot,dev]"
+          pip install -e ".[all,mcp,dev]"
 
       - name: Lint with ruff
         run: ruff check --select E9,F63,F7,F82 smarttune/ tests/

@@ -62,8 +62,9 @@ def lint_params(params: list[ParamDef]) -> list[dict[str, Any]]:
     seen = set()
     for n in names:
         if n in seen:
-            findings.append(_finding("duplicate_name", SEVERITY_ERROR, n,
-                                     "appears more than once in the table"))
+            findings.append(
+                _finding("duplicate_name", SEVERITY_ERROR, n, "appears more than once in the table")
+            )
         seen.add(n)
 
     # constant default across the whole table → fabricated
@@ -71,88 +72,133 @@ def lint_params(params: list[ParamDef]) -> list[dict[str, Any]]:
     if len(params) > 20 and len(defaults) == 1:
         only = next(iter(defaults))
         sev = SEVERITY_WARN if only in ("None", "null") else SEVERITY_ERROR
-        findings.append(_finding(
-            "constant_default", sev, None,
-            f"every parameter has default={only} across {len(params)} rows — "
-            f"defaults look fabricated rather than scraped"
-            if sev == SEVERITY_ERROR else
-            f"no defaults in this table (default={only}); upstream metadata may not publish them",
-        ))
+        findings.append(
+            _finding(
+                "constant_default",
+                sev,
+                None,
+                (
+                    f"every parameter has default={only} across {len(params)} rows — "
+                    f"defaults look fabricated rather than scraped"
+                    if sev == SEVERITY_ERROR
+                    else f"no defaults in this table (default={only}); upstream metadata may not publish them"
+                ),
+            )
+        )
 
     for p in params:
         if not _NAME_RE.match(p.name):
-            findings.append(_finding(
-                "name_shape", SEVERITY_ERROR, p.name,
-                "not a valid firmware parameter name — looks like a stripped "
-                "group prefix left a fragment",
-            ))
+            findings.append(
+                _finding(
+                    "name_shape",
+                    SEVERITY_ERROR,
+                    p.name,
+                    "not a valid firmware parameter name — looks like a stripped "
+                    "group prefix left a fragment",
+                )
+            )
         elif p.name[0].isdigit() and p.name.isupper():
             # ALLCAPS starting with a digit is the ArduPilot fragment signature
             # (0_BAUD ← SERIAL0_BAUD); lowercase 3d_* names are real Betaflight
-            findings.append(_finding(
-                "digit_leading_name", SEVERITY_WARN, p.name,
-                "starts with a digit — check it is not a prefix-stripped fragment",
-            ))
+            findings.append(
+                _finding(
+                    "digit_leading_name",
+                    SEVERITY_WARN,
+                    p.name,
+                    "starts with a digit — check it is not a prefix-stripped fragment",
+                )
+            )
 
         # a name that is a strict suffix of another name, e.g. MONITOR vs BATT_MONITOR.
         # Warn, not error: ANGLE_MAX / PSC_ANGLE_MAX and SIMPLE / SUPER_SIMPLE are
         # both real ArduPilot parameters, so this needs a human look.
         for other in name_set:
             if other != p.name and other.endswith("_" + p.name):
-                findings.append(_finding(
-                    "suffix_collision", SEVERITY_WARN, p.name,
-                    f"also present as {other} — check neither is a "
-                    f"prefix-stripped duplicate of the other",
-                ))
+                findings.append(
+                    _finding(
+                        "suffix_collision",
+                        SEVERITY_WARN,
+                        p.name,
+                        f"also present as {other} — check neither is a "
+                        f"prefix-stripped duplicate of the other",
+                    )
+                )
                 break
 
         if _PLACEHOLDER_RE.search(p.description or ""):
-            findings.append(_finding(
-                "placeholder_leak", SEVERITY_ERROR, p.name,
-                "description contains an unexpanded upstream placeholder "
-                f"({_PLACEHOLDER_RE.search(p.description).group(0)})",
-            ))
+            findings.append(
+                _finding(
+                    "placeholder_leak",
+                    SEVERITY_ERROR,
+                    p.name,
+                    "description contains an unexpanded upstream placeholder "
+                    f"({_PLACEHOLDER_RE.search(p.description).group(0)})",
+                )
+            )
 
         if not (p.description or "").strip():
             missing_descriptions.append(p.name)
 
-        if p.type in ("enum", "bitmask") and not p.values and not p.bitmask \
-                and p.min is None and p.max is None:
+        if (
+            p.type in ("enum", "bitmask")
+            and not p.values
+            and not p.bitmask
+            and p.min is None
+            and p.max is None
+        ):
             # a documented capture gap (unresolved_ref) is a known limitation,
             # not silent corruption — warn instead of error
-            findings.append(_finding(
-                "discrete_without_members",
-                SEVERITY_WARN if p.unresolved_ref else SEVERITY_ERROR,
-                p.name,
-                (f"type={p.type}, members not captured: {p.unresolved_ref}"
-                 if p.unresolved_ref else
-                 f"type={p.type} but no members and no range — validate() cannot "
-                 f"verify any value for it"),
-            ))
+            findings.append(
+                _finding(
+                    "discrete_without_members",
+                    SEVERITY_WARN if p.unresolved_ref else SEVERITY_ERROR,
+                    p.name,
+                    (
+                        f"type={p.type}, members not captured: {p.unresolved_ref}"
+                        if p.unresolved_ref
+                        else f"type={p.type} but no members and no range — validate() cannot "
+                        f"verify any value for it"
+                    ),
+                )
+            )
 
         if p.min is not None and p.max is not None and p.min > p.max:
-            findings.append(_finding("range_inverted", SEVERITY_ERROR, p.name,
-                                     f"min {p.min} > max {p.max}"))
+            findings.append(
+                _finding("range_inverted", SEVERITY_ERROR, p.name, f"min {p.min} > max {p.max}")
+            )
 
         for key in list(p.values) + list(p.bitmask):
             if not str(key).lstrip("-").isdigit():
-                findings.append(_finding("enum_key_not_int", SEVERITY_WARN, p.name,
-                                         f"non-integer member key {key!r}"))
+                findings.append(
+                    _finding(
+                        "enum_key_not_int", SEVERITY_WARN, p.name, f"non-integer member key {key!r}"
+                    )
+                )
                 break
 
     # descriptions: one table-level finding when the upstream simply has none
     # (Betaflight), per-parameter findings when it is a handful of gaps
     if missing_descriptions:
         if params and len(missing_descriptions) > len(params) // 2:
-            findings.append(_finding(
-                "empty_description", SEVERITY_WARN, None,
-                f"{len(missing_descriptions)} of {len(params)} parameters have no "
-                f"description (upstream firmware may not publish any)",
-            ))
+            findings.append(
+                _finding(
+                    "empty_description",
+                    SEVERITY_WARN,
+                    None,
+                    f"{len(missing_descriptions)} of {len(params)} parameters have no "
+                    f"description (upstream firmware may not publish any)",
+                )
+            )
         else:
             for name in missing_descriptions:
-                findings.append(_finding("empty_description", SEVERITY_WARN, name,
-                                         "no description — agents cannot reason about it"))
+                findings.append(
+                    _finding(
+                        "empty_description",
+                        SEVERITY_WARN,
+                        name,
+                        "no description — agents cannot reason about it",
+                    )
+                )
 
     return findings
 

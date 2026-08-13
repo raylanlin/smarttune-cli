@@ -39,25 +39,25 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_THRESHOLDS = {
     "roll": {
-        "rise_time_ms":      {"min": 40,  "max": 120,  "ideal": 80},
-        "overshoot_percent": {"min": 0,   "max": 15,   "ideal": 5},
-        "settling_time_ms":  {"min": 100, "max": 350,  "ideal": 200},
-        "oscillation_count": {"min": 0,   "max": 2,    "ideal": 0},
-        "ss_error_percent":  {"min": 0,   "max": 5,    "ideal": 0},
+        "rise_time_ms": {"min": 40, "max": 120, "ideal": 80},
+        "overshoot_percent": {"min": 0, "max": 15, "ideal": 5},
+        "settling_time_ms": {"min": 100, "max": 350, "ideal": 200},
+        "oscillation_count": {"min": 0, "max": 2, "ideal": 0},
+        "ss_error_percent": {"min": 0, "max": 5, "ideal": 0},
     },
     "pitch": {
-        "rise_time_ms":      {"min": 40,  "max": 150,  "ideal": 90},
-        "overshoot_percent": {"min": 0,   "max": 20,   "ideal": 8},
-        "settling_time_ms":  {"min": 100, "max": 400,  "ideal": 250},
-        "oscillation_count": {"min": 0,   "max": 2,    "ideal": 0},
-        "ss_error_percent":  {"min": 0,   "max": 5,    "ideal": 0},
+        "rise_time_ms": {"min": 40, "max": 150, "ideal": 90},
+        "overshoot_percent": {"min": 0, "max": 20, "ideal": 8},
+        "settling_time_ms": {"min": 100, "max": 400, "ideal": 250},
+        "oscillation_count": {"min": 0, "max": 2, "ideal": 0},
+        "ss_error_percent": {"min": 0, "max": 5, "ideal": 0},
     },
     "yaw": {
-        "rise_time_ms":      {"min": 40,  "max": 200,  "ideal": 120},
-        "overshoot_percent": {"min": 0,   "max": 25,   "ideal": 10},
-        "settling_time_ms":  {"min": 150, "max": 600,  "ideal": 350},
-        "oscillation_count": {"min": 0,   "max": 3,    "ideal": 1},
-        "ss_error_percent":  {"min": 0,   "max": 8,    "ideal": 0},
+        "rise_time_ms": {"min": 40, "max": 200, "ideal": 120},
+        "overshoot_percent": {"min": 0, "max": 25, "ideal": 10},
+        "settling_time_ms": {"min": 150, "max": 600, "ideal": 350},
+        "oscillation_count": {"min": 0, "max": 3, "ideal": 1},
+        "ss_error_percent": {"min": 0, "max": 8, "ideal": 0},
     },
 }
 
@@ -66,24 +66,30 @@ _TUNING_RULES: List[Dict[str, Any]] = [
     {
         "rule_id": "HIGH_OS",
         "symptom": "overshoot",
-        "adjust": [{"param": "p", "action": "decrease", "factor": 0.85},
-                   {"param": "d", "action": "decrease", "factor": 0.90}],
+        "adjust": [
+            {"param": "p", "action": "decrease", "factor": 0.85},
+            {"param": "d", "action": "decrease", "factor": 0.90},
+        ],
         "reason": "Overshoot exceeds threshold — reduce P gain",
         "confidence": "high",
     },
     {
         "rule_id": "SLOW_RISE",
         "symptom": "rise_time",
-        "adjust": [{"param": "p", "action": "increase", "factor": 1.15},
-                   {"param": "d", "action": "decrease", "factor": 0.95}],
+        "adjust": [
+            {"param": "p", "action": "increase", "factor": 1.15},
+            {"param": "d", "action": "decrease", "factor": 0.95},
+        ],
         "reason": "Slow rise time — increase P gain for faster response",
         "confidence": "high",
     },
     {
         "rule_id": "OSCILLATION",
         "symptom": "oscillation_count",
-        "adjust": [{"param": "p", "action": "decrease", "factor": 0.90},
-                   {"param": "d", "action": "increase", "factor": 1.10}],
+        "adjust": [
+            {"param": "p", "action": "decrease", "factor": 0.90},
+            {"param": "d", "action": "increase", "factor": 1.10},
+        ],
         "reason": "Excessive oscillation — increase D gain for damping",
         "confidence": "medium",
     },
@@ -119,9 +125,9 @@ _TUNING_RULES: List[Dict[str, Any]] = [
 
 # Generic PID param bounds (reasonable for most platforms)
 _DEFAULT_BOUNDS = {
-    "p":  (0.01, 0.5),
-    "i":  (0.001, 0.2),
-    "d":  (0.001, 0.05),
+    "p": (0.01, 0.5),
+    "i": (0.001, 0.2),
+    "d": (0.001, 0.05),
     "ff": (0.0, 0.2),
 }
 
@@ -129,6 +135,7 @@ _DEFAULT_BOUNDS = {
 # ---------------------------------------------------------------------------
 # 辅助函数（继承自 v1 ArduPilot-only 版）
 # ---------------------------------------------------------------------------
+
 
 def detect_steps(
     desired: np.ndarray,
@@ -153,8 +160,11 @@ def detect_steps(
 
 
 def _check_window_quality(
-    actual: np.ndarray, desired: np.ndarray, step_idx: int,
-    window_before: int = 5, window_after: int = 200,
+    actual: np.ndarray,
+    desired: np.ndarray,
+    step_idx: int,
+    window_before: int = 5,
+    window_after: int = 200,
 ) -> Tuple[bool, str]:
     """阶跃响应窗口数据质量预检。"""
     n = len(actual)
@@ -175,8 +185,8 @@ def _check_window_quality(
     after_len = min(n - after_start, 30)
     step_amp = 0.0
     if before_len > 0 and after_len > 0:
-        des_before = float(np.mean(desired[before_end - before_len:before_end]))
-        des_after = float(np.mean(desired[after_start:after_start + after_len]))
+        des_before = float(np.mean(desired[before_end - before_len : before_end]))
+        des_after = float(np.mean(desired[after_start : after_start + after_len]))
         step_amp = abs(des_after - des_before)
 
     des_max = float(np.max(np.abs(desired[start:end]))) if end > start else 1.0
@@ -191,7 +201,11 @@ def _check_window_quality(
             actual_post = actual[post_start:post_end]
             pre_start = max(0, step_idx - window_before)
             pre_end = step_idx
-            baseline = float(np.mean(actual[pre_start:pre_end])) if pre_end > pre_start else float(actual_post[0])
+            baseline = (
+                float(np.mean(actual[pre_start:pre_end]))
+                if pre_end > pre_start
+                else float(actual_post[0])
+            )
             tail_len = max(5, len(actual_post) // 4)
             final_val = float(np.mean(actual_post[-tail_len:]))
             response_range = final_val - baseline
@@ -201,7 +215,7 @@ def _check_window_quality(
                     return False, "overshoot_exceeds_300pct"
 
     if step_amp > 0.3 and window_before >= 3:
-        pre_seg = actual[max(0, step_idx - window_before):step_idx]
+        pre_seg = actual[max(0, step_idx - window_before) : step_idx]
         if len(pre_seg) >= 3 and float(np.std(pre_seg)) > step_amp * 0.5:
             return False, "baseline_unstable"
 
@@ -215,8 +229,12 @@ def _check_window_quality(
 
 
 def _extract_step_response(
-    desired: np.ndarray, actual: np.ndarray, step_idx: int,
-    dt_ms: float = 4.0, window_before: int = 5, window_after: int = 200,
+    desired: np.ndarray,
+    actual: np.ndarray,
+    step_idx: int,
+    dt_ms: float = 4.0,
+    window_before: int = 5,
+    window_after: int = 200,
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """提取阶跃前后的响应窗口。"""
     n = len(actual)
@@ -225,16 +243,23 @@ def _extract_step_response(
     window = actual[start:end]
     before_len = min(step_idx, 10)
     after_len = min(len(desired) - step_idx, 30)
-    des_before = np.mean(desired[step_idx - before_len:step_idx]) if before_len > 0 else desired[step_idx]
-    des_after = np.mean(desired[step_idx:step_idx + after_len]) if after_len > 0 else desired[step_idx]
+    des_before = (
+        np.mean(desired[step_idx - before_len : step_idx]) if before_len > 0 else desired[step_idx]
+    )
+    des_after = (
+        np.mean(desired[step_idx : step_idx + after_len]) if after_len > 0 else desired[step_idx]
+    )
     step_magnitude = abs(des_after - des_before)
     t = np.arange(len(window)) * dt_ms
     return t, window, step_magnitude
 
 
 def _compute_metrics(
-    response: np.ndarray, time_arr: np.ndarray, step_magnitude: float,
-    dt_ms: float = 4.0, settle_band: float = 0.10,
+    response: np.ndarray,
+    time_arr: np.ndarray,
+    step_magnitude: float,
+    dt_ms: float = 4.0,
+    settle_band: float = 0.10,
 ) -> StepMetrics:
     """计算阶跃响应指标。"""
     m = StepMetrics()
@@ -243,7 +268,7 @@ def _compute_metrics(
     if response.size < 5 or step_magnitude < 1e-6:
         return m
 
-    baseline = np.mean(response[:min(5, len(response) // 4)])
+    baseline = np.mean(response[: min(5, len(response) // 4)])
     tail_len = max(5, len(response) // 4)
     final_value = np.mean(response[-tail_len:])
     m.final_value = final_value
@@ -299,7 +324,9 @@ def _compute_metrics(
     if abs(step_magnitude) > 1e-6:
         actual_delta = final_value - baseline
         target_delta = direction * abs(step_magnitude)
-        m.steady_state_error_percent = (abs(actual_delta - target_delta) / abs(step_magnitude)) * 100.0
+        m.steady_state_error_percent = (
+            abs(actual_delta - target_delta) / abs(step_magnitude)
+        ) * 100.0
     else:
         m.steady_state_error_percent = 0.0
 
@@ -357,6 +384,7 @@ def _assess_metrics(metrics: StepMetrics, thresholds: Dict[str, Dict]) -> Assess
 # 主类
 # ---------------------------------------------------------------------------
 
+
 class PIDReviewer:
     """PID 阶跃响应分析器 — 平台无关。
 
@@ -375,12 +403,12 @@ class PIDReviewer:
         # _DEFAULT_THRESHOLDS（按轴 + min/max/ideal），而不是产出空 thresholds。
         kb_thresholds = self._knowledge.get("thresholds", {})
         self._thresholds = (
-            kb_thresholds if self._is_axis_threshold_shape(kb_thresholds)
-            else _DEFAULT_THRESHOLDS
+            kb_thresholds if self._is_axis_threshold_shape(kb_thresholds) else _DEFAULT_THRESHOLDS
         )
         tuning_rules_raw = self._knowledge.get("tuning_rules")
         self._rules = (
-            tuning_rules_raw if isinstance(tuning_rules_raw, list) and tuning_rules_raw
+            tuning_rules_raw
+            if isinstance(tuning_rules_raw, list) and tuning_rules_raw
             else _TUNING_RULES
         )
         self._bounds = self._knowledge.get("pid_bounds", {}) or _DEFAULT_BOUNDS
@@ -427,8 +455,13 @@ class PIDReviewer:
         # Overall assessment = worst axis
         if result.axes:
             assessments = [r.assessment for r in result.axes.values()]
-            order = [Assessment.UNUSABLE, Assessment.POOR, Assessment.MARGINAL,
-                     Assessment.GOOD, Assessment.EXCELLENT]
+            order = [
+                Assessment.UNUSABLE,
+                Assessment.POOR,
+                Assessment.MARGINAL,
+                Assessment.GOOD,
+                Assessment.EXCELLENT,
+            ]
             result.overall_assessment = min(assessments, key=lambda a: order.index(a))
 
         return result
@@ -460,8 +493,8 @@ class PIDReviewer:
         # 构造旧版 get_pid_data 返回格式
         pid_dict = {
             "Desired": sig.desired,
-            "Actual":  sig.actual,
-            "time":    sig.timestamp_s,
+            "Actual": sig.actual,
+            "time": sig.timestamp_s,
         }
         if sig.p_term is not None:
             pid_dict["P"] = sig.p_term
@@ -482,6 +515,7 @@ class PIDReviewer:
                 from smarttune.analyzers.step_response_time_domain import (
                     compute_step_response_time_domain_for_axis,
                 )
+
                 fft_step = compute_step_response_time_domain_for_axis(pid_dict, axis)
             except Exception as exc:
                 _log.debug("Time-domain step response failed for %s: %s", axis, exc)
@@ -489,9 +523,11 @@ class PIDReviewer:
             # C7 修复：传入 IMU 陀螺仪数据，启用 compute_step_response_for_axis
             # 的 "IMU 优先" 路径（旧实现恒传 None，该路径从未生效）
             imu_dict = None
-            if (flight_data.gyro is not None
-                    and flight_data.imu_timestamp_s is not None
-                    and len(flight_data.gyro) >= 100):
+            if (
+                flight_data.gyro is not None
+                and flight_data.imu_timestamp_s is not None
+                and len(flight_data.gyro) >= 100
+            ):
                 imu_dict = {
                     "time": flight_data.imu_timestamp_s,
                     "GyrX": flight_data.gyro[:, 0],
@@ -503,8 +539,9 @@ class PIDReviewer:
             platform_key = flight_data.platform.lower()
             if platform_key not in _VALID_PLATFORMS:
                 _log.warning(
-                    "Unknown platform %r for FFT step response dispatch; "
-                    "expected one of %s", flight_data.platform, _VALID_PLATFORMS,
+                    "Unknown platform %r for FFT step response dispatch; " "expected one of %s",
+                    flight_data.platform,
+                    _VALID_PLATFORMS,
                 )
             else:
                 try:
@@ -523,7 +560,8 @@ class PIDReviewer:
                 except ModuleNotFoundError:
                     _log.debug(
                         "No step_response_fft module for platform %s; "
-                        "FFT step response skipped.", platform_key,
+                        "FFT step response skipped.",
+                        platform_key,
                     )
                 except Exception as exc:
                     _log.debug("FFT step response failed for %s: %s", axis, exc)
@@ -531,12 +569,12 @@ class PIDReviewer:
         # 5. 原始时间序列（供绘图）
         time_ms = sig.timestamp_s * 1000.0
         raw_data = {
-            "time_ms":  time_ms.tolist(),
-            "desired":  sig.desired.tolist(),
-            "actual":   sig.actual.tolist(),
-            "P":        sig.p_term.tolist() if sig.p_term is not None else [],
-            "I":        sig.i_term.tolist() if sig.i_term is not None else [],
-            "D":        sig.d_term.tolist() if sig.d_term is not None else [],
+            "time_ms": time_ms.tolist(),
+            "desired": sig.desired.tolist(),
+            "actual": sig.actual.tolist(),
+            "P": sig.p_term.tolist() if sig.p_term is not None else [],
+            "I": sig.i_term.tolist() if sig.i_term is not None else [],
+            "D": sig.d_term.tolist() if sig.d_term is not None else [],
         }
 
         # 6. 时域阶跃窗口提取（供每个阶跃单独绘图）
@@ -549,12 +587,14 @@ class PIDReviewer:
                 sig.desired, sig.actual, idx, dt_ms=dt_ms
             )
             t_global = time_ms[idx] + t_rel
-            step_responses.append({
-                "time_ms":   t_global.tolist(),
-                "actual":    act_win.tolist(),
-                "desired":   float(np.mean(sig.desired[max(0, idx):idx + 10])),
-                "magnitude": magnitude,
-            })
+            step_responses.append(
+                {
+                    "time_ms": t_global.tolist(),
+                    "actual": act_win.tolist(),
+                    "desired": float(np.mean(sig.desired[max(0, idx) : idx + 10])),
+                    "magnitude": magnitude,
+                }
+            )
 
         return AxisPIDResult(
             axis=axis,
@@ -575,8 +615,13 @@ class PIDReviewer:
         if not step_indices:
             return StepMetrics()
 
-        metric_fields = ("rise_time_ms", "overshoot_percent", "settling_time_ms",
-                         "oscillation_count", "steady_state_error_percent")
+        metric_fields = (
+            "rise_time_ms",
+            "overshoot_percent",
+            "settling_time_ms",
+            "oscillation_count",
+            "steady_state_error_percent",
+        )
         totals = {f: 0.0 for f in metric_fields}
         counts = {f: 0 for f in metric_fields}
         skipped_quality = 0
@@ -591,8 +636,9 @@ class PIDReviewer:
             t_rel, act_win, magnitude = _extract_step_response(
                 sig.desired, sig.actual, idx, dt_ms=dt_ms
             )
-            m = _compute_metrics(act_win, t_rel, magnitude, dt_ms=dt_ms,
-                                 settle_band=self._settle_band)
+            m = _compute_metrics(
+                act_win, t_rel, magnitude, dt_ms=dt_ms, settle_band=self._settle_band
+            )
             if m.overshoot_percent > 150.0:
                 high_overshoot_count += 1
             for field in metric_fields:
@@ -604,7 +650,8 @@ class PIDReviewer:
         if skipped_quality > 0:
             _log.info(
                 "Quality filter: %d/%d candidate windows skipped, %d valid.",
-                skipped_quality, len(step_indices),
+                skipped_quality,
+                len(step_indices),
                 len(step_indices) - skipped_quality,
             )
         if high_overshoot_count > 0:
@@ -654,11 +701,11 @@ class PIDReviewer:
         th_ss = thresholds.get("ss_error_percent", {}).get("max", 5)
 
         checks = {
-            "overshoot":           (metrics.overshoot_percent, th_overshoot, "overshoot_percent"),
-            "rise_time":           (metrics.rise_time_ms, th_rise, "rise_time_ms"),
-            "settling_time":       (metrics.settling_time_ms, th_settle, "settling_time_ms"),
-            "oscillation_count":   (float(metrics.oscillation_count), th_osc, "oscillation_count"),
-            "steady_state_error":  (metrics.steady_state_error_percent, th_ss, "ss_error_percent"),
+            "overshoot": (metrics.overshoot_percent, th_overshoot, "overshoot_percent"),
+            "rise_time": (metrics.rise_time_ms, th_rise, "rise_time_ms"),
+            "settling_time": (metrics.settling_time_ms, th_settle, "settling_time_ms"),
+            "oscillation_count": (float(metrics.oscillation_count), th_osc, "oscillation_count"),
+            "steady_state_error": (metrics.steady_state_error_percent, th_ss, "ss_error_percent"),
         }
 
         if symptom not in checks:
@@ -676,8 +723,11 @@ class PIDReviewer:
         return "none", metric
 
     def _generate_recommendations(
-        self, metrics: StepMetrics, current_params: Dict[str, float],
-        thresholds: Dict, axis: str,
+        self,
+        metrics: StepMetrics,
+        current_params: Dict[str, float],
+        thresholds: Dict,
+        axis: str,
     ) -> List[ParamRecommendation]:
         """生成参数修改建议（平台无关，使用 ParamRef）。"""
         recommendations = []
@@ -703,7 +753,9 @@ class PIDReviewer:
             for p in rule_params:
                 if p in seen_params:
                     prev_sev, prev_sym = seen_params[p]
-                    if prev_sym == symptom_key and severity_rank.get(prev_sev, 0) >= severity_rank.get(severity, 0):
+                    if prev_sym == symptom_key and severity_rank.get(
+                        prev_sev, 0
+                    ) >= severity_rank.get(severity, 0):
                         skip = True
                         break
             if skip:
@@ -720,7 +772,8 @@ class PIDReviewer:
                     # "current 0.0 → suggested 0.01" 的伪建议 — 直接跳过。
                     _log.debug(
                         "Skipping %s recommendation: current value unknown "
-                        "(generic params not populated by adapter)", generic_name,
+                        "(generic params not populated by adapter)",
+                        generic_name,
                     )
                     continue
                 factor = adj.get("factor", 1.0)
@@ -734,18 +787,22 @@ class PIDReviewer:
                 bounds = self._bounds.get(param_key, (0.0, 10.0))
                 new_val = float(np.clip(new_val, bounds[0], bounds[1]))
 
-                confidence = Confidence.HIGH if severity == "high" else (
-                    Confidence.MEDIUM if severity == "medium" else Confidence.LOW
+                confidence = (
+                    Confidence.HIGH
+                    if severity == "high"
+                    else (Confidence.MEDIUM if severity == "medium" else Confidence.LOW)
                 )
 
-                recommendations.append(ParamRecommendation(
-                    param=ParamRef(generic_name, axis=axis, category="pid"),
-                    current=round(current_val, 6),
-                    suggested=round(new_val, 6),
-                    reason=rule.get("reason", f"{symptom_key} issue"),
-                    confidence=confidence,
-                    action=adj["action"],
-                ))
+                recommendations.append(
+                    ParamRecommendation(
+                        param=ParamRef(generic_name, axis=axis, category="pid"),
+                        current=round(current_val, 6),
+                        suggested=round(new_val, 6),
+                        reason=rule.get("reason", f"{symptom_key} issue"),
+                        confidence=confidence,
+                        action=adj["action"],
+                    )
+                )
 
                 seen_params[param_key] = (severity, symptom_key)
 
@@ -783,12 +840,14 @@ class PIDReviewer:
                 sig.desired, sig.actual, idx, dt_ms=dt_ms
             )
             t_global = time_ms[idx] + t_rel
-            steps_out.append({
-                "time_ms":   t_global.tolist(),
-                "actual":    act_win.tolist(),
-                "desired":   float(np.mean(sig.desired[max(0, idx):idx + 10])),
-                "magnitude": magnitude,
-            })
+            steps_out.append(
+                {
+                    "time_ms": t_global.tolist(),
+                    "actual": act_win.tolist(),
+                    "desired": float(np.mean(sig.desired[max(0, idx) : idx + 10])),
+                    "magnitude": magnitude,
+                }
+            )
 
         return {"axis": ax, "steps": steps_out, "dt_ms": dt_ms}
 

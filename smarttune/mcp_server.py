@@ -81,7 +81,9 @@ def _get_allowed_roots() -> List[Path]:
     env_val = os.environ.get("SMARTTUNE_MCP_ALLOWED_ROOTS", "")
     if env_val.strip():
         return [Path(p).expanduser().resolve() for p in env_val.split(":") if p.strip()]
-    return [p.expanduser().resolve() for p in _DEFAULT_ALLOWED_ROOTS if _safe_resolve(p) is not None]
+    return [
+        p.expanduser().resolve() for p in _DEFAULT_ALLOWED_ROOTS if _safe_resolve(p) is not None
+    ]
 
 
 def _safe_resolve(p: Path) -> Optional[Path]:
@@ -95,6 +97,7 @@ def _safe_resolve(p: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 # Path validation
 # ---------------------------------------------------------------------------
+
 
 class PathValidationError(Exception):
     """Raised when a log path fails security validation."""
@@ -141,9 +144,7 @@ def validate_log_path(raw_path: str) -> Path:
     max_file_mb = _get_max_file_mb()
     size_mb = resolved.stat().st_size / (1024 * 1024)
     if size_mb > max_file_mb:
-        raise PathValidationError(
-            f"File too large: {size_mb:.1f} MB (limit: {max_file_mb:.0f} MB)"
-        )
+        raise PathValidationError(f"File too large: {size_mb:.1f} MB (limit: {max_file_mb:.0f} MB)")
 
     return resolved
 
@@ -167,9 +168,13 @@ _RETRYABLE_CODES = {"E9999"}
 
 
 _PLATFORM_KEYS = {
-    "ap": "ardupilot", "apm": "ardupilot", "ardupilot": "ardupilot",
-    "bf": "betaflight", "betaflight": "betaflight",
-    "px4": "px4", "pixhawk": "px4",
+    "ap": "ardupilot",
+    "apm": "ardupilot",
+    "ardupilot": "ardupilot",
+    "bf": "betaflight",
+    "betaflight": "betaflight",
+    "px4": "px4",
+    "pixhawk": "px4",
 }
 
 
@@ -235,8 +240,11 @@ def _call_service(func, log_path: str, **kwargs) -> str:
     try:
         resolved = validate_log_path(log_path)
     except PathValidationError as exc:
-        return _err(str(exc), error_code="E1001",
-                    hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension")
+        return _err(
+            str(exc),
+            error_code="E1001",
+            hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension",
+        )
 
     try:
         with _quiet_stdout():
@@ -246,13 +254,17 @@ def _call_service(func, log_path: str, **kwargs) -> str:
         return _err(exc.message, error_code=exc.code, hint=exc.hint)
     except Exception as exc:
         logger.exception("Unexpected error in %s", func.__name__)
-        return _err(f"Unexpected error: {exc}", error_code="E9999",
-                    hint="This is an internal failure; retrying may help")
+        return _err(
+            f"Unexpected error: {exc}",
+            error_code="E9999",
+            hint="This is an internal failure; retrying may help",
+        )
 
 
 # ---------------------------------------------------------------------------
 # Markdown report renderer
 # ---------------------------------------------------------------------------
+
 
 def _render_markdown(result: Dict[str, Any]) -> str:
     """Render analysis result dict as a compact Markdown report."""
@@ -273,7 +285,9 @@ def _render_markdown(result: Dict[str, Any]) -> str:
         lines.append(f"## PID Analysis — {pid.get('overall_assessment', 'N/A')}")
         lines.append("")
         for axis_name, axis_data in pid.get("axes", {}).items():
-            lines.append(f"### {axis_name.capitalize()} Axis — {axis_data.get('assessment', 'N/A')}")
+            lines.append(
+                f"### {axis_name.capitalize()} Axis — {axis_data.get('assessment', 'N/A')}"
+            )
             metrics = axis_data.get("metrics", {})
             lines.append(f"- Steps detected: {axis_data.get('step_count', 0)}")
             if metrics.get("rise_time_ms") is not None:
@@ -305,12 +319,16 @@ def _render_markdown(result: Dict[str, Any]) -> str:
             lines.append("| Frequency (Hz) | Amplitude | Source |")
             lines.append("|----------------|-----------|--------|")
             for p in peaks:
-                lines.append(f"| {p.get('frequency_hz', '')} | {p.get('amplitude', '')} | {p.get('source_guess', '')} |")
+                lines.append(
+                    f"| {p.get('frequency_hz', '')} | {p.get('amplitude', '')} | {p.get('source_guess', '')} |"
+                )
             lines.append("")
         recs = fft.get("recommendations", [])
         if recs:
             for r in recs:
-                lines.append(f"- **{r.get('param', '')}**: {r.get('current', '')} → {r.get('suggested', '')} ({r.get('reason', '')})")
+                lines.append(
+                    f"- **{r.get('param', '')}**: {r.get('current', '')} → {r.get('suggested', '')} ({r.get('reason', '')})"
+                )
             lines.append("")
 
     # MagFit
@@ -321,7 +339,9 @@ def _render_markdown(result: Dict[str, Any]) -> str:
         lines.append(f"- Fitness: {mag.get('fitness_mgauss', '')} mGauss")
         offsets = mag.get("offsets", {})
         if offsets:
-            lines.append(f"- Offsets: X={offsets.get('x', '?')}, Y={offsets.get('y', '?')}, Z={offsets.get('z', '?')}")
+            lines.append(
+                f"- Offsets: X={offsets.get('x', '?')}, Y={offsets.get('y', '?')}, Z={offsets.get('z', '?')}"
+            )
         lines.append("")
 
     # Hardware
@@ -358,7 +378,9 @@ def _render_markdown(result: Dict[str, Any]) -> str:
                 lines.append(f"- Natural frequency: {cont.get('natural_freq_hz', '?')} Hz")
                 lines.append(f"- Damping ratio: {cont.get('damping_ratio', '?')}")
             if pid_rec:
-                lines.append(f"- Suggested bandwidth: {pid_rec.get('suggested_bandwidth_hz', '?')} Hz")
+                lines.append(
+                    f"- Suggested bandwidth: {pid_rec.get('suggested_bandwidth_hz', '?')} Hz"
+                )
                 lines.append(f"- Suggested P gain: {pid_rec.get('suggested_p_gain', '?')}")
             if fit:
                 lines.append(f"- Fit quality: {fit.get('fit_percent', '?')}%")
@@ -464,6 +486,7 @@ mcp = FastMCP(
 
 # ── 1. List Platforms ──────────────────────────────────────────
 
+
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_platforms() -> str:
     """List all supported flight controller platforms, their log file extensions, and analysis capabilities.
@@ -472,6 +495,7 @@ def smarttune_list_platforms() -> str:
     Use this to determine which platforms SmartTune supports before analyzing a log.
     """
     from smarttune.platform.registry import list_platforms
+
     platforms = list_platforms()
     # Convert capabilities from comma-separated string to list
     for p in platforms:
@@ -481,16 +505,17 @@ def smarttune_list_platforms() -> str:
             cli_exts = [e.strip() for e in p["extensions"].split(",") if e.strip()]
         else:
             cli_exts = p.get("extensions", [])
-        p["mcp_accepted_extensions"] = [
-            e for e in cli_exts if e in _ALLOWED_EXTENSIONS
-        ]
-    return _ok({
-        "platforms": platforms,
-        "mcp_allowed_extensions": sorted(_ALLOWED_EXTENSIONS),
-    })
+        p["mcp_accepted_extensions"] = [e for e in cli_exts if e in _ALLOWED_EXTENSIONS]
+    return _ok(
+        {
+            "platforms": platforms,
+            "mcp_allowed_extensions": sorted(_ALLOWED_EXTENSIONS),
+        }
+    )
 
 
 # ── 2. Log Quality ────────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_log_quality(
@@ -508,10 +533,12 @@ def smarttune_log_quality(
         platform: Platform override — "auto" (default), "ardupilot", "betaflight", or "px4".
     """
     from smarttune.services.analysis import get_log_quality
+
     return _call_service(get_log_quality, log_path, platform=platform)
 
 
 # ── 3. Comprehensive Analysis ─────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_log(
@@ -541,30 +568,41 @@ def smarttune_analyze_log(
 
     # Validate axis
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
-                    hint="Use all, roll, pitch, or yaw")
+        return _err(
+            f"Invalid axis: {axis!r}", error_code="E4001", hint="Use all, roll, pitch, or yaw"
+        )
 
     # Validate response_format
     if response_format not in ("json", "markdown"):
-        return _err(f"Invalid response_format: {response_format!r}", error_code="E4000",
-                    hint="Use json or markdown")
+        return _err(
+            f"Invalid response_format: {response_format!r}",
+            error_code="E4000",
+            hint="Use json or markdown",
+        )
 
     # Validate include_modules
     valid_modules = {"pid", "fft", "magfit", "hardware", "filter", "sysid"}
     if include_modules is not None:
         invalid = set(include_modules) - valid_modules
         if invalid:
-            return _err(f"Invalid modules: {sorted(invalid)}", error_code="E4000",
-                        hint=f"Valid modules: {sorted(valid_modules)}")
+            return _err(
+                f"Invalid modules: {sorted(invalid)}",
+                error_code="E4000",
+                hint=f"Valid modules: {sorted(valid_modules)}",
+            )
 
     try:
         resolved = validate_log_path(log_path)
     except PathValidationError as exc:
-        return _err(str(exc), error_code="E1001",
-                    hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension")
+        return _err(
+            str(exc),
+            error_code="E1001",
+            hint="Pass a path inside SMARTTUNE_MCP_ALLOWED_ROOTS with a supported extension",
+        )
 
     try:
         from smarttune.services.analysis import analyze_log
+
         with _quiet_stdout():
             result = analyze_log(
                 log_path=resolved,
@@ -583,11 +621,15 @@ def smarttune_analyze_log(
         return _err(exc.message, error_code=exc.code, hint=exc.hint)
     except Exception as exc:
         logger.exception("Unexpected error in smarttune_analyze_log")
-        return _err(f"Unexpected error: {exc}", error_code="E9999",
-                    hint="This is an internal failure; retrying may help")
+        return _err(
+            f"Unexpected error: {exc}",
+            error_code="E9999",
+            hint="This is an internal failure; retrying may help",
+        )
 
 
 # ── 4. PID Analysis ───────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_pid(
@@ -609,18 +651,23 @@ def smarttune_analyze_pid(
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
-                    hint="Use all, roll, pitch, or yaw")
+        return _err(
+            f"Invalid axis: {axis!r}", error_code="E4001", hint="Use all, roll, pitch, or yaw"
+        )
 
     from smarttune.services.analysis import analyze_pid
+
     return _call_service(
-        analyze_pid, log_path,
-        platform=platform, axis=axis,
+        analyze_pid,
+        log_path,
+        platform=platform,
+        axis=axis,
         max_recommendations=max(1, min(100, max_recommendations)),
     )
 
 
 # ── 5. FFT Analysis ───────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_fft(
@@ -640,14 +687,17 @@ def smarttune_analyze_fft(
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
     from smarttune.services.analysis import analyze_fft
+
     return _call_service(
-        analyze_fft, log_path,
+        analyze_fft,
+        log_path,
         platform=platform,
         max_recommendations=max(1, min(100, max_recommendations)),
     )
 
 
 # ── 6. MagFit Analysis ────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_magfit(
@@ -667,14 +717,17 @@ def smarttune_analyze_magfit(
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
     from smarttune.services.analysis import analyze_magfit
+
     return _call_service(
-        analyze_magfit, log_path,
+        analyze_magfit,
+        log_path,
         platform=platform,
         max_recommendations=max(1, min(100, max_recommendations)),
     )
 
 
 # ── 7. System Identification ──────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_sysid(
@@ -697,19 +750,26 @@ def smarttune_analyze_sysid(
         nb: ARX model B polynomial order (default 2).
     """
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
-                    hint="Use all, roll, pitch, or yaw")
+        return _err(
+            f"Invalid axis: {axis!r}", error_code="E4001", hint="Use all, roll, pitch, or yaw"
+        )
     na = max(1, min(10, na))
     nb = max(1, min(10, nb))
 
     from smarttune.services.analysis import analyze_sysid
+
     return _call_service(
-        analyze_sysid, log_path,
-        platform=platform, axis=axis, na=na, nb=nb,
+        analyze_sysid,
+        log_path,
+        platform=platform,
+        axis=axis,
+        na=na,
+        nb=nb,
     )
 
 
 # ── 8. Filter Analysis ────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_filter(
@@ -736,8 +796,10 @@ def smarttune_analyze_filter(
         auto_derive: Auto-derive filter config from log parameters (default: true).
     """
     from smarttune.services.analysis import analyze_filter
+
     return _call_service(
-        analyze_filter, log_path,
+        analyze_filter,
+        log_path,
         platform=platform,
         gyro_filter_hz=gyro_filter_hz,
         notch_freq_hz=notch_freq_hz,
@@ -746,6 +808,7 @@ def smarttune_analyze_filter(
 
 
 # ── 9. Hardware Report ─────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_analyze_hardware(
@@ -762,10 +825,12 @@ def smarttune_analyze_hardware(
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
     """
     from smarttune.services.analysis import analyze_hardware
+
     return _call_service(analyze_hardware, log_path, platform=platform)
 
 
 # ── 10. Plot Generation ──────────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_generate_plot(
@@ -793,23 +858,30 @@ def smarttune_generate_plot(
         theme: Color theme — "light" (default) or "dark".
     """
     if plot_type not in ("pid", "fft", "filter"):
-        return _err(f"Invalid plot_type: {plot_type!r}", error_code="E4000",
-                    hint="Use pid, fft, or filter")
+        return _err(
+            f"Invalid plot_type: {plot_type!r}", error_code="E4000", hint="Use pid, fft, or filter"
+        )
     if axis not in ("all", "roll", "pitch", "yaw"):
-        return _err(f"Invalid axis: {axis!r}", error_code="E4001",
-                    hint="Use all, roll, pitch, or yaw")
+        return _err(
+            f"Invalid axis: {axis!r}", error_code="E4001", hint="Use all, roll, pitch, or yaw"
+        )
     if theme not in ("light", "dark"):
-        return _err(f"Invalid theme: {theme!r}", error_code="E4000",
-                    hint="Use light or dark")
+        return _err(f"Invalid theme: {theme!r}", error_code="E4000", hint="Use light or dark")
 
     from smarttune.services.plot import generate_plot
+
     return _call_service(
-        generate_plot, log_path,
-        platform=platform, plot_type=plot_type, axis=axis, theme=theme,
+        generate_plot,
+        log_path,
+        platform=platform,
+        plot_type=plot_type,
+        axis=axis,
+        theme=theme,
     )
 
 
 # ── 11. Parameter groups ─────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
@@ -827,20 +899,24 @@ def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
     platform = _resolve_platform_key(platform)
     available = ParamTable.available_platforms()
     if platform not in available:
-        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
-                    hint=f"Available: {available}")
+        return _err(
+            f"Unknown platform: {platform!r}", error_code="E4010", hint=f"Available: {available}"
+        )
 
     tbl = ParamTable.from_knowledge(platform)
-    return _ok({
-        "platform": tbl.platform,
-        "source": tbl.meta.get("source", {}),
-        "parameter_count": len(tbl),
-        "categories": tbl.categories(),
-        "groups": tbl.groups(),
-    })
+    return _ok(
+        {
+            "platform": tbl.platform,
+            "source": tbl.meta.get("source", {}),
+            "parameter_count": len(tbl),
+            "categories": tbl.categories(),
+            "groups": tbl.groups(),
+        }
+    )
 
 
 # ── 12. List Parameters ──────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_params(
@@ -871,8 +947,9 @@ def smarttune_list_params(
     platform = _resolve_platform_key(platform)
     available = ParamTable.available_platforms()
     if platform not in available:
-        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
-                    hint=f"Available: {available}")
+        return _err(
+            f"Unknown platform: {platform!r}", error_code="E4010", hint=f"Available: {available}"
+        )
 
     limit = max(1, min(500, limit))
     offset = max(0, offset)
@@ -881,14 +958,20 @@ def smarttune_list_params(
     if group:
         rows = tbl.list_by_group(group)
         if not rows:
-            return _err(f"No group matching {group!r} in {tbl.platform}", error_code="E4000",
-                        hint="Call smarttune_list_param_groups first")
+            return _err(
+                f"No group matching {group!r} in {tbl.platform}",
+                error_code="E4000",
+                hint="Call smarttune_list_param_groups first",
+            )
         scope = {"group": group}
     elif category != "all":
         rows = tbl.list_by_category(category)
         if not rows:
-            return _err(f"No parameters in category {category!r}", error_code="E4000",
-                        hint=f"Available categories: {tbl.categories()}")
+            return _err(
+                f"No parameters in category {category!r}",
+                error_code="E4000",
+                hint=f"Available categories: {tbl.categories()}",
+            )
         scope = {"category": category}
     else:
         return _err(
@@ -899,20 +982,23 @@ def smarttune_list_params(
             categories=tbl.categories(),
         )
 
-    page = rows[offset:offset + limit]
+    page = rows[offset : offset + limit]
     shape = to_full_dict if verbose else to_slim_dict
-    return _ok({
-        "platform": tbl.platform,
-        **scope,
-        "count": len(rows),
-        "offset": offset,
-        "returned": len(page),
-        "next_offset": offset + len(page) if offset + len(page) < len(rows) else None,
-        "params": [shape(p) for p in page],
-    })
+    return _ok(
+        {
+            "platform": tbl.platform,
+            **scope,
+            "count": len(rows),
+            "offset": offset,
+            "returned": len(page),
+            "next_offset": offset + len(page) if offset + len(page) < len(rows) else None,
+            "params": [shape(p) for p in page],
+        }
+    )
 
 
 # ── 13. Get one parameter ────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_get_param(param_name: str, platform: str = "all") -> str:
@@ -934,8 +1020,11 @@ def smarttune_get_param(param_name: str, platform: str = "all") -> str:
     else:
         key = _resolve_platform_key(platform)
         if key not in available:
-            return _err(f"Unknown platform: {platform!r}", error_code="E4010",
-                        hint=f"Available: {available}")
+            return _err(
+                f"Unknown platform: {platform!r}",
+                error_code="E4010",
+                hint=f"Available: {available}",
+            )
         targets = [key]
 
     matches = []
@@ -946,12 +1035,16 @@ def smarttune_get_param(param_name: str, platform: str = "all") -> str:
             matches.append({"platform": tbl.platform, **to_full_dict(pd)})
 
     if not matches:
-        return _err(f"Parameter {param_name!r} not found", error_code="E4002",
-                    hint="Use smarttune_search_params for partial matches")
+        return _err(
+            f"Parameter {param_name!r} not found",
+            error_code="E4002",
+            hint="Use smarttune_search_params for partial matches",
+        )
     return _ok({"param_name": param_name, "matches": matches})
 
 
 # ── 14. Search Parameters ────────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_search_params(
@@ -982,8 +1075,11 @@ def smarttune_search_params(
     else:
         key = _resolve_platform_key(platform)
         if key not in available:
-            return _err(f"Unknown platform: {platform!r}", error_code="E4010",
-                        hint=f"Available: {available}")
+            return _err(
+                f"Unknown platform: {platform!r}",
+                error_code="E4010",
+                hint=f"Available: {available}",
+            )
         targets = [key]
 
     results = {}
@@ -1003,6 +1099,7 @@ def smarttune_search_params(
 
 
 # ── 15. Validate Parameter ───────────────────────────────────
+
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_validate_param(
@@ -1033,8 +1130,13 @@ def smarttune_validate_param(
     platform = _resolve_platform_key(platform)
     available = ParamTable.available_platforms()
     if platform not in available:
-        return _err(f"Unknown platform: {platform!r}", error_code="E4010",
-                    hint=f"Available: {available}", valid=False, status="not_found")
+        return _err(
+            f"Unknown platform: {platform!r}",
+            error_code="E4010",
+            hint=f"Available: {available}",
+            valid=False,
+            status="not_found",
+        )
 
     tbl = ParamTable.from_knowledge(platform)
     verdict = tbl.validate_detail(param_name, param_value)
@@ -1059,9 +1161,11 @@ def smarttune_validate_param(
     # so clients do not treat it as retryable transport trouble.
     return _ok(body)
 
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Run the SmartTune MCP server (stdio transport)."""

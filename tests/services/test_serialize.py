@@ -4,6 +4,7 @@
 services 层期望 MagFitResult (recommendations + offsets dict). 类型不匹配导致
 AttributeError, 整条 analyze_log 在 magfit 模块崩.
 """
+
 import pytest
 import numpy as np
 
@@ -115,6 +116,7 @@ class TestSerializeMagfitResultRegression:
     def real_bin_path(self, request):
         from pathlib import Path
         import sys
+
         candidate = Path.home() / "ardupilot/ArduCopter/logs/00000288.BIN"
         if not candidate.exists():
             pytest.skip(f"无真实 .bin 跳过: {candidate}")
@@ -129,15 +131,13 @@ class TestSerializeMagfitResultRegression:
         # 跑完后清理 sys.modules 中的 platform 子模块.
         yield str(candidate)
 
-        to_remove = [
-            name for name in sys.modules
-            if name.startswith("smarttune.platform.")
-        ]
+        to_remove = [name for name in sys.modules if name.startswith("smarttune.platform.")]
         for name in to_remove:
             del sys.modules[name]
 
     def test_analyze_log_with_real_bin(self, real_bin_path):
         from smarttune.services.analysis import analyze_log
+
         result = analyze_log(real_bin_path, platform="ardupilot")
         assert "modules" in result
         assert "magfit" in result["modules"]
