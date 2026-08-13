@@ -198,11 +198,37 @@ def serialize_fft_result(
             for p in peaks_raw[:20]
         ]
         recs_raw = result.get("recommendations", [])
-        recs = (
-            [serialize_param_recommendation(r, adapter) for r in recs_raw[:max_recommendations]]
-            if isinstance(recs_raw, list)
-            else []
-        )
+        if isinstance(recs_raw, dict):
+            # FFT analyzer dict form: {generic_name: suggested_value}. Convert to
+            # the standard recommendation shape so JSON/Markdown reports carry the
+            # notch/filter suggestions instead of silently dropping them (v3.2.1).
+            recs = []
+            for generic_name, value in list(recs_raw.items())[:max_recommendations]:
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                entry: Dict[str, Any] = {
+                    "generic_param": str(generic_name),
+                    "current": None,
+                    "suggested": _safe_float(float(value)),
+                    "change_percent": None,
+                    "action": "set",
+                    "confidence": "medium",
+                    "reason": "FFT vibration analysis",
+                }
+                if adapter is not None:
+                    try:
+                        entry["param"] = adapter.map_param_to_platform(str(generic_name))
+                    except Exception:
+                        entry["param"] = str(generic_name)
+                else:
+                    entry["param"] = str(generic_name)
+                recs.append(entry)
+        elif isinstance(recs_raw, list):
+            recs = [
+                serialize_param_recommendation(r, adapter) for r in recs_raw[:max_recommendations]
+            ]
+        else:
+            recs = []
         return {
             "vibration_level": result.get("vibration_level", ""),
             "noise_floor": _safe_float(result.get("noise_floor", 0)),

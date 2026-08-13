@@ -20,6 +20,7 @@ tree: 029577673a08
 - v3.2: regenerated all three parameter tables from upstream metadata — full firmware names, parameter groups, @Values/@Bitmask meanings, real PX4 defaults; added `tools/build_param_tables.py` (the previously missing scraper) and `smarttune/platform/param_lint.py`
 - v3.2: `validate()` no longer accepts any value for enum-typed parameters — real member/bitmask checks, fail-closed `unverifiable` status
 - v3.2: MCP payload slimming (`list_param_groups` / `get_param` added, 15 tools), unified `{ok, error_code, retryable}` shape, stdout isolation, lazy numpy import for parameter tools
+- v3.2.1 (this package, pending push): inline recommendation validation in services layer; batch validate (CLI --validate-batch + MCP smarttune_validate_params, 16 tools); analyze --modules/--max-recommendations; envelope status ok/error only with domain verdict field; dict-form FFT recommendations now reach JSON+Markdown reports; friendly smarttune-mcp error on Python 3.9; docs/TEST_PLAN_v3.2.1.md
 - v3.2: added `docs/TEST_PLAN_v3.2.md` (executable acceptance spec) and `tools/smoke_mcp.py` (MCP stdio contract smoke test)
 - v3.1: added `smarttune/output/json_output.py` and `-f/--format json` across all 10 CLI commands, sourced from the services layer (same payloads the MCP server returns)
 

@@ -17,11 +17,12 @@ This is the MCP-only variant of the SmartTune skill. If the agent has normal CLI
 * Do not modify logs, parameters, firmware, local files, or aircraft configuration.
 * Use only the SmartTune MCP tools listed below.
 * If these tools are unavailable, say SmartTune MCP is not connected and ask the operator to enable the MCP server.
-* **MANDATORY: Validate every parameter recommendation.** Before suggesting any parameter change, call `smarttune_validate_param` with the exact parameter name, proposed value, and platform. Never recommend a parameter that fails validation — search for alternatives with `smarttune_search_params`. A `status` of `unverifiable` is **not** approval.
+* **Analysis results arrive pre-validated (v3.2.1).** Every recommendation returned by `smarttune_analyze_log` and the per-module analysis tools carries `validated` / `validation_status`. Only recommendations with `validated: true` may be presented as-is; a `false` entry must be dropped or corrected using the `options` from `smarttune_get_param`.
+* **MANDATORY: Validate every value YOU adjusted.** Before suggesting any parameter change, call `smarttune_validate_param` with the exact parameter name, proposed value, and platform. Never recommend a parameter that fails validation — search for alternatives with `smarttune_search_params`. A `verdict` of `unverifiable` is **not** approval. For a whole set of adjusted values, use `smarttune_validate_params` (one call instead of N).
 * **Every tool returns one shape:** `{ok: true, ...}` on success, `{ok: false, error_code, message, hint, retryable}` on failure. A rejected parameter value is a successful call with `valid: false`.
 * **Never list a whole parameter table.** Browse with `smarttune_list_param_groups` → `smarttune_list_params(group=...)` → `smarttune_get_param(name)` for full detail. ArduPilot alone is ~2,800 parameters.
 
-## Available MCP Tools (15 total)
+## Available MCP Tools (16 total)
 
 ### Core Tools
 

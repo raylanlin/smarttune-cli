@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.2.0-blue?logo=github" alt="v3.2.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.2.1-blue?logo=github" alt="v3.2.1" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-232%20passed-brightgreen" alt="Tests" /></a>
@@ -89,6 +89,10 @@ SmartTune isn't just a tool agents *call* — it's how agents learn the craft of
 
 SmartTune includes a **read-only MCP server** that lets LLM agents call analysis tools directly — no shell, no subprocess, no arbitrary file writes.
 
+> **MCP requires Python 3.10+** (the MCP SDK does not support 3.9). The `stune` CLI itself
+> still runs on Python 3.9. On 3.9, `pip install ".[mcp]"` silently skips the mcp package and
+> `smarttune-mcp` explains why instead of crashing.
+
 **Install with MCP support:**
 
 ```bash
@@ -103,7 +107,7 @@ smarttune-mcp          # stdio transport (for agent frameworks)
 python -m smarttune.mcp_server
 ```
 
-**Available MCP tools (15 total):**
+**Available MCP tools (16 total):**
 
 | Tool | Purpose |
 |------|---------|
@@ -121,7 +125,8 @@ python -m smarttune.mcp_server
 | `smarttune_list_params` | List parameters in one group or category — compact rows |
 | `smarttune_get_param` | **NEW v3.2** — Full definition of one parameter, incl. what each enum value means |
 | `smarttune_search_params` | Ranked keyword search across names, descriptions and enum labels |
-| `smarttune_validate_param` | ⚠️ Validate param exists + value is a legal member/in range before recommending |
+| `smarttune_validate_param` | ⚠️ Validate one param name + value (enum membership as well as range) |
+| `smarttune_validate_params` | **NEW v3.2.1** — Validate a whole recommendation set in one call |
 
 All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`.
 
@@ -133,7 +138,12 @@ All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempoten
   "hint": "…", "retryable": false }
 ```
 
-A rejected parameter value is a *successful* call with `valid: false` — not a transport error.
+A rejected parameter value is a *successful* call with `valid: false` plus a `verdict` field
+(`ok` / `not_found` / `out_of_range` / `not_a_member` / `not_an_integer` / `unverifiable`) —
+not a transport error. And as of v3.2.1 the analysis tools attach `validated` /
+`validation_status` to **every recommendation they return**, so the "always validate before
+recommending" rule is enforced by the payload itself; explicit validation is only needed for
+values the agent adjusted afterwards.
 stdout carries JSON-RPC only: every service call runs with stdout redirected to stderr, so a
 stray `print` from a third-party log parser can no longer corrupt the stream.
 
@@ -203,6 +213,9 @@ stune platforms
 
 # Machine-readable output (same schema as the MCP server)
 stune analyze -i flight.bin --format json
+
+# Run a subset of modules / cap recommendations
+stune analyze -i flight.bin --modules pid,fft --max-recommendations 10 -f json
 ```
 
 ---
@@ -397,6 +410,10 @@ stune params --search "analog voltage"        # finds BATT_MONITOR
 stune params --validate BATT_MONITOR 4 -p ap     # ✓ 4 = Analog Voltage and Current
 stune params --validate BATT_MONITOR 99 -p ap    # ✗ not a valid value (lists allowed)
 stune params --validate p_roll 999 -p bf         # ✗ exceeds max 250
+
+# Validate a whole recommendation set in one call (exit 0 only if all valid)
+echo '[{"param":"BATT_MONITOR","value":4},{"param":"p_roll","value":45}]' \
+  | stune params --validate-batch - -p ap
 
 # Data health (CI gate)
 stune params --lint                    # exit 1 if any table has defects

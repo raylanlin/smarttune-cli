@@ -44,6 +44,7 @@ EXPECTED_TOOLS = {
     "smarttune_get_param",
     "smarttune_search_params",
     "smarttune_validate_param",
+    "smarttune_validate_params",
 }
 
 _results: list[tuple[bool, str, str]] = []
@@ -253,7 +254,7 @@ def run(log_path: Path | None, command: list[str]) -> int:
             "validate_param accepts a legal enum member",
             payload.get("ok") is True
             and payload.get("valid") is True
-            and payload.get("status") == "ok",
+            and payload.get("verdict") == "ok",
         )
 
         payload, _ = client.call_tool(
@@ -262,8 +263,8 @@ def run(log_path: Path | None, command: list[str]) -> int:
         )
         check(
             "validate_param REJECTS an undefined enum value (v3.1 accepted it)",
-            payload.get("valid") is False and payload.get("status") == "not_a_member",
-            f"status={payload.get('status')}",
+            payload.get("valid") is False and payload.get("verdict") == "not_a_member",
+            f"verdict={payload.get('verdict')}",
         )
         check("rejection tells the agent what is allowed", bool(payload.get("options")))
 
@@ -273,8 +274,8 @@ def run(log_path: Path | None, command: list[str]) -> int:
         )
         check(
             "validate_param enforces numeric range",
-            payload.get("valid") is False and payload.get("status") == "out_of_range",
-            f"status={payload.get('status')}",
+            payload.get("valid") is False and payload.get("verdict") == "out_of_range",
+            f"verdict={payload.get('verdict')}",
         )
 
         payload, _ = client.call_tool(
@@ -283,7 +284,29 @@ def run(log_path: Path | None, command: list[str]) -> int:
         )
         check(
             "validate_param rejects unknown names",
-            payload.get("valid") is False and payload.get("status") == "not_found",
+            payload.get("valid") is False and payload.get("verdict") == "not_found",
+        )
+
+        # ── batch validation (v3.2.1) ──
+        payload, _ = client.call_tool(
+            "smarttune_validate_params",
+            {
+                "recommendations": [
+                    {"param": "BATT_MONITOR", "value": 4},
+                    {"param": "ATC_RAT_RLL_P", "value": 999},
+                    {"param": "NO_SUCH_PARAM_XYZ", "value": 1},
+                ],
+                "platform": "ardupilot",
+            },
+        )
+        verdicts = [r.get("verdict") for r in payload.get("results", [])]
+        check(
+            "validate_params batches a whole recommendation set",
+            payload.get("ok") is True
+            and payload.get("all_valid") is False
+            and payload.get("valid_count") == 1
+            and verdicts == ["ok", "out_of_range", "not_found"],
+            f"verdicts={verdicts}",
         )
 
         # ── unified error shape ──
@@ -331,6 +354,31 @@ def run(log_path: Path | None, command: list[str]) -> int:
                     len(raw) < 262_144,
                     f"{len(raw)} bytes",
                 )
+
+                # v3.2.1: every recommendation ships pre-validated
+                found_recs = []
+
+                def _collect(node):
+                    if isinstance(node, dict):
+                        recs = node.get("recommendations")
+                        if isinstance(recs, list):
+                            found_recs.extend(r for r in recs if isinstance(r, dict))
+                        for v in node.values():
+                            _collect(v)
+                    elif isinstance(node, list):
+                        for v in node:
+                            _collect(v)
+
+                _collect(payload.get("modules", {}))
+                if found_recs:
+                    unannotated = [r.get("param") for r in found_recs if "validated" not in r]
+                    check(
+                        "analyze_log recommendations arrive pre-validated",
+                        not unannotated,
+                        f"{len(found_recs)} recs, unannotated: {unannotated[:5]}",
+                    )
+                else:
+                    print("  [SKIP] no recommendations in this log's analysis", file=sys.stderr)
 
             _, md = client.call_tool(
                 "smarttune_analyze_log", {"log_path": str(log_path), "response_format": "markdown"}

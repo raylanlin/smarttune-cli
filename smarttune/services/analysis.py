@@ -382,6 +382,65 @@ def run_module(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Inline recommendation validation (v3.2.1)
+# ---------------------------------------------------------------------------
+
+
+def _attach_validation(payload: Dict[str, Any], adapter: PlatformAdapter) -> Dict[str, Any]:
+    """Annotate every serialized recommendation with a validation verdict.
+
+    Walks the payload for ``recommendations`` lists and attaches
+    ``validated`` / ``validation_status`` (and ``validation_message`` on
+    rejection) to each entry, checked against the platform's parameter table.
+
+    This turns the "always validate before recommending" discipline into a
+    mechanism: agents no longer need one ``validate_param`` round-trip per
+    recommendation — the analysis result arrives pre-validated. Explicit
+    validation stays available for values the agent adjusts afterwards.
+
+    Fails open as annotation only: if the parameter table cannot be loaded,
+    the payload is returned untouched (recommendations simply carry no
+    ``validated`` field — absence means "not checked", never "approved").
+    """
+    try:
+        table = adapter.param_table()
+    except Exception:  # missing table must never break analysis
+        return payload
+
+    def _annotate(rec: Dict[str, Any]) -> None:
+        name = rec.get("param") or rec.get("generic_param")
+        value = rec.get("suggested")
+        if not name:
+            return
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            rec["validated"] = False
+            rec["validation_status"] = "unverifiable"
+            rec["validation_message"] = "suggested value is not numeric"
+            return
+        verdict = table.validate_detail(str(name), float(value))
+        rec["validated"] = bool(verdict["valid"])
+        rec["validation_status"] = verdict["status"]
+        if not verdict["valid"]:
+            rec["validation_message"] = verdict["message"]
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            recs = node.get("recommendations")
+            if isinstance(recs, list):
+                for rec in recs:
+                    if isinstance(rec, dict):
+                        _annotate(rec)
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+
+    _walk(payload)
+    return payload
+
+
 def analyze_pid(
     log_path: Path,
     platform: str = "auto",
@@ -393,13 +452,16 @@ def analyze_pid(
     adapter, fd = load_flight_data(_lp, platform)
     result = run_module("pid", adapter, fd, axis=axis)
 
-    return {
-        "platform": adapter.name,
-        "display_name": adapter.display_name,
-        "log_file": _lp.name,
-        "duration_s": round(fd.duration_s, 1),
-        **serialize_pid_result(result, adapter, max_recommendations),
-    }
+    return _attach_validation(
+        {
+            "platform": adapter.name,
+            "display_name": adapter.display_name,
+            "log_file": _lp.name,
+            "duration_s": round(fd.duration_s, 1),
+            **serialize_pid_result(result, adapter, max_recommendations),
+        },
+        adapter,
+    )
 
 
 def analyze_fft(
@@ -412,13 +474,16 @@ def analyze_fft(
     adapter, fd = load_flight_data(_lp, platform)
     result = run_module("fft", adapter, fd)
 
-    return {
-        "platform": adapter.name,
-        "display_name": adapter.display_name,
-        "log_file": _lp.name,
-        "duration_s": round(fd.duration_s, 1),
-        **serialize_fft_result(result, adapter, max_recommendations),
-    }
+    return _attach_validation(
+        {
+            "platform": adapter.name,
+            "display_name": adapter.display_name,
+            "log_file": _lp.name,
+            "duration_s": round(fd.duration_s, 1),
+            **serialize_fft_result(result, adapter, max_recommendations),
+        },
+        adapter,
+    )
 
 
 def analyze_magfit(
@@ -431,13 +496,16 @@ def analyze_magfit(
     adapter, fd = load_flight_data(_lp, platform)
     result = run_module("magfit", adapter, fd)
 
-    return {
-        "platform": adapter.name,
-        "display_name": adapter.display_name,
-        "log_file": _lp.name,
-        "duration_s": round(fd.duration_s, 1),
-        **serialize_magfit_result(result, adapter, max_recommendations),
-    }
+    return _attach_validation(
+        {
+            "platform": adapter.name,
+            "display_name": adapter.display_name,
+            "log_file": _lp.name,
+            "duration_s": round(fd.duration_s, 1),
+            **serialize_magfit_result(result, adapter, max_recommendations),
+        },
+        adapter,
+    )
 
 
 def analyze_sysid(
@@ -786,4 +854,5 @@ def analyze_log(
         "path_validated": True,
         "parameter_write_performed": False,
     }
-    return result
+    # v3.2.1: every recommendation ships pre-validated against the parameter table
+    return _attach_validation(result, adapter)

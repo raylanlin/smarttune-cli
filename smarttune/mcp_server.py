@@ -22,12 +22,15 @@ Tool parity with CLI:
   smarttune_get_param          ↔  stune params <NAME>
   smarttune_search_params      ↔  stune params --search
   smarttune_validate_param     ↔  stune params --validate
+  smarttune_validate_params    ↔  stune params --validate-batch
 
-Response contract (v3.2):
+Response contract (v3.2.1):
   Success  {"ok": true,  ...payload}
   Failure  {"ok": false, "error_code", "message", "hint", "retryable"}
   One shape for every tool, so clients branch on fields instead of prose.
-  A rejected parameter value is a successful call with valid=false — not an error.
+  A rejected parameter value is a successful call with valid=false plus a
+  "verdict" field — not an error. Analysis tools attach validated /
+  validation_status to every recommendation they return.
 
 Security boundaries:
   - No subprocess / os.system / shell commands
@@ -47,7 +50,16 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from mcp.server.fastmcp import FastMCP
+# The MCP SDK requires Python >= 3.10 and the [mcp] extra. Guard the import so
+# this module stays importable everywhere and `smarttune-mcp` fails with a clear
+# message instead of a bare traceback (v3.2.1).
+try:
+    from mcp.server.fastmcp import FastMCP
+
+    _MCP_IMPORT_ERROR: Optional[BaseException] = None
+except ImportError as _exc:  # pragma: no cover - depends on environment
+    FastMCP = None  # type: ignore[assignment]
+    _MCP_IMPORT_ERROR = _exc
 
 from smarttune.errors import SmartTuneError
 
@@ -448,40 +460,67 @@ _READ_ONLY_ANNOTATIONS = {
 # MCP Server
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP(
-    "smarttune_mcp",
-    instructions=(
-        "SmartTune MCP — Read-only flight log analysis tools for multi-rotor drones. "
-        "Supports ArduPilot (.bin/.log), Betaflight (.bbl/.bfl), and PX4 (.ulg) logs. "
-        "All tools are safe, idempotent, and never write parameters to the flight controller.\n\n"
-        "Available tools:\n"
-        "  smarttune_list_platforms    — List supported platforms and capabilities\n"
-        "  smarttune_log_quality      — Assess log data quality before analysis\n"
-        "  smarttune_analyze_log      — Comprehensive analysis (all modules)\n"
-        "  smarttune_analyze_pid      — PID step response analysis\n"
-        "  smarttune_analyze_fft      — FFT vibration spectrum analysis\n"
-        "  smarttune_analyze_magfit   — Magnetometer calibration analysis\n"
-        "  smarttune_analyze_sysid    — ARX system identification\n"
-        "  smarttune_analyze_filter   — Filter transfer function (Bode plot)\n"
-        "  smarttune_analyze_hardware — Hardware configuration report\n"
-        "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n"
-        "  smarttune_list_param_groups — Browse a platform's parameter groups (start here)\n"
-        "  smarttune_list_params      — List parameters in one group or category (compact rows)\n"
-        "  smarttune_get_param        — Full definition of one parameter, incl. enum meanings\n"
-        "  smarttune_search_params    — Ranked keyword search across names/descriptions/enums\n"
-        "  smarttune_validate_param   — Validate a parameter name + value before recommending\n\n"
-        "Every tool returns {ok: true, ...} or {ok: false, error_code, message, hint, retryable}.\n\n"
-        "Recommended workflow: list_platforms → log_quality → analyze_log (or individual tools)\n"
-        "Parameter lookup: list_param_groups → list_params(group=…) → get_param(name) for detail.\n"
-        "  Never list a whole table: ArduPilot alone is ~2,800 parameters.\n"
-        "Parameter validation: BEFORE recommending parameter changes, ALWAYS call\n"
-        "  smarttune_validate_param. It checks enum membership as well as numeric range;\n"
-        "  status='unverifiable' means the table cannot confirm the value — do NOT proceed\n"
-        "  as if it were valid. Enum meanings come from get_param (e.g. BATT_MONITOR 4 =\n"
-        "  'Analog Voltage and Current').\n"
-        "For visual reports: analyze first, then generate_plot for the relevant chart type."
-    ),
+
+class _MissingMCP:
+    """Stand-in when the mcp package is unavailable (Python < 3.10 or extra not
+    installed): keeps this module importable so tests can skip gracefully, and
+    turns a bare ImportError traceback into an actionable message in main()."""
+
+    def tool(self, *args: Any, **kwargs: Any):
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+    def run(self) -> None:
+        raise RuntimeError(_MCP_MISSING_MESSAGE) from _MCP_IMPORT_ERROR
+
+
+_MCP_MISSING_MESSAGE = (
+    "SmartTune MCP server requires Python >= 3.10 and the [mcp] extra.\n"
+    '    pip install "smarttune[mcp]"      # on Python 3.10+\n'
+    "The stune CLI itself still works on Python 3.9."
 )
+
+if FastMCP is None:
+    mcp = _MissingMCP()
+else:
+    mcp = FastMCP(
+        "smarttune_mcp",
+        instructions=(
+            "SmartTune MCP — Read-only flight log analysis tools for multi-rotor drones. "
+            "Supports ArduPilot (.bin/.log), Betaflight (.bbl/.bfl), and PX4 (.ulg) logs. "
+            "All tools are safe, idempotent, and never write parameters to the flight controller.\n\n"
+            "Available tools:\n"
+            "  smarttune_list_platforms    — List supported platforms and capabilities\n"
+            "  smarttune_log_quality      — Assess log data quality before analysis\n"
+            "  smarttune_analyze_log      — Comprehensive analysis; every recommendation arrives\n"
+            "    pre-validated (validated / validation_status on each entry)\n"
+            "  smarttune_analyze_pid      — PID step response analysis\n"
+            "  smarttune_analyze_fft      — FFT vibration spectrum analysis\n"
+            "  smarttune_analyze_magfit   — Magnetometer calibration analysis\n"
+            "  smarttune_analyze_sysid    — ARX system identification\n"
+            "  smarttune_analyze_filter   — Filter transfer function (Bode plot)\n"
+            "  smarttune_analyze_hardware — Hardware configuration report\n"
+            "  smarttune_generate_plot    — Generate base64 PNG chart (pid/fft/filter)\n"
+            "  smarttune_list_param_groups — Browse a platform's parameter groups (start here)\n"
+            "  smarttune_list_params      — List parameters in one group or category (compact rows)\n"
+            "  smarttune_get_param        — Full definition of one parameter, incl. enum meanings\n"
+            "  smarttune_search_params    — Ranked keyword search across names/descriptions/enums\n"
+            "  smarttune_validate_param   — Validate one parameter name + value\n"
+            "  smarttune_validate_params  — Validate a whole recommendation set in one call\n\n"
+            "Every tool returns {ok: true, ...} or {ok: false, error_code, message, hint, retryable}.\n\n"
+            "Recommended workflow: list_platforms → log_quality → analyze_log (or individual tools)\n"
+            "Parameter lookup: list_param_groups → list_params(group=…) → get_param(name) for detail.\n"
+            "  Never list a whole table: ArduPilot alone is ~2,800 parameters.\n"
+            "Parameter validation: analyze results arrive pre-validated; before recommending a\n"
+            "  value YOU adjusted, call smarttune_validate_param (or validate_params for a set).\n"
+            "  It checks enum membership as well as numeric range; verdict='unverifiable' means\n"
+            "  the table cannot confirm the value — do NOT proceed as if it were valid. Enum\n"
+            "  meanings come from get_param (e.g. BATT_MONITOR 4 = 'Analog Voltage and Current').\n"
+            "For visual reports: analyze first, then generate_plot for the relevant chart type."
+        ),
+    )
 
 
 # ── 1. List Platforms ──────────────────────────────────────────
@@ -1114,11 +1153,16 @@ def smarttune_validate_param(
       2. for enum/bitmask parameters, the value is a defined member / bit combination
       3. otherwise, the value sits inside the published [min, max] range
 
-    Returns ok/valid plus a status field:
+    Returns ok/valid plus a verdict field:
       ok | not_found | out_of_range | not_a_member | not_an_integer | unverifiable
+    (also mirrored as "status" for one release — deprecated, use "verdict")
 
     "unverifiable" means the table has no members and no range for a discrete
     parameter — the value is NOT accepted; say so instead of guessing.
+
+    Note: analysis tools (analyze_log / analyze_pid / ...) already attach
+    validated / validation_status to every recommendation they return — call
+    this tool for values YOU adjusted, or smarttune_validate_params for a set.
 
     Args:
         param_name: Firmware parameter name, e.g. "ATC_RAT_RLL_P", "p_roll", "MC_ROLLRATE_P".
@@ -1135,6 +1179,7 @@ def smarttune_validate_param(
             error_code="E4010",
             hint=f"Available: {available}",
             valid=False,
+            verdict="not_found",
             status="not_found",
         )
 
@@ -1147,6 +1192,8 @@ def smarttune_validate_param(
         "param_value": param_value,
         "platform": tbl.platform,
         "valid": verdict["valid"],
+        "verdict": verdict["status"],
+        # deprecated alias, kept one release for existing prompts/clients
         "status": verdict["status"],
         "message": verdict["message"],
     }
@@ -1162,6 +1209,100 @@ def smarttune_validate_param(
     return _ok(body)
 
 
+# ── 16. Validate a recommendation set ─────────────────────
+
+
+@mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
+def smarttune_validate_params(
+    recommendations: List[Dict[str, Any]],
+    platform: str,
+) -> str:
+    """Validate a WHOLE recommendation set in one call — one tool call instead of N.
+
+    Each entry is {"param": "<firmware name>", "value": <number>}. Returns a
+    per-entry verdict (same vocabulary as smarttune_validate_param) plus an
+    all_valid summary. Rejected entries carry the allowed values when known.
+
+    Args:
+        recommendations: List of {"param": str, "value": float} entries (1-100).
+        platform: "ardupilot", "betaflight", or "px4".
+    """
+    from smarttune.platform.params import ParamTable
+
+    platform = _resolve_platform_key(platform)
+    available = ParamTable.available_platforms()
+    if platform not in available:
+        return _err(
+            f"Unknown platform: {platform!r}",
+            error_code="E4010",
+            hint=f"Available: {available}",
+        )
+    if not isinstance(recommendations, list) or not recommendations:
+        return _err(
+            "recommendations must be a non-empty list",
+            error_code="E4000",
+            hint='Pass [{"param": "NAME", "value": 1.0}, ...]',
+        )
+    if len(recommendations) > 100:
+        return _err(
+            f"Too many entries: {len(recommendations)} (max 100)",
+            error_code="E4000",
+            hint="Split the set into batches of 100",
+        )
+
+    tbl = ParamTable.from_knowledge(platform)
+    results: List[Dict[str, Any]] = []
+    all_valid = True
+    for item in recommendations:
+        if not isinstance(item, dict):
+            results.append(
+                {
+                    "param": None,
+                    "valid": False,
+                    "verdict": "invalid_input",
+                    "message": f"entry is not an object: {item!r}",
+                }
+            )
+            all_valid = False
+            continue
+        name = str(item.get("param") or item.get("name") or "")
+        try:
+            value = float(item.get("value"))
+        except (TypeError, ValueError):
+            results.append(
+                {
+                    "param": name or None,
+                    "valid": False,
+                    "verdict": "invalid_input",
+                    "message": f"value is not a number: {item.get('value')!r}",
+                }
+            )
+            all_valid = False
+            continue
+        verdict = tbl.validate_detail(name, value)
+        entry: Dict[str, Any] = {
+            "param": name,
+            "value": value,
+            "valid": verdict["valid"],
+            "verdict": verdict["status"],
+            "message": verdict["message"],
+        }
+        if verdict.get("options"):
+            entry["options"] = verdict["options"]
+        results.append(entry)
+        all_valid = all_valid and verdict["valid"]
+
+    return _ok(
+        {
+            "platform": tbl.platform,
+            "count": len(results),
+            "valid_count": sum(1 for r in results if r["valid"]),
+            "all_valid": all_valid,
+            "results": results,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -1169,6 +1310,10 @@ def smarttune_validate_param(
 
 def main() -> None:
     """Run the SmartTune MCP server (stdio transport)."""
+    if _MCP_IMPORT_ERROR is not None:
+        print(_MCP_MISSING_MESSAGE, file=sys.stderr)
+        print(f"(import error: {_MCP_IMPORT_ERROR})", file=sys.stderr)
+        raise SystemExit(1)
     mcp.run()
 
 

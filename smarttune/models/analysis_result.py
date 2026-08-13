@@ -303,9 +303,24 @@ class FullAnalysisResult:
                 recs.extend(ax_result.recommendations)
         if self.fft:
             if isinstance(self.fft, dict):
-                # FFT analyzer returns dict form ({generic_name: value});
-                # rendered by format_fft, no .recommendations attribute.
-                pass
+                # FFT analyzer dict form: recommendations is {generic_name: value}.
+                # Convert so Markdown/terminal reports include the notch/filter
+                # suggestions (v3.2.1; was silently dropped).
+                raw = self.fft.get("recommendations")
+                if isinstance(raw, dict):
+                    for generic_name, value in raw.items():
+                        if isinstance(value, bool) or not isinstance(value, (int, float)):
+                            continue
+                        recs.append(
+                            ParamRecommendation(
+                                param=ParamRef(str(generic_name)),
+                                current=0.0,
+                                suggested=float(value),
+                                reason="FFT vibration analysis",
+                                confidence=Confidence.MEDIUM,
+                                action="set",
+                            )
+                        )
             else:
                 recs.extend(self.fft.recommendations)
         if self.filter:

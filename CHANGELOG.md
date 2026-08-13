@@ -1,3 +1,64 @@
+## v3.2.1 (2026-08-13) — Inline recommendation validation + batch validate
+
+Follow-up release closing the v3.2.0 backlog. No analysis numbers change.
+
+### Added
+
+- **Inline recommendation validation** — `analyze_log` / `analyze_pid` / `analyze_fft` /
+  `analyze_magfit` (services layer, so both CLI `-f json` and MCP benefit) now attach
+  `validated` / `validation_status` (+ `validation_message` on rejection) to **every
+  recommendation they return**, checked against the platform parameter table. The
+  "always validate before recommending" rule becomes a mechanism instead of a discipline:
+  agents no longer spend one `validate_param` round-trip per recommendation. Absence of the
+  field means "not checked", never "approved" (annotation fails open if the table is missing).
+- **Batch validation** — one call for a whole recommendation set:
+  - CLI: `stune params --validate-batch FILE|- -p <platform>` (JSON array of
+    `{"param", "value"}`; `-` reads stdin; exit 0 only if every entry is valid)
+  - MCP: `smarttune_validate_params(recommendations, platform)` (tool #16), per-entry
+    verdicts + `all_valid` summary
+- **`stune analyze --modules pid,fft`** — run a subset of modules (parity with MCP
+  `include_modules`; skipping unneeded modules speeds up analysis) and
+  **`--max-recommendations N`** (json output cap). Both work in text and json mode.
+
+### Fixed
+
+- **Dict-form FFT recommendations were silently dropped** from JSON payloads and Markdown
+  reports (`{generic_name: value}` shape from the FFT analyzer). They are now converted to
+  standard recommendation entries (`action: "set"`, platform-translated names) in both
+  `serialize_fft_result` and `FullAnalysisResult.all_recommendations`.
+- **`smarttune-mcp` on Python 3.9 / without the `[mcp]` extra** now prints an actionable
+  message (install instructions; the CLI still supports 3.9) instead of a bare
+  `ImportError` traceback. The module stays importable everywhere via a guarded import.
+
+### Changed — envelope contract tightened
+
+- CLI JSON envelope `status` is strictly `ok` / `error` again. The domain verdict of
+  `params --validate` moved into the payload as `verdict`
+  (`ok` / `not_found` / `out_of_range` / `not_a_member` / `not_an_integer` /
+  `unverifiable`). A rejection is a successful call (envelope `status: "ok"`,
+  `valid: false`, exit code 1) — consumers keying "non-ok status ⇒ read .error" no longer
+  break. `emit_result()` dropped its `status` override parameter.
+- MCP `smarttune_validate_param` now returns `verdict` alongside the old `status` key;
+  `status` is **deprecated** and will be removed in v3.3.
+
+### Tests
+
+- New `tests/test_inline_validation.py` (7 cases): pre-validated recommendations
+  (ok / out_of_range / not_found), non-numeric suggestion → unverifiable, missing table
+  fails open, dict-FFT conversion in serialize + all_recommendations.
+- `tests/test_param_tables.py`: verdict-field contract, 3 batch-validate CLI cases.
+- `tools/smoke_mcp.py`: expects 16 tools, asserts `verdict` field, batch tool round-trip,
+  and that `analyze_log` recommendations arrive pre-validated on a real log.
+
+### Docs
+
+- README: batch validate + `--modules`/`--max-recommendations` examples, MCP tool table
+  13→16 with the Python 3.10+ requirement called out, contract section updated for
+  `verdict` + inline validation.
+- New `docs/TEST_PLAN_v3.2.1.md` — incremental acceptance spec for this release.
+
+---
+
 ## v3.2.0 (2026-08-12) — Parameter table rebuild (groups + enum meanings) + validation gate fix
 
 The data side was fully rebuilt, and the code side fixes the security issue where

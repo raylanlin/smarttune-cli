@@ -147,15 +147,14 @@ def emit_result(
     command: str,
     payload: dict[str, Any],
     output_file: Path | None = None,
-    *,
-    status: str = "ok",
 ) -> int:
     """成功路径：``emit(build_envelope(...))``。
 
-    ``status`` 允许调用方覆盖信封状态（例如参数校验的
-    ``not_a_member`` / ``out_of_range``），不改变 payload 内容。
+    v3.2.1 契约收口：信封 ``status`` 只有 ``ok`` / ``error`` 两个值。
+    领域裁决（如参数校验的 ``not_a_member``）放在 payload 的 ``verdict``
+    字段里 —— 被拒是一次成功的调用，不是传输错误。
     """
-    return emit(build_envelope(command, payload, status=status), output_file)
+    return emit(build_envelope(command, payload), output_file)
 
 
 def fail(

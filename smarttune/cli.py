@@ -182,6 +182,21 @@ def platforms(output_format: str):
     default="light",
     help="Plot theme: light (default) or dark",
 )
+@click.option(
+    "--modules",
+    "modules_csv",
+    default=None,
+    metavar="LIST",
+    help="Comma-separated subset of modules to run: pid,fft,magfit,hardware,filter,sysid "
+    "(default: all available). Skipping unneeded modules speeds up analysis.",
+)
+@click.option(
+    "--max-recommendations",
+    type=int,
+    default=20,
+    show_default=True,
+    help="Cap on parameter recommendations in json output",
+)
 @format_option
 def analyze(
     log_file: Path,
@@ -191,9 +206,24 @@ def analyze(
     visual: bool,
     axis: str,
     theme: str,
+    modules_csv: Optional[str],
+    max_recommendations: int,
     output_format: str,
 ):
     """Comprehensive log analysis — PID + FFT + filter + mag recommendations."""
+    # ── parse --modules ──
+    _ALL_MODULES = {"pid", "fft", "magfit", "hardware", "filter", "sysid"}
+    include_modules = None
+    if modules_csv:
+        include_modules = [m.strip().lower() for m in modules_csv.split(",") if m.strip()]
+        invalid = set(include_modules) - _ALL_MODULES
+        if invalid:
+            _console.print(
+                f"[red]Invalid --modules entries: {', '.join(sorted(invalid))}[/red]\n"
+                f"[dim]Valid: {', '.join(sorted(_ALL_MODULES))}[/dim]"
+            )
+            sys.exit(1)
+
     # ── JSON path: single call into the services layer (same code path as MCP) ──
     if output_format == "json":
         from smarttune.output.json_output import emit_result, fail
@@ -204,10 +234,18 @@ def analyze(
         if report_format:
             _console.print(f"[dim]note: --report {report_format} is ignored in json mode[/dim]")
         try:
-            payload = analyze_log(log_file, platform=platform_name, axis=axis)
+            payload = analyze_log(
+                log_file,
+                platform=platform_name,
+                axis=axis,
+                include_modules=include_modules,
+                max_recommendations=max_recommendations,
+            )
         except SmartTuneError as exc:
             sys.exit(fail("analyze", exc, output_file))
         sys.exit(emit_result("analyze", payload, output_file))
+
+    requested = set(include_modules) if include_modules is not None else _ALL_MODULES
 
     try:
         adapter = resolve_adapter(platform_name, log_file)
@@ -254,7 +292,7 @@ def analyze(
         from smarttune.services.analysis import run_module
 
         pid_result = None
-        if "pid" in capabilities and flight_data.pid:
+        if "pid" in requested and "pid" in capabilities and flight_data.pid:
             p_pid = progress.add_task("[cyan]PID analysis...", total=None)
             try:
                 pid_result = run_module("pid", adapter, flight_data, kb=kb, axis=axis)
@@ -266,7 +304,7 @@ def analyze(
 
         # Phase 3: FFT Analysis
         fft_result = None
-        if "fft" in capabilities and flight_data.gyro is not None:
+        if "fft" in requested and "fft" in capabilities and flight_data.gyro is not None:
             p_fft = progress.add_task("[cyan]FFT analysis...", total=None)
             try:
                 fft_result = run_module("fft", adapter, flight_data, kb=kb)
@@ -278,7 +316,7 @@ def analyze(
 
         # Phase 4: MagFit
         magfit_result = None
-        if "magfit" in capabilities and flight_data.has_mag:
+        if "magfit" in requested and "magfit" in capabilities and flight_data.has_mag:
             p_mag = progress.add_task("[cyan]Magnetometer analysis...", total=None)
             try:
                 magfit_result = run_module("magfit", adapter, flight_data, kb=kb)
@@ -1102,6 +1140,15 @@ def _run_single_analysis(
     help="Validate a parameter name and value",
 )
 @click.option(
+    "--validate-batch",
+    "batch_source",
+    default=None,
+    metavar="FILE",
+    help="Validate many recommendations in one call: JSON file "
+    '([{"param": "...", "value": ...}, ...]) or "-" for stdin. '
+    "Exit 0 only if every entry is valid.",
+)
+@click.option(
     "--lint",
     "run_lint",
     is_flag=True,
@@ -1120,6 +1167,7 @@ def params(
     list_groups,
     category,
     validate_pair,
+    batch_source,
     run_lint,
     limit,
     output_format,
@@ -1150,6 +1198,7 @@ def params(
       stune params --search notch                       # ranked, cross-platform
       stune params --validate BATT_MONITOR 4 -p ap      # enum member check
       stune params --validate p_roll 999 -p bf          # range check (exit 1)
+      echo '[{"param":"p_roll","value":45}]' | stune params --validate-batch - -p bf
 
     \b
     Data health:
@@ -1250,6 +1299,116 @@ def params(
         sys.exit(1 if bad else 0)
 
     # ── validate ────────────────────────────────────────────
+    # ── batch validate (one call for a whole recommendation set) ──
+    if batch_source:
+        import json as _jsonlib
+
+        from smarttune.errors import InvalidParameterError
+
+        def _batch_fail(message, hint=""):
+            exc = InvalidParameterError(message=message, hint=hint)
+            if _json:
+                sys.exit(fail("params.validate_batch", exc))
+            _console.print(f"[red]{message}[/red]")
+            if hint:
+                _console.print(f"[dim]{hint}[/dim]")
+            sys.exit(1)
+
+        if not platform:
+            _batch_fail(
+                "--platform is required for --validate-batch", "e.g. -p ap | -p bf | -p px4"
+            )
+        try:
+            raw = (
+                sys.stdin.read()
+                if batch_source == "-"
+                else Path(batch_source).read_text(encoding="utf-8")
+            )
+            items = _jsonlib.loads(raw)
+        except OSError as exc:
+            _batch_fail(f"Cannot read {batch_source}: {exc}")
+        except _jsonlib.JSONDecodeError as exc:
+            _batch_fail(f"Invalid JSON: {exc}", 'Expected [{"param": "NAME", "value": 1.0}, ...]')
+        if not isinstance(items, list) or not items:
+            _batch_fail(
+                "Input must be a non-empty JSON array",
+                'Expected [{"param": "NAME", "value": 1.0}, ...]',
+            )
+
+        tbl = _load(platform)
+        results = []
+        all_valid = True
+        for item in items:
+            if not isinstance(item, dict):
+                results.append(
+                    {
+                        "param": None,
+                        "valid": False,
+                        "verdict": "invalid_input",
+                        "message": f"entry is not an object: {item!r}",
+                    }
+                )
+                all_valid = False
+                continue
+            name = str(item.get("param") or item.get("name") or "")
+            try:
+                value = float(item.get("value"))
+            except (TypeError, ValueError):
+                results.append(
+                    {
+                        "param": name or None,
+                        "valid": False,
+                        "verdict": "invalid_input",
+                        "message": f"value is not a number: {item.get('value')!r}",
+                    }
+                )
+                all_valid = False
+                continue
+            verdict = tbl.validate_detail(name, value)
+            entry = {
+                "param": name,
+                "value": value,
+                "valid": verdict["valid"],
+                "verdict": verdict["status"],
+                "message": verdict["message"],
+            }
+            if verdict.get("options"):
+                entry["options"] = verdict["options"]
+            results.append(entry)
+            all_valid = all_valid and verdict["valid"]
+
+        if _json:
+            emit_result(
+                "params.validate_batch",
+                {
+                    "platform": tbl.platform,
+                    "count": len(results),
+                    "valid_count": sum(1 for r in results if r["valid"]),
+                    "all_valid": all_valid,
+                    "results": results,
+                },
+            )
+            sys.exit(0 if all_valid else 1)
+
+        t = Table(
+            title=f"{tbl.platform} — batch validation ({len(results)} entries)",
+            show_header=True,
+            box=None,
+            title_justify="left",
+        )
+        t.add_column("")
+        t.add_column("Parameter", style="cyan")
+        t.add_column("Value", justify="right")
+        t.add_column("Verdict")
+        t.add_column("Detail")
+        for r in results:
+            mark = "[green]✓[/green]" if r["valid"] else "[red]✗[/red]"
+            t.add_row(
+                mark, str(r.get("param")), str(r.get("value", "")), r["verdict"], r["message"]
+            )
+        _console.print(t)
+        sys.exit(0 if all_valid else 1)
+
     if validate_pair:
         name, val_str = validate_pair
         try:
@@ -1289,10 +1448,23 @@ def params(
         verdict = tbl.validate_detail(name, value)
         pd = tbl.query(name)
         if _json:
-            body = {"platform": tbl.platform, "param": name, "value": value, **verdict}
+            # v3.2.1: envelope status stays ok/error; the domain verdict lives in
+            # the payload ("verdict") — a rejection is a successful call.
+            body = {
+                "platform": tbl.platform,
+                "param": name,
+                "value": value,
+                "valid": verdict["valid"],
+                "verdict": verdict["status"],
+                "message": verdict["message"],
+            }
+            if verdict.get("options"):
+                body["options"] = verdict["options"]
+            if verdict.get("hint"):
+                body["hint"] = verdict["hint"]
             if pd is not None:
                 body["parameter"] = to_full_dict(pd)
-            emit_result("params.validate", body, status=verdict["status"])
+            emit_result("params.validate", body)
             sys.exit(0 if verdict["valid"] else 1)
 
         if verdict["valid"]:

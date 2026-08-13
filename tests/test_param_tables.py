@@ -285,7 +285,52 @@ def test_cli_validate_enum_member_json():
     )
     assert bad.exit_code == 1
     body = _json_out(bad)
-    assert body["status"] == STATUS_NOT_A_MEMBER and body["options"]
+    # v3.2.1 contract: envelope status stays ok/error; the domain verdict lives
+    # in the payload
+    assert body["status"] == "ok"
+    assert body["valid"] is False
+    assert body["verdict"] == STATUS_NOT_A_MEMBER and body["options"]
+
+
+def test_cli_validate_batch_json(tmp_path):
+    batch = [
+        {"param": "BATT_MONITOR", "value": 4},
+        {"param": "ATC_RAT_RLL_P", "value": 999},
+        {"param": "NO_SUCH_PARAM_XYZ", "value": 1},
+        {"param": "BATT_MONITOR", "value": "abc"},
+    ]
+    src = tmp_path / "recs.json"
+    src.write_text(json.dumps(batch))
+
+    res = CliRunner().invoke(
+        main, ["params", "--validate-batch", str(src), "-p", "ap", "-f", "json"]
+    )
+    assert res.exit_code == 1  # not all valid
+    data = _json_out(res)
+    assert data["command"] == "params.validate_batch"
+    assert data["count"] == 4 and data["valid_count"] == 1
+    assert data["all_valid"] is False
+    verdicts = [r["verdict"] for r in data["results"]]
+    assert verdicts == ["ok", "out_of_range", "not_found", "invalid_input"]
+    assert data["results"][0]["valid"] is True
+
+
+def test_cli_validate_batch_all_valid_exits_0(tmp_path):
+    src = tmp_path / "recs.json"
+    src.write_text(json.dumps([{"param": "ATC_RAT_RLL_P", "value": 0.15}]))
+    res = CliRunner().invoke(
+        main, ["params", "--validate-batch", str(src), "-p", "ap", "-f", "json"]
+    )
+    assert res.exit_code == 0, res.output
+    assert _json_out(res)["all_valid"] is True
+
+
+def test_cli_validate_batch_requires_platform(tmp_path):
+    src = tmp_path / "recs.json"
+    src.write_text("[]")
+    res = CliRunner().invoke(main, ["params", "--validate-batch", str(src), "-f", "json"])
+    assert res.exit_code == 1
+    assert _json_out(res)["status"] == "error"
 
 
 def test_cli_search_json_is_ranked():
