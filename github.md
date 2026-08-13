@@ -10,6 +10,14 @@ via `tools/build_param_tables.py`:
 - raylanlin/PX4-Autopilot @main `0bb36a30ed43` — `docs/public/config/failsafe/parameters.json`
 - raylanlin/betaflight @master `96d612914267` — `src/main/cli/settings.c`, `src/main/fc/parameter_names.h`, `src/main/cli/settings.h` + bound headers
 
+## Pending in this package (v3.3.0, not yet pushed)
+
+- Firmware-version parameter tables: `ParamTable.from_knowledge(platform, fw_version)`, CLI `--fw-version`, MCP `fw_version` on all six parameter tools (unknown version → E4011), builder `--fw-tag`
+- New table `ardupilot.copter-4.5.json` (4,121 params / 243 groups) from Copter-4.5/Parameters.md
+- MCP validate_param: deprecated `status` alias removed (v3.2.1 promise)
+- Docs synced: README (4.5 table row + fw_version contract), ROADMAP (v3.2.1/v3.3 marked done, Web UI remains the only open item), skill/SKILL.md + skill-mcp/SKILL.md (fw_version, verdict wording)
+- Deferred by owner decision: Web UI; builder-native Parameters.md parser lands v3.3.1 (see docs/TEST_PLAN_v3.3.md)
+
 ## Last sync
 
 date: 2026-08-12T16:05:00Z

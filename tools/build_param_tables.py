@@ -668,6 +668,13 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="apm.pdef.json / parameters.json / betaflight checkout root",
     )
+    parser.add_argument(
+        "--fw-tag",
+        default="",
+        metavar="TAG",
+        help="write a versioned table <platform>.<TAG>.json instead of the "
+        "platform default (e.g. --fw-tag copter-4.5)",
+    )
     parser.add_argument("--out", type=Path, default=None, help="output path")
     parser.add_argument("--stdout", action="store_true", help="print instead of writing")
     parser.add_argument("--check", action="store_true", help="lint the tables already in the repo")
@@ -692,7 +699,13 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(text)
         return 0
 
-    out = args.out or (KNOWLEDGE_DIR / f"{args.platform}.json")
+    if args.fw_tag:
+        tag = args.fw_tag.strip().lower().replace(" ", "-").replace("_", "-")
+        table["fw_version"] = tag
+        default_out = KNOWLEDGE_DIR / f"{args.platform}.{tag}.json"
+    else:
+        default_out = KNOWLEDGE_DIR / f"{args.platform}.json"
+    out = args.out or default_out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(

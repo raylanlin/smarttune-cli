@@ -123,6 +123,8 @@
       checking, fail-closed on unverifiable rows (v3.2)
 - [x] MCP payload slimming + unified `{ok, error_code, retryable}` shape + stdout isolation +
       lazy numpy import for parameter tools (v3.2)
+- [x] Inline recommendation validation (every recommendation ships `validated`/`validation_status`), batch validate (CLI `--validate-batch` + MCP `smarttune_validate_params`), `analyze --modules`/`--max-recommendations`, envelope `verdict` contract (v3.2.1)
+- [x] Firmware-version parameter tables — `<platform>.<fw>.json`, CLI `--fw-version`, MCP `fw_version` on all six parameter tools, builder `--fw-tag`; new ArduPilot Copter-4.5 table (4,121 params) (v3.3)
 - [x] `knowledge/params/*.json` missing from wheel `package-data` (v3.1)
 - [ ] CI/CD setup (GitHub Actions: lint + test + build)
 - [ ] PyPI publishing config

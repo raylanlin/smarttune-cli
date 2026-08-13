@@ -202,17 +202,34 @@ class ParamTable:
 
     # ── factory ──────────────────────────────────────────────
 
+    @staticmethod
+    def _normalize_fw(fw: str) -> str:
+        return str(fw).strip().lower().replace(" ", "-").replace("_", "-")
+
     @classmethod
-    def from_knowledge(cls, platform_name: str) -> "ParamTable":
+    def from_knowledge(cls, platform_name: str, fw_version: str = "") -> "ParamTable":
         """Load parameter table from knowledge base JSON.
 
-        Looks for smarttune/knowledge/params/<platform_name>.json.
+        Default table:   smarttune/knowledge/params/<platform>.json
+        Versioned table: smarttune/knowledge/params/<platform>.<fw_version>.json
+        (v3.3) — e.g. ``from_knowledge("ardupilot", "copter-4.5")`` loads
+        ``ardupilot.copter-4.5.json``. ``fw_version="default"``/"" loads the
+        platform default.
         """
-        path = _KNOWLEDGE_DIR / f"{platform_name.lower()}.json"
+        platform_key = platform_name.lower()
+        fw = cls._normalize_fw(fw_version) if fw_version else ""
+        if fw in ("", "default"):
+            path = _KNOWLEDGE_DIR / f"{platform_key}.json"
+        else:
+            path = _KNOWLEDGE_DIR / f"{platform_key}.{fw}.json"
         if not path.is_file():
+            versions = cls.available_versions(platform_key)
             raise FileNotFoundError(
-                f"Knowledge base not found for {platform_name}: {path}\n"
-                f"Available: {[p.stem for p in _KNOWLEDGE_DIR.glob('*.json')]}"
+                f"Knowledge base not found for {platform_name}"
+                + (f" @ {fw_version}" if fw_version else "")
+                + f": {path}\n"
+                f"Available platforms: {cls.available_platforms()}\n"
+                f"Available versions for {platform_key}: {versions or ['(none)']}"
             )
 
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -221,15 +238,38 @@ class ParamTable:
         return cls(data.get("platform", platform_name), params, meta)
 
     @classmethod
-    def available_platforms(cls) -> List[str]:
-        """List platforms with knowledge base JSON files."""
-        return sorted(p.stem for p in _KNOWLEDGE_DIR.glob("*.json"))
+    def available_platforms(cls) -> list[str]:
+        """List platforms with a DEFAULT knowledge base JSON.
+
+        Versioned tables (``<platform>.<fw>.json``) are not platforms — list
+        them with :meth:`available_versions`.
+        """
+        return sorted(p.stem for p in _KNOWLEDGE_DIR.glob("*.json") if "." not in p.stem)
+
+    @classmethod
+    def available_versions(cls, platform_name: str) -> list[str]:
+        """Firmware versions available for a platform, e.g. ["default", "copter-4.5"]."""
+        platform_key = platform_name.lower()
+        versions: list[str] = []
+        if (_KNOWLEDGE_DIR / f"{platform_key}.json").is_file():
+            versions.append("default")
+        prefix = f"{platform_key}."
+        for p in sorted(_KNOWLEDGE_DIR.glob(f"{platform_key}.*.json")):
+            stem = p.name[: -len(".json")]
+            if stem.startswith(prefix):
+                versions.append(stem[len(prefix) :])
+        return versions
 
     # ── properties ───────────────────────────────────────────
 
     @property
     def platform(self) -> str:
         return self._platform
+
+    @property
+    def fw_version(self) -> str:
+        """Firmware version tag of this table ("" for the platform default)."""
+        return str(self._meta.get("fw_version", "") or "")
 
     @property
     def meta(self) -> Dict[str, Any]:

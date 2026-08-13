@@ -266,7 +266,56 @@ def run(log_path: Path | None, command: list[str]) -> int:
             payload.get("valid") is False and payload.get("verdict") == "not_a_member",
             f"verdict={payload.get('verdict')}",
         )
+        check(
+            "deprecated 'status' alias removed from validate_param (v3.3)",
+            "status" not in payload,
+        )
         check("rejection tells the agent what is allowed", bool(payload.get("options")))
+
+        # ── firmware-version tables (v3.3) ──
+        payload, _ = client.call_tool(
+            "smarttune_list_param_groups",
+            {"platform": "ardupilot", "fw_version": "copter-4.5"},
+        )
+        check(
+            "list_param_groups honours fw_version=copter-4.5",
+            payload.get("ok") is True and payload.get("parameter_count", 0) > 4000,
+            f"params={payload.get('parameter_count')}",
+        )
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {
+                "param_name": "ATC_RAT_RLL_P",
+                "param_value": 0.45,
+                "platform": "ardupilot",
+                "fw_version": "copter-4.5",
+            },
+        )
+        check(
+            "0.45 valid on copter-4.5 (max 0.5)",
+            payload.get("valid") is True,
+            f"verdict={payload.get('verdict')}",
+        )
+        payload, _ = client.call_tool(
+            "smarttune_validate_param",
+            {"param_name": "ATC_RAT_RLL_P", "param_value": 0.45, "platform": "ardupilot"},
+        )
+        check(
+            "0.45 rejected on the 4.1 default table (max 0.35)",
+            payload.get("valid") is False and payload.get("verdict") == "out_of_range",
+            f"verdict={payload.get('verdict')}",
+        )
+        payload, _ = client.call_tool(
+            "smarttune_list_param_groups",
+            {"platform": "ardupilot", "fw_version": "copter-9.9"},
+        )
+        check(
+            "unknown fw_version returns E4011 with the available list",
+            payload.get("ok") is False
+            and payload.get("error_code") == "E4011"
+            and "copter-4.5" in str(payload.get("message", "")),
+            f"code={payload.get('error_code')}",
+        )
 
         payload, _ = client.call_tool(
             "smarttune_validate_param",

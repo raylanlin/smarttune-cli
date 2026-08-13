@@ -245,6 +245,13 @@ stune params --validate BATT_MONITOR 99 -p ardupilot      # exit 1: not a valid 
 stune params --validate XYZZY_PARAM 0.0 -p ardupilot      # exit 1 if not found
 stune params --validate p_roll 500 -p betaflight          # exit 1 if out of range
 
+# Pick a firmware-version table (ArduPilot default is Copter-4.1)
+stune params ap --fw-version copter-4.5 --group ATC_
+stune params --validate ATC_RAT_RLL_P 0.45 -p ap --fw-version copter-4.5
+
+# Validate a whole recommendation set in one call (exit 0 only if all valid)
+echo '[{"param":"BATT_MONITOR","value":4}]' | stune params --validate-batch - -p ap
+
 # Parameter-table health check (CI gate)
 stune params --lint
 

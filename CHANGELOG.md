@@ -1,3 +1,48 @@
+## v3.3.0 (2026-08-13) — Firmware-version parameter tables
+
+### Added
+
+- **Multiple firmware versions per platform.** Versioned tables live at
+  `smarttune/knowledge/params/<platform>.<fw>.json`; the plain `<platform>.json`
+  stays the default. Resolution: `ParamTable.from_knowledge(platform, fw_version)`,
+  with `available_versions(platform)` listing what exists.
+  - CLI: `stune params ... --fw-version copter-4.5` (all modes: browse / search /
+    validate / batch / lint); `stune params` now lists each platform's versions.
+  - MCP: all six parameter tools accept `fw_version`; an unknown version returns
+    `E4011` with the available list (all-platform scans skip platforms lacking
+    that version).
+  - Builder: `tools/build_param_tables.py --fw-tag copter-4.5` writes a versioned
+    table and stamps `fw_version` into its metadata.
+- **New table: ArduPilot Copter-4.5** (`ardupilot.copter-4.5.json`) — 4,121
+  parameters / 243 groups / 1,060 enums / 186 bitmasks, generated from
+  `Copter-4.5/Parameters.md` (raylanlin/ParameterRepository). Includes per-param
+  descriptions, ranges, units, increments, Advanced/Standard audience, reboot/
+  read-only flags. Zero lint errors. The default ArduPilot table remains
+  Copter-4.1 (apm.pdef.json) for now; example of a real difference:
+  `ATC_RAT_RLL_P` max is 0.5 in 4.5 vs 0.35 in 4.1.
+
+### Removed
+
+- MCP `smarttune_validate_param`: the deprecated `status` alias (announced in
+  v3.2.1) is gone — use `verdict`.
+
+### Tests
+
+- New `tests/test_fw_versions.py` (7 cases): platform listing excludes versioned
+  files, version listing, versioned load + normalization (`Copter_4.5` →
+  `copter-4.5`), unknown-version error carries the available list, CLI
+  `--fw-version` end-to-end including a validate case that passes on 4.5 and
+  fails on the 4.1 default.
+
+### Deferred to v3.3.x
+
+- Web UI (drop-a-JSON dashboard extending the HTML report).
+- `build_param_tables.py` native `Parameters.md` parsing (the Copter-4.5 table
+  was generated with an equivalent transform; the md parser needs to land in the
+  builder for one-command reproducibility — the acceptance plan flags this).
+
+---
+
 ## v3.2.1 (2026-08-13) — Inline recommendation validation + batch validate
 
 Follow-up release closing the v3.2.0 backlog. No analysis numbers change.

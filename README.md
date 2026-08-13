@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.2.1-blue?logo=github" alt="v3.2.1" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.3.0-blue?logo=github" alt="v3.3.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-232%20passed-brightgreen" alt="Tests" /></a>
@@ -140,7 +140,7 @@ All tools are annotated `readOnlyHint=True`, `destructiveHint=False`, `idempoten
 
 A rejected parameter value is a *successful* call with `valid: false` plus a `verdict` field
 (`ok` / `not_found` / `out_of_range` / `not_a_member` / `not_an_integer` / `unverifiable`) —
-not a transport error. And as of v3.2.1 the analysis tools attach `validated` /
+not a transport error. All six parameter tools accept `fw_version` (e.g. `"copter-4.5"`; unknown versions return `E4011` with the available list). And as of v3.2.1 the analysis tools attach `validated` /
 `validation_status` to **every recommendation they return**, so the "always validate before
 recommending" rule is enforced by the payload itself; explicit validation is only needed for
 values the agent adjusted afterwards.
@@ -395,6 +395,10 @@ stune params ap --group ATC_           # attitude controller group
 stune params bf --group PID_PROFILE    # Betaflight PG_PID_PROFILE
 stune params px4 --group "Multicopter Rate Control"
 
+# Pick a firmware-version table (default: Copter-4.1 for ArduPilot)
+stune params ap --fw-version copter-4.5 --group ATC_
+stune params --validate ATC_RAT_RLL_P 0.45 -p ap --fw-version copter-4.5   # 4.5: max 0.5
+
 # Browse by topic
 stune params ap -c pid                 # pid / filter / mag / battery / rate / …
 
@@ -516,7 +520,8 @@ Rules are standard JSON files. Add a file, restart the command, and the engine p
 
 | Platform | Parameters | Groups | Upstream source |
 |----------|-----------:|-------:|-----------------|
-| ArduPilot | 2,839 | 194 | `apm.pdef.json` — ArduPilot's generated parameter metadata |
+| ArduPilot (default) | 2,839 | 194 | `apm.pdef.json` — Copter-4.1 generated metadata |
+| ArduPilot `copter-4.5` | 4,121 | 243 | `Copter-4.5/Parameters.md` — select with `--fw-version copter-4.5` |
 | Betaflight | 814 | 82 | `src/main/cli/settings.c` + `fc/parameter_names.h` (no metadata artifact exists) |
 | PX4 | 1,908 | 78 | `parameters.json` — PX4's own `px4params` generator |
 

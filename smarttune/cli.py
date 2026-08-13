@@ -1109,6 +1109,14 @@ def _run_single_analysis(
     "--platform", "-p", default=None, help="Target platform: ardupilot (ap), betaflight (bf), px4"
 )
 @click.option(
+    "--fw-version",
+    "fw_version",
+    default="",
+    metavar="TAG",
+    help="Firmware version table, e.g. copter-4.5 (default: the platform's default table). "
+    "List available versions with: stune params",
+)
+@click.option(
     "--search",
     "-s",
     "search_term",
@@ -1162,6 +1170,7 @@ def _run_single_analysis(
 def params(
     query,
     platform,
+    fw_version,
     search_term,
     group_name,
     list_groups,
@@ -1225,7 +1234,7 @@ def params(
 
     def _load(plat):
         try:
-            return ParamTable.from_knowledge(plat)
+            return ParamTable.from_knowledge(plat, fw_version)
         except FileNotFoundError as exc:
             if _json:
                 from smarttune.errors import UnsupportedPlatformError
@@ -1492,7 +1501,7 @@ def params(
         targets = [platform] if platform else ParamTable.available_platforms()
         hits = []
         for plat in targets:
-            tbl = ParamTable.from_knowledge(plat)
+            tbl = ParamTable.from_knowledge(plat, fw_version)
             for p in tbl.search(search_term):
                 hits.append((tbl.platform, p))
         if _json:
@@ -1535,7 +1544,7 @@ def params(
         targets = [platform] if platform else ParamTable.available_platforms()
         found = []
         for plat in targets:
-            tbl = ParamTable.from_knowledge(plat)
+            tbl = ParamTable.from_knowledge(plat, fw_version)
             pd = tbl.query(query)
             if pd:
                 found.append((tbl.platform, pd))
@@ -1592,7 +1601,7 @@ def params(
 
         # not a parameter — maybe a group name
         for plat in targets:
-            tbl = ParamTable.from_knowledge(plat)
+            tbl = ParamTable.from_knowledge(plat, fw_version)
             rows = tbl.list_by_group(query)
             if rows:
                 _emit_rows(
@@ -1629,7 +1638,7 @@ def params(
         available = ParamTable.available_platforms()
         tables = []
         for plat in available:
-            tbl = ParamTable.from_knowledge(plat)
+            tbl = ParamTable.from_knowledge(plat, fw_version)
             tables.append(
                 {
                     "platform": tbl.platform,
@@ -1638,6 +1647,7 @@ def params(
                     "count": len(tbl),
                     "group_count": len(tbl.groups()),
                     "firmware": (tbl.meta.get("source") or {}).get("firmware", ""),
+                    "versions": ParamTable.available_versions(plat),
                 }
             )
         if _json:
@@ -1652,6 +1662,7 @@ def params(
         t.add_column("Groups", justify="right")
         t.add_column("Schema", justify="right")
         t.add_column("Firmware")
+        t.add_column("Versions")
         for e in tables:
             t.add_row(
                 e["platform"],
@@ -1660,6 +1671,7 @@ def params(
                 str(e["group_count"]),
                 f"v{e['schema_version']}",
                 e["firmware"] or "—",
+                ", ".join(e["versions"]),
             )
         _console.print(t)
         _console.print(

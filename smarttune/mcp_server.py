@@ -32,6 +32,11 @@ Response contract (v3.2.1):
   "verdict" field — not an error. Analysis tools attach validated /
   validation_status to every recommendation they return.
 
+Firmware-version tables (v3.3):
+  Parameter tools accept fw_version (e.g. "copter-4.5") to query a versioned
+  table; empty/default uses the platform default. Unknown versions return
+  E4011 with the available list.
+
 Security boundaries:
   - No subprocess / os.system / shell commands
   - No arbitrary output paths
@@ -188,6 +193,23 @@ _PLATFORM_KEYS = {
     "px4": "px4",
     "pixhawk": "px4",
 }
+
+
+class UnknownFwVersion(Exception):
+    """Raised when a requested firmware-version table does not exist."""
+
+
+def _load_table(platform_key: str, fw_version: str = ""):
+    """from_knowledge, raising UnknownFwVersion with the available versions."""
+    from smarttune.platform.params import ParamTable
+
+    try:
+        return ParamTable.from_knowledge(platform_key, fw_version)
+    except FileNotFoundError:
+        raise UnknownFwVersion(
+            f"No table for {platform_key!r} @ {fw_version!r}. "
+            f"Available versions: {ParamTable.available_versions(platform_key)}"
+        ) from None
 
 
 def _resolve_platform_key(value: str) -> str:
@@ -923,7 +945,7 @@ def smarttune_generate_plot(
 
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
-def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
+def smarttune_list_param_groups(platform: str = "ardupilot", fw_version: str = "") -> str:
     """List a platform's firmware parameter GROUPS — the cheap way to explore a parameter table.
 
     A full table is thousands of parameters; this returns ~80-200 groups with a
@@ -942,7 +964,10 @@ def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
             f"Unknown platform: {platform!r}", error_code="E4010", hint=f"Available: {available}"
         )
 
-    tbl = ParamTable.from_knowledge(platform)
+    try:
+        tbl = _load_table(platform, fw_version)
+    except UnknownFwVersion as exc:
+        return _err(str(exc), error_code="E4011", hint="Omit fw_version to use the default table")
     return _ok(
         {
             "platform": tbl.platform,
@@ -960,6 +985,7 @@ def smarttune_list_param_groups(platform: str = "ardupilot") -> str:
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
 def smarttune_list_params(
     platform: str = "ardupilot",
+    fw_version: str = "",
     group: str = "",
     category: str = "all",
     limit: int = 100,
@@ -992,7 +1018,10 @@ def smarttune_list_params(
 
     limit = max(1, min(500, limit))
     offset = max(0, offset)
-    tbl = ParamTable.from_knowledge(platform)
+    try:
+        tbl = _load_table(platform, fw_version)
+    except UnknownFwVersion as exc:
+        return _err(str(exc), error_code="E4011", hint="Omit fw_version to use the default table")
 
     if group:
         rows = tbl.list_by_group(group)
@@ -1040,7 +1069,7 @@ def smarttune_list_params(
 
 
 @mcp.tool(annotations=_READ_ONLY_ANNOTATIONS)
-def smarttune_get_param(param_name: str, platform: str = "all") -> str:
+def smarttune_get_param(param_name: str, platform: str = "all", fw_version: str = "") -> str:
     """Get the FULL definition of one parameter — description, range, default, enum members.
 
     This is the tool to call before explaining or recommending a parameter: it
@@ -1068,7 +1097,10 @@ def smarttune_get_param(param_name: str, platform: str = "all") -> str:
 
     matches = []
     for plat in targets:
-        tbl = ParamTable.from_knowledge(plat)
+        try:
+            tbl = _load_table(plat, fw_version)
+        except UnknownFwVersion:
+            continue  # this platform has no such fw table — skip it in an all-platform scan
         pd = tbl.query(param_name)
         if pd:
             matches.append({"platform": tbl.platform, **to_full_dict(pd)})
@@ -1089,6 +1121,7 @@ def smarttune_get_param(param_name: str, platform: str = "all") -> str:
 def smarttune_search_params(
     keyword: str,
     platform: str = "all",
+    fw_version: str = "",
     limit: int = 40,
 ) -> str:
     """Search parameters by keyword, ranked by match quality.
@@ -1124,7 +1157,10 @@ def smarttune_search_params(
     results = {}
     total = 0
     for plat in targets:
-        tbl = ParamTable.from_knowledge(plat)
+        try:
+            tbl = _load_table(plat, fw_version)
+        except UnknownFwVersion:
+            continue  # this platform has no such fw table — skip it in an all-platform scan
         hits = tbl.search(keyword)
         total += len(hits)
         if hits:
@@ -1145,6 +1181,7 @@ def smarttune_validate_param(
     param_name: str,
     param_value: float,
     platform: str,
+    fw_version: str = "",
 ) -> str:
     """Validate that a parameter exists AND the proposed value is legal. Call before recommending anything.
 
@@ -1155,8 +1192,6 @@ def smarttune_validate_param(
 
     Returns ok/valid plus a verdict field:
       ok | not_found | out_of_range | not_a_member | not_an_integer | unverifiable
-    (also mirrored as "status" for one release — deprecated, use "verdict")
-
     "unverifiable" means the table has no members and no range for a discrete
     parameter — the value is NOT accepted; say so instead of guessing.
 
@@ -1180,10 +1215,12 @@ def smarttune_validate_param(
             hint=f"Available: {available}",
             valid=False,
             verdict="not_found",
-            status="not_found",
         )
 
-    tbl = ParamTable.from_knowledge(platform)
+    try:
+        tbl = _load_table(platform, fw_version)
+    except UnknownFwVersion as exc:
+        return _err(str(exc), error_code="E4011", hint="Omit fw_version to use the default table")
     verdict = tbl.validate_detail(param_name, param_value)
     pd = tbl.query(param_name)
 
@@ -1193,8 +1230,6 @@ def smarttune_validate_param(
         "platform": tbl.platform,
         "valid": verdict["valid"],
         "verdict": verdict["status"],
-        # deprecated alias, kept one release for existing prompts/clients
-        "status": verdict["status"],
         "message": verdict["message"],
     }
     if verdict.get("options"):
@@ -1216,6 +1251,7 @@ def smarttune_validate_param(
 def smarttune_validate_params(
     recommendations: List[Dict[str, Any]],
     platform: str,
+    fw_version: str = "",
 ) -> str:
     """Validate a WHOLE recommendation set in one call — one tool call instead of N.
 
@@ -1250,7 +1286,10 @@ def smarttune_validate_params(
             hint="Split the set into batches of 100",
         )
 
-    tbl = ParamTable.from_knowledge(platform)
+    try:
+        tbl = _load_table(platform, fw_version)
+    except UnknownFwVersion as exc:
+        return _err(str(exc), error_code="E4011", hint="Omit fw_version to use the default table")
     results: List[Dict[str, Any]] = []
     all_valid = True
     for item in recommendations:
