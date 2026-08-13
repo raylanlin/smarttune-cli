@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("mcp", reason="mcp extra requires Python >=3.10")
+
 from smarttune.mcp_server import (
     PathValidationError,
     _ALLOWED_EXTENSIONS,
