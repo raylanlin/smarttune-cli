@@ -40,6 +40,22 @@ wheel 里 MUST 含 `ardupilot.copter-4.5.json`（package-data 的 `params/*.json
 
 分析链路本次零改动 —— `stune analyze` 输出与 v3.2.1 逐字节一致（MUST）。
 
+## E. v3.3.1 增量 — 搜索折叠与截断信号
+
+```bash
+pytest -q tests/test_search_collapse.py        # MUST 7 passed
+stune params --search monitor -p ap -f json | jq '.platforms.ArduPilot | {count, raw_count, returned, truncated}'
+# MUST raw_count > count（克隆已折叠）；若 returned<count 则 MUST truncated:true
+stune params --search monitor -p ap -f json | jq '.platforms.ArduPilot.matches[] | select(.name=="BATT_MONITOR").instances'
+# MUST 长度 >= 8（BATT_ + BATT2_..BATT9_）
+stune params --search gps -p ap --limit 3 -f json | jq '.platforms.ArduPilot | {returned, truncated, note}'
+# MUST returned=3, truncated=true, note 含 "more distinct hits"
+stune params --search monitor -p ap                 # 终端表格 MUST 显示折叠说明与截断警告
+```
+
+MCP 侧：`smarttune_search_params(keyword="monitor", platform="ardupilot")` 的 ArduPilot block
+MUST 含 `raw_count`、折叠后 `params[].instances`，截断时 `truncated+note`。
+
 ## 已知限制
 
 1. 生成器暂不含 Parameters.md 解析器 —— copter-4.5 表由等价变换生成（§10 类比对暂不可重放），

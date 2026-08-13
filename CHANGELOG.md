@@ -1,3 +1,36 @@
+## v3.3.1 (2026-08-13) — Search result folding + honest truncation
+
+Field feedback from agent use: a search for "monitor" returned ~46 rows of which
+~40 were numbered-instance clones (BATT2_MONITOR..BATT9_MONITOR), drowning the
+handful of genuinely distinct parameters — and pushing them past the limit with
+no truncation signal, so the agent concluded "all hits are battery-related"
+from a silently incomplete set.
+
+### Changed
+
+- **Numbered-group folding in search results** (CLI `--search` and MCP
+  `smarttune_search_params`): instance clones fold into their base parameter
+  with an `instances` list (`BATT_MONITOR` + `["BATT_", "BATT2_", ...,
+  "BATT9_"]`). Ranking order is preserved; a numbered parameter whose base is
+  absent from the result set (e.g. `SERVO10_FUNCTION`, `EK3_MAG_CAL`) is kept
+  as-is. Real effect: "monitor" on Copter-4.5 goes 219 raw → 115 distinct rows.
+  Display-level only — `validate` / `get_param` always use exact names.
+  Implemented once in `smarttune/platform/params.py::collapse_numbered()`,
+  shared by CLI and MCP.
+- **Truncation is now signalled, never silent.** When `returned < count`, the
+  block carries `truncated: true` plus a `note` ("N more distinct hits not
+  shown — use a more specific keyword or raise limit"). Terminal output prints
+  the same warning; folded rows are listed under the table. Response blocks
+  also carry `raw_count` (pre-fold) alongside `count` (distinct).
+
+### Tests
+
+- New `tests/test_search_collapse.py` (7 cases): fold into base, order
+  preservation, clone-before-base, numbered-without-base kept, real-table
+  monitor fold, `instances` in CLI JSON, truncated+note contract at low limit.
+
+---
+
 ## v3.3.0 (2026-08-13) — Firmware-version parameter tables
 
 ### Added

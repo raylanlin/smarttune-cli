@@ -1498,38 +1498,64 @@ def params(
 
     # ── search ──────────────────────────────────────────────
     if search_term:
+        from smarttune.platform.params import collapse_numbered
+
         targets = [platform] if platform else ParamTable.available_platforms()
-        hits = []
+        by_platform = {}
+        raw_counts = {}
         for plat in targets:
             tbl = ParamTable.from_knowledge(plat, fw_version)
-            for p in tbl.search(search_term):
-                hits.append((tbl.platform, p))
+            found = tbl.search(search_term)
+            if found:
+                # fold numbered instance clones (BATT2_..BATT9_) into their base
+                by_platform[tbl.platform] = collapse_numbered(found)
+                raw_counts[tbl.platform] = len(found)
         if _json:
-            capped = hits if limit in (0, None) else hits[:limit]
+            blocks = {}
+            grand_total = 0
+            for plat, folded in by_platform.items():
+                capped = folded if limit in (0, None) else folded[:limit]
+                rows = []
+                for p, inst in capped:
+                    row = {"platform": plat, **to_slim_dict(p)}
+                    if inst:
+                        row["instances"] = inst
+                    rows.append(row)
+                block = {
+                    "count": len(folded),
+                    "raw_count": raw_counts[plat],
+                    "returned": len(capped),
+                    "matches": rows,
+                }
+                if len(capped) < len(folded):
+                    block["truncated"] = True
+                    block["note"] = (
+                        f"{len(folded) - len(capped)} more distinct hits not shown — "
+                        f"use a more specific keyword or raise --limit"
+                    )
+                blocks[plat] = block
+                grand_total += len(folded)
             emit_result(
                 "params.search",
-                {
-                    "keyword": search_term,
-                    "count": len(hits),
-                    "returned": len(capped),
-                    "matches": [{"platform": plat, **to_slim_dict(p)} for plat, p in capped],
-                },
+                {"keyword": search_term, "count": grand_total, "platforms": blocks},
             )
             sys.exit(0)
-        if not hits:
+        if not by_platform:
             _console.print(f"[yellow]No parameters matching '{search_term}'[/yellow]")
             sys.exit(0)
-        by_platform = {}
-        for plat, p in hits:
-            by_platform.setdefault(plat, []).append(p)
-        for plat, rows in by_platform.items():
-            capped = rows if limit in (0, None) else rows[:limit]
-            _console.print(
-                _slim_table(capped, f"{plat} — {len(rows)} match(es) for '{search_term}'")
-            )
-            if len(capped) < len(rows):
+        for plat, folded in by_platform.items():
+            capped = folded if limit in (0, None) else folded[:limit]
+            title = f"{plat} — {len(folded)} distinct match(es) for '{search_term}'"
+            if raw_counts[plat] > len(folded):
+                title += f" ({raw_counts[plat]} incl. numbered instances)"
+            _console.print(_slim_table([p for p, _ in capped], title))
+            foldnote = [f"{p.name} ×{len(inst)}" for p, inst in capped if inst]
+            if foldnote:
+                _console.print("[dim]folded instances: " + "; ".join(foldnote[:8]) + "[/dim]")
+            if len(capped) < len(folded):
                 _console.print(
-                    f"[dim]showing {len(capped)} of {len(rows)} — raise --limit for more[/dim]"
+                    f"[dim]⚠ {len(folded) - len(capped)} more distinct hits not shown — "
+                    f"use a more specific keyword or raise --limit[/dim]"
                 )
         return
 

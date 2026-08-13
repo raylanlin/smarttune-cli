@@ -18,6 +18,13 @@ via `tools/build_param_tables.py`:
 - Docs synced: README (4.5 table row + fw_version contract), ROADMAP (v3.2.1/v3.3 marked done, Web UI remains the only open item), skill/SKILL.md + skill-mcp/SKILL.md (fw_version, verdict wording)
 - Deferred by owner decision: Web UI; builder-native Parameters.md parser lands v3.3.1 (see docs/TEST_PLAN_v3.3.md)
 
+## Pending in this package (v3.3.1, not yet pushed)
+
+- Search folding: numbered-instance clones (BATT2_..BATT9_) collapse into their base with an `instances` list — shared `collapse_numbered()` in params.py, wired into CLI `--search` and MCP `smarttune_search_params`
+- Truncation contract: `returned < count` always carries `truncated: true` + note; blocks report `raw_count` vs distinct `count`
+- New tests/test_search_collapse.py (7 cases); TEST_PLAN_v3.3.md §E added
+- Note for deployer: default tables ardupilot.json / px4.json are NOT in this package (size-capped on export) — keep the repo's existing copies; only betaflight.json + ardupilot.copter-4.5.json ship here unchanged
+
 ## Last sync
 
 date: 2026-08-12T16:05:00Z

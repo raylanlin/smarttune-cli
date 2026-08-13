@@ -337,7 +337,8 @@ def test_cli_search_json_is_ranked():
     res = CliRunner().invoke(main, ["params", "--search", "notch", "-p", "ap", "-f", "json"])
     assert res.exit_code == 0, res.output
     data = _json_out(res)
-    assert data["count"] > 0 and data["matches"][0]["name"]
+    block = data["platforms"]["ArduPilot"]
+    assert block["count"] > 0 and block["matches"][0]["name"]
 
 
 def test_cli_lint_passes_for_every_table():

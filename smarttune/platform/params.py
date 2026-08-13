@@ -21,6 +21,7 @@ Schema
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from dataclasses import dataclass, field, fields as dataclass_fields
 from typing import Any, Dict, List, Optional, Tuple
@@ -128,6 +129,56 @@ class ParamDef:
 # ---------------------------------------------------------------------------
 # Dict shapes — defined ONCE here so CLI and MCP cannot drift apart
 # ---------------------------------------------------------------------------
+
+
+_NUMBERED_GROUP_RE = re.compile(r"^([A-Z][A-Z0-9]*?)([2-9]|1[0-9])(_.+)$")
+
+
+def collapse_numbered(params: "List[ParamDef]") -> "List[Tuple[ParamDef, List[str]]]":
+    """Collapse numbered-instance duplicates for display (search results).
+
+    ArduPilot repeats whole groups per instance — BATT2_MONITOR ... BATT9_MONITOR
+    are copies of BATT_MONITOR. A search for "monitor" returns ~40 such clones,
+    drowning the handful of genuinely different parameters (and pushing them past
+    the limit). This folds each numbered clone into its base parameter and
+    returns (param, instances) pairs in the original ranking order, e.g.
+    (BATT_MONITOR, ["BATT_", "BATT2_", ..., "BATT9_"]). A numbered parameter
+    whose base is absent from the result set is kept as-is.
+
+    Display-level only — validation and get_param always use exact names.
+    """
+    by_name = {p.name: p for p in params}
+    order: List[str] = []
+    instances: Dict[str, List[str]] = {}
+
+    def base_of(name: str) -> Optional[str]:
+        m = _NUMBERED_GROUP_RE.match(name)
+        if not m:
+            return None
+        candidate = m.group(1) + m.group(3)
+        return candidate if candidate in by_name else None
+
+    for p in params:
+        base = base_of(p.name)
+        key = base if base else p.name
+        if key not in instances:
+            instances[key] = []
+            order.append(key)
+        prefix = key.split("_", 1)[0] + "_"
+        if base:
+            m = _NUMBERED_GROUP_RE.match(p.name)
+            instances[key].append(m.group(1) + m.group(2) + "_")
+        elif _NUMBERED_GROUP_RE.match(p.name) is None and key == p.name:
+            # base itself present
+            if prefix not in instances[key]:
+                instances[key].insert(0, prefix)
+
+    out: List[Tuple[ParamDef, List[str]]] = []
+    for key in order:
+        inst = instances[key]
+        # only report instances when there actually was folding
+        out.append((by_name[key], inst if len(inst) > 1 else []))
+    return out
 
 
 def to_slim_dict(p: ParamDef) -> Dict[str, Any]:

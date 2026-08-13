@@ -1128,14 +1128,21 @@ def smarttune_search_params(
 
     Matches names, groups, categories, display names, descriptions and enum
     labels — so "analog voltage" finds BATT_MONITOR. Exact and prefix name
-    matches rank first. Returns compact rows; follow up with smarttune_get_param.
+    matches rank first. Numbered instance clones (BATT2_MONITOR..BATT9_MONITOR)
+    are folded into their base parameter with an "instances" list, so duplicates
+    don't drown distinct hits. Returns compact rows; follow up with
+    smarttune_get_param.
+
+    If a platform's block carries "truncated": true, there are more distinct
+    hits than the limit — refine the keyword (or raise limit) before concluding
+    anything about the full result set.
 
     Args:
         keyword: Search text, e.g. "notch", "rate p gain", "analog voltage".
         platform: "ardupilot" | "betaflight" | "px4" | "all" (default).
         limit: Max hits per platform (1-200, default 40).
     """
-    from smarttune.platform.params import ParamTable, to_slim_dict
+    from smarttune.platform.params import ParamTable, collapse_numbered, to_slim_dict
 
     if not keyword.strip():
         return _err("keyword is empty", error_code="E4000", hint="Pass a search term")
@@ -1164,11 +1171,27 @@ def smarttune_search_params(
         hits = tbl.search(keyword)
         total += len(hits)
         if hits:
-            results[tbl.platform] = {
-                "count": len(hits),
-                "returned": min(len(hits), limit),
-                "params": [to_slim_dict(p) for p in hits[:limit]],
+            folded = collapse_numbered(hits)
+            page = folded[:limit]
+            rows = []
+            for p, inst in page:
+                row = to_slim_dict(p)
+                if inst:
+                    row["instances"] = inst
+                rows.append(row)
+            block = {
+                "count": len(folded),
+                "raw_count": len(hits),
+                "returned": len(page),
+                "params": rows,
             }
+            if len(page) < len(folded):
+                block["truncated"] = True
+                block["note"] = (
+                    f"{len(folded) - len(page)} more distinct hits not shown — "
+                    f"use a more specific keyword or raise limit"
+                )
+            results[tbl.platform] = block
 
     return _ok({"keyword": keyword, "total": total, "platforms": results})
 
