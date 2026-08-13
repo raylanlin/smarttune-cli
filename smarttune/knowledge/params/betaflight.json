@@ -3,10 +3,9 @@
   "schema_version": 2,
   "source": {
     "upstream": "Betaflight firmware CLI settings table",
-    "repo": "raylanlin/betaflight",
     "path": "src/main/cli/settings.c (+ fc/parameter_names.h, cli/settings.h)",
-    "firmware": "betaflight master @96d612914267",
-    "generated": "2026-08-12",
+    "checkout": "/tmp/stune-upstream/betaflight",
+    "generated": "2026-08-13",
     "generator": "tools/build_param_tables.py"
   },
   "notes": [
@@ -12009,7 +12008,7 @@
     {
       "name": "simplified_gyro_filter",
       "group": "GYRO_CONFIG",
-      "category": "imu",
+      "category": "filter",
       "display_name": "simplified gyro filter",
       "type": "enum",
       "default": null,
@@ -12029,7 +12028,7 @@
     {
       "name": "simplified_gyro_filter_multiplier",
       "group": "GYRO_CONFIG",
-      "category": "imu",
+      "category": "filter",
       "display_name": "simplified gyro filter multiplier",
       "type": "int",
       "default": null,

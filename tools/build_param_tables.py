@@ -242,7 +242,7 @@ _PX4_RULES: list[tuple[str, str]] = [
     (r"^(CAL_MAG|SENS_MAG|MAG_)", "mag"),
     (r"^MPC_", "position"),
     (r"^FW_", "fixedwing"),
-    (r"^(COM_|FD_|GF_)", "safety"),
+    (r"^(COM_|FD_|GF_|NAV_FORCE)", "safety"),
     (r"^(SDLOG_|LOG_)", "logging"),
     (r"^(GPS_|SENS_GPS)", "gps"),
     (r"^(PWM_|MOT_|CA_)", "motor"),
@@ -314,7 +314,7 @@ _BF_RULES: list[tuple[str, str]] = [
     (r"^(p|i|d|f)_(roll|pitch|yaw)$", "pid"),
     (r"^d_(max|min)_", "pid"),
     (r"^(anti_gravity|iterm_|feedforward_|tpa_|abs_control|d_max|thrust_linear|pidsum|"
-     r"pid_at_min_throttle|simplified_(pid|d)|crash_recovery)", "pid"),
+     r"pid_at_min_throttle|simplified_(pid|d))", "pid"),
     (r"^(gyro_lpf|gyro_notch|gyro_hardware_lpf|dterm_lpf|dterm_notch|dyn_notch|rpm_filter|"
      r"acc_lpf|yaw_lowpass|simplified_(gyro|dterm)_filter)", "filter"),
     (r"^(roll|pitch|yaw)_(rc_rate|srate|expo)$", "rate"),
@@ -329,7 +329,7 @@ _BF_RULES: list[tuple[str, str]] = [
     (r"^(osd|displayport|max7456|cms)", "osd"),
     (r"^(blackbox|debug)", "logging"),
     (r"^(gps|imu_|nav_|pos_hold|alt_hold)", "navigation"),
-    (r"^(failsafe|arming|small_angle|runaway|gyro_cal_on_first_arm)", "safety"),
+    (r"^(failsafe|arming|small_angle|runaway|crash_recovery|gyro_cal_on_first_arm)", "safety"),
     (r"^(vtx|led|beeper|buzzer|telemetry|frsky|smartport|ibus|jetiexbus|mavlink|hott|ltm)",
      "peripheral"),
 ]
