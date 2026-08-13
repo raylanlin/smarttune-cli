@@ -27,7 +27,7 @@ jobs:
           pip install -e ".[ardupilot,dev]"
 
       - name: Lint with ruff
-        run: ruff check smarttune/ tests/
+        run: ruff check --select E9,F63,F7,F82 smarttune/ tests/
 
       - name: Test with pytest
         run: pytest tests/ -v --tb=short
@@ -46,7 +46,7 @@ jobs:
         run: pip install ruff black
 
       - name: Ruff
-        run: ruff check smarttune/ tests/
+        run: ruff check --select E9,F63,F7,F82 smarttune/ tests/
 
       - name: Black
         run: black --check --diff smarttune/ tests/

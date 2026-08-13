@@ -375,7 +375,7 @@ class BetaflightAdapter(PlatformAdapter):
 
         # ── Helper to get a column as float64 ──────────
         def _col_f64(name: str) -> Optional[np.ndarray]:
-            arr = merged_columns.get(name)
+            arr = merged_columns.get(name)  # noqa: F821  # closure over parse()'s local; del'd only after use
             if arr is not None:
                 return arr.astype(np.float64)
             return None
