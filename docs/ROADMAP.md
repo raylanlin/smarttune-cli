@@ -9,6 +9,7 @@
 - [x] `ParamRef` platform-agnostic parameter reference + `ParamRecommendation` result type
 - [x] `PlatformAdapter` abstract base class + registry/auto-detection (`registry.py`)
 - [x] ArduPilot adapter (full DataFlash .bin parser + parameter mapping)
+- [x] MAVLink telemetry (.tlog) parser — GCS recordings, with explicit capability limits (v3.4)
 - [x] Betaflight adapter (interface + parameter map ready, BBL parser implemented)
 - [x] PX4 adapter (interface + parameter map ready, ULog parser pending)
 - [x] Knowledge base layered loader (common → platform → user → Pro, 6-level deep_merge)

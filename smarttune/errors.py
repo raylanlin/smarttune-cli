@@ -92,7 +92,10 @@ class ParseError(SmartTuneError):
 class LogFormatError(ParseError):
     code = "E2001"
     message = "Unrecognized log format"
-    hint = "SmartTune supports ArduPilot (.bin), Betaflight (.bbl), and PX4 (.ulg) logs."
+    hint = (
+        "SmartTune supports ArduPilot (.bin/.log, .tlog telemetry), "
+        "Betaflight (.bbl/.bfl), and PX4 (.ulg) logs."
+    )
 
 
 class LogVersionError(ParseError):

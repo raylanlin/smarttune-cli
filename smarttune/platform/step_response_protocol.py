@@ -70,7 +70,9 @@ class ComputeStepResponseForAxisFn(Protocol):
         axis : str
             "roll" | "pitch" | "yaw"
         imu_data : Dict, optional
-            IMU 陀螺仪数据 (高采样率替代)。
+            IMU 陀螺仪数据（高采样率替代）。平台自行决定是否采用：
+            ArduPilot 默认不用（与 WebTools PIDReview 一致，输出信号取 PID.Act），
+            需要时传 prefer_imu=True；Betaflight 的 gyroADC 本身即 actual 信号。
 
         Returns
         -------

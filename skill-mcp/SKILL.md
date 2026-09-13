@@ -79,9 +79,15 @@ The tool returns both `image_base64` (data URL for inline display) and `file_pat
 
 ## Supported Logs
 
-* ArduPilot: `.bin`, `.log`
+* ArduPilot: `.bin`, `.log` (onboard) · `.tlog` (GCS telemetry — screening only)
 * Betaflight: `.bbl`, `.bfl`
-* PX4: `.ulg`
+* PX4: `.ulg` (a PX4-sourced `.tlog` is refused — ask for the onboard ULog)
+
+**Telemetry logs (`.tlog`):** responses carry `telemetry_notes` and `log_source`. When present,
+state those limits to the user: telemetry has no rate-controller terms (P/I/D read zero), the gyro
+stream is 1–50 Hz so FFT cannot see the 40–120 Hz resonance band, parameters exist only if the GCS
+downloaded them, and radio dropouts leave gaps. Never present `.tlog` numbers as tuning-grade —
+point at the onboard `.bin`.
 
 ## Workflow
 

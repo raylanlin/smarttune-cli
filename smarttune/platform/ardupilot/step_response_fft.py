@@ -5,8 +5,7 @@
   smarttune.platform.ardupilot.step_response_fft
 
 算法流程（完全复现 WebTools redraw_step + Libraries/Array_Math.js + Libraries/fft.js；
-2026-06-11 已对照上游真实源码逐项核验：hanning / 缩放 / TarMax≥20（加窗后）/
-spacing=N/16 / 高斯 CDF 正则化 / to_double_sided / Wiener / cumsum 全部一致）：
+2026-09-13 对着 raylanlin/WebTools@cb46984f 的 PIDReview.js:1031-1160 重核一遍）：
 
 1. 分窗：Hanning 窗，window_size 点，spacing = round(window_size / 16)
 2. 每窗做 fft.js realTransform（单边 FFT，DC/Nyquist 乘 1/N，其余乘 2/N）
@@ -14,11 +13,36 @@ spacing=N/16 / 高斯 CDF 正则化 / to_double_sided / Wiener / cumsum 全部�
 4. 构造 SNR 正则化：累积高斯积分 → 归一化 → 镜像 → (1 - sn + eps) → ×10 → 倒数
 5. Wiener 反卷积：H = Pyx / (Pxx + sn) 其中 sn 加到 Pxx 实部
 6. IFFT → 脉冲响应 → 累积和 → 阶跃响应
-7. 跨窗口平均
+7. 跨窗口平均（算术平均，与上游一致）
+
+逐项核对结果（对应 PIDReview.js 行号）：
+  hanning(window_size)                 :1064  ✓
+  window_spacing = round(N/16)         :1068  ✓
+  step_end = min(ceil(0.5/dt), N)      :1072  ✓
+  cutfreq = 25                         :1082  ✓（低采样率时夹到 0.8×Nyquist，见下）
+  len_lpf = bins.findIndex(x >= cut)   :1083  ✓（v3.4.0 修正 off-by-one）
+  len_lpf += len_lpf - 2               :1084  ✓
+  radius = ceil(len_lpf*0.5)           :1085  ✓
+  sigma  = len_lpf / 6                 :1086  ✓
+  累积高斯 + 归一化                     :1091-1098  ✓
+  镜像 sn[1:real_len-1].reverse()      :1100  ✓
+  (×-1, +1+1e-9, ×10, 取倒)            :1103-1106 ✓
+  TarMax < 20 跳过（加窗后）            :1136  ✓
+  Pxx.real += sn                       :1157  ✓
+
+有意偏离（上游不适用的场景，不是不一致）：
+  · cutfreq ≥ Nyquist 时夹到 0.8×Nyquist。上游 findIndex 返回 -1 → len_lpf 负值
+    → sn 全 1 → H≈0，退化为平坦零响应。.bin（400 Hz+）永远碰不到，
+    但 .tlog（1-50 Hz）每次都碰 —— 夹住并在 info.cutfreq_clamped 标注。
+  · 额外的窗口数据质量预检（NaN / >1500 deg/s / act≫4×tar / 静止段 /
+    超调 >300%）—— 上游无此步，这些窗口在 info.skipped_quality 计数。
 
 数据源（与 WebTools 一致）：
-- input = Tar（RATE.Des，单位与日志一致，无额外转换）
-- output = IMU.Gyr（优先）→ 回退 PIDR.Act
+- input  = Tar（PIDx.Tar / RATE.*Des）
+- output = Act（PIDx.Act / RATE.R,P,Y）—— **不**替换为 IMU.Gyr；
+  PIDReview.js:1600/1608 构造 test set 时取的就是 Act，Readme 的说法也是
+  "between the target and actual signals"。
+  IMU 陀螺仍可通过 prefer_imu=True 手动开启（需插值重采样，与上游不同源）。
 """
 
 from typing import Dict, Any, List, Tuple, Optional
@@ -157,6 +181,18 @@ def estimate_step_response(
     dt = 1.0 / sample_rate
     real_len = _real_length(window_size)  # window_size//2 + 1
 
+    # SNR 正则化截止频率不能超过 Nyquist。WebTools 只处理 400 Hz+ 的 .bin，
+    # cutfreq=25 永远在带内；findIndex 对 25 Hz 超出频带时返回 -1，导致
+    # len_lpf 为负、sn 全为 1、H≈0（退化为平坦零响应）。遥测日志（.tlog，
+    # 1-50 Hz）会直接落进这个退化分枝，所以这里显式夹到 0.8×Nyquist
+    # 并在结果里标注 —— 这是相对参考实现的**有意偏离**，不是不一致。
+    nyquist = sample_rate * 0.5
+    cutfreq_used = cutfreq
+    cutfreq_clamped = False
+    if cutfreq >= nyquist:
+        cutfreq_used = max(nyquist * 0.8, 1e-6)
+        cutfreq_clamped = True
+
     # ------------------------------------------------------------
     # 窗口参数（与 WebTools 一致）
     # ------------------------------------------------------------
@@ -164,8 +200,8 @@ def estimate_step_response(
     window_spacing = int(np.round(window_size / 16))  # Math.round
     num_windows = (n - window_size) // window_spacing + 1
 
-    # WebTools: Math.min(Math.ceil(0.5 / sample_time), window_size)
-    # （源码核对 2026-06-11：用 ceil 而非 floor）
+    # WebTools: Math.min(Math.ceil(0.5 / sample_time), window_size)  (PIDReview.js:1072)
+    # （源码核对 2026-09-13：用 ceil 而非 floor）
     step_end = min(int(np.ceil(step_duration_s / dt)), window_size)
     time_arr = np.arange(step_end) * dt
     full_len = 2 * (real_len - 1)  # 双边谱长度
@@ -184,8 +220,10 @@ def estimate_step_response(
     # ------------------------------------------------------------
     # bins 对应频率 (Hz)
     bins = np.fft.rfftfreq(window_size, d=dt)
-    # 找到 cutfreq 所在 bin 索引
-    bin_idx = int(np.searchsorted(bins, cutfreq, side="right"))
+    # WebTools: bins.findIndex((x) => x >= cutfreq) —— 第一个 >= cutfreq 的 bin。
+    # side="left" 才等价于 >=；旧实现用 side="right"，当某个 bin 恰好等于
+    # cutfreq 时会多算一个 bin（off-by-one）。
+    bin_idx = int(np.searchsorted(bins, cutfreq_used, side="left"))
     len_lpf = bin_idx
     len_lpf += len_lpf - 2  # account for double sided, DC and Nyquist not copied
     len_lpf = max(len_lpf, 1)
@@ -318,8 +356,15 @@ def estimate_step_response(
         "skipped_quality": skipped_quality,
         "window_size": window_size,
         "sample_rate": sample_rate,
+        "cutfreq_hz": cutfreq_used,
         "method": "webtools_fft",
     }
+    if cutfreq_clamped:
+        info["cutfreq_clamped"] = True
+        info["note"] = (
+            f"SNR regularisation cutoff clamped from {cutfreq:.0f} Hz to "
+            f"{cutfreq_used:.1f} Hz (0.8x Nyquist at {sample_rate:.0f} Hz sampling)"
+        )
 
     return {
         "time": time_arr,
@@ -332,17 +377,26 @@ def compute_step_response_for_axis(
     pid_data: Dict[str, np.ndarray],
     axis: str = "roll",
     imu_data: Optional[Dict[str, np.ndarray]] = None,
+    prefer_imu: bool = False,
 ) -> Dict[str, Any]:
     """
-    为指定轴计算阶跃响应（对齐 WebTools 数据源逻辑）。
+    为指定轴计算阶跃响应（对齐 WebTools PIDReview 的数据源选择）。
 
-    优先使用 IMU 陀螺仪数据（高采样率）作为实际响应。
+    输出信号默认用 **PID 消息的 Act**（PIDR/PIDP/PIDY.Act，无则 RATE.R/P/Y）——
+    与 WebTools 一致（PIDReview.js:1600/1608 构造 test set 时取的就是
+    log_msg.Act / log_msg[axis_prefix]，全程未替换为 IMU 陀螺）。
+
+    prefer_imu=True 才用 IMU.Gyr 作为输出。那条路径需要把 Tar 插值到陀螺时基
+    并重新均匀重采样，会引入插值自身的动态，且陀螺是未经控制器滤波的信号 ——
+    与参考实现不同源，仅作为对比手段保留。
+    （v3.4.0 之前这是默认行为，并被错标为"与 WebTools 一致"。）
     """
     desired = pid_data.get("Desired", np.array([]))
     actual_rate = pid_data.get("Actual", np.array([]))
     time_rate = pid_data.get("time", np.array([]))
 
-    use_imu = imu_data is not None and len(imu_data.get("GyrX", [])) > 0
+    use_imu = prefer_imu and imu_data is not None and len(imu_data.get("GyrX", [])) > 0
+    source = "imu_gyro" if use_imu else "pid_act"
 
     if use_imu:
         axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}.get(axis.lower(), 0)
@@ -415,5 +469,8 @@ def compute_step_response_for_axis(
         "axis": axis,
         "time_s": time_out.tolist(),
         "step_response": step_resp.tolist(),
-        "info": {k: v for k, v in result.items() if k not in ("time", "step_response")},
+        "info": {
+            "output_signal": source,
+            **{k: v for k, v in result.items() if k not in ("time", "step_response")},
+        },
     }

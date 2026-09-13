@@ -1,12 +1,12 @@
 ---
 name: smarttune
-description: Multi-platform flight log offline analysis and tuning advice. Triggered when user sends .bin/.bbl/.ulg log files for PID/FFT/filter/magnetometer analysis. Supports ArduPilot, Betaflight, and PX4.
+description: Multi-platform flight log offline analysis and tuning advice. Triggered when user sends .bin/.log/.tlog/.bbl/.ulg log files for PID/FFT/filter/magnetometer analysis. Supports ArduPilot, Betaflight, and PX4.
 ---
 
 # SmartTune CLI (stune)
 
 Multi-platform flight log analysis & tuning advisor.
-Supports **ArduPilot** (.bin/.log), **Betaflight** (.bbl/.bfl), and **PX4** (.ulg).
+Supports **ArduPilot** (.bin/.log onboard, .tlog telemetry), **Betaflight** (.bbl/.bfl), and **PX4** (.ulg).
 
 Platform is auto-detected from the log file format.
 
@@ -34,6 +34,10 @@ stune sysid -i log.bin -a roll
 stune hardware -i log.bin
 stune magfit -i log.bin
 
+# Telemetry log from a ground station (lower rate, no PID terms — limits are reported)
+stune quality -i "2026-09-13 10-00-00.tlog"
+stune analyze -i flight.tlog -f json | jq '.telemetry_notes'
+
 # List supported platforms
 stune platforms
 ```
@@ -43,8 +47,12 @@ stune platforms
 1. **Check help first**: `stune <command> --help` when unsure about flags
 2. **Terminal output by default**: no `-o` flag → stdout only
 3. **Optional charts**: add `--visual` for matplotlib plots
-4. **Cleanup after analysis**: delete raw `.bin/.log/.bbl/.ulg` files after processing
-5. **⚠️ MANDATORY: Validate parameters before recommending**. After analysis generates tuning suggestions, you MUST verify each parameter exists in the target firmware by running:
+4. **Cleanup after analysis**: delete raw `.bin/.log/.tlog/.bbl/.ulg` files after processing
+5. **⚠️ A `.tlog` is a screening source, not a tuning source.** Telemetry recordings carry no
+   rate-controller terms and a 1–50 Hz gyro stream. When `telemetry_notes` is present in the
+   result, repeat those limits to the user and do not present PID or vibration numbers from a
+   `.tlog` as tuning-grade — ask for the onboard `.bin` instead.
+6. **⚠️ MANDATORY: Validate parameters before recommending**. After analysis generates tuning suggestions, you MUST verify each parameter exists in the target firmware by running:
    ```bash
    stune params --validate <PARAM_NAME> <VALUE> -p <platform>
    ```
@@ -277,7 +285,7 @@ Tables are generated from official firmware metadata by `tools/build_param_table
 | `sysid` | ✅ | ✅ | 🔲 |
 | `hardware` | ✅ | ✅ | 🔲 |
 | `magfit` | ✅ | — | 🔲 |
-| Log format | .bin / .log | .bbl / .bfl | .ulg |
+| Log format | .bin / .log / .tlog | .bbl / .bfl | .ulg |
 
 ## Further Help
 

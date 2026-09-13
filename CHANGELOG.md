@@ -1,3 +1,163 @@
+## v3.4.0 (2026-09-13) — MAVLink telemetry log (.tlog) support
+
+Ground-station recordings (Mission Planner / MAVProxy / QGroundControl) are now a
+first-class input — with their limits stated out loud rather than papered over.
+
+A `.tlog` is not a thinner `.bin`; it is a different source:
+
+|  | onboard `.bin` | telemetry `.tlog` |
+|---|---|---|
+| written by | flight controller (SD card) | ground station (PC) |
+| rate | loop rate, 400 Hz+, lossless | stream rates, 1–50 Hz, lossy |
+| rate controller | PIDR/PIDP/PIDY with P/I/D terms | not streamed at all |
+| gyro | IMU at 400 Hz+ | RAW_IMU / ATTITUDE, 2–50 Hz |
+| coverage | whole flight | only while the link was up |
+
+### Added
+
+- **`smarttune/platform/ardupilot/tlog_parser.py`** — MAVLink telemetry parser.
+  A `.tlog` from an ArduPilot vehicle *is* ArduPilot, so it is handled inside the
+  existing adapter (`ArduPilotAdapter.parse()` dispatches on extension) — no new
+  platform, and every existing analyzer/report path keeps working unchanged.
+  - **PID** reconstructed from `ATTITUDE_TARGET` (desired body rates, rad/s→deg/s)
+    interpolated onto `ATTITUDE` (actual body rates). P/I/D terms are zero-filled
+    because telemetry does not carry them — the same contract as the existing
+    legacy-`RATE` fallback. **No `ATTITUDE_TARGET` → no PID analysis and a stated
+    reason**, never a fabricated desired signal.
+  - **Gyro/accel/mag** from `RAW_IMU` / `SCALED_IMU2` / `SCALED_IMU3` (mG, mrad/s,
+    mgauss) or `HIGHRES_IMU` (SI); falls back to `ATTITUDE` body rates when no IMU
+    stream exists, and says that the trace is EKF-filtered, not raw.
+  - Battery (`SYS_STATUS` / `BATTERY_STATUS`), motors (`SERVO_OUTPUT_RAW` PWM→0-1),
+    GPS (`GPS_RAW_INT` / `GLOBAL_POSITION_INT`), parameters (`PARAM_VALUE`, mirrored
+    to generic keys like `pid.roll.p`), modes (`HEARTBEAT.custom_mode` → Copter mode
+    names), `STATUSTEXT`, firmware version (`AUTOPILOT_VERSION`), frame type.
+  - Structural detection (`looks_like_tlog`): 8-byte big-endian timestamp + MAVLink
+    v1/v2 start byte + a plausible GCS epoch — a mis-named file is rejected without
+    parsing.
+- **Honesty layer.** `extras["telemetry_notes"]` + `extras["log_source"]` record what
+  the recording could and could not provide: missing P/I/D terms, sub-50 Hz rate
+  signals, the FFT Nyquist ceiling vs the 40–120 Hz resonance band, absent
+  accelerometer stream, missing parameter download, and every radio gap over 3 s.
+  - `stune quality` scores telemetry lower (−15, −30 without any desired-rate signal),
+    lists the caveats as issues, and sets `advice` to point at the onboard `.bin`.
+  - `stune analyze` prints a "Telemetry Log Limits" block; JSON/MCP payloads carry
+    `telemetry_notes` and `log_source`.
+- `.tlog` accepted by the MCP path validator and advertised in
+  `stune platforms` / `smarttune_list_platforms`.
+
+### Changed — aligned with ArduPilot's own tooling
+
+Cross-checked the ArduPilot analysis path against the reference implementations
+line by line (UAVLogViewer `mavlinkParser.js` / `modeMaps.js` /
+`mavlinkDataExtractor.js`; WebTools `StreamStats.js` and `PIDReview.js`).
+Full item-by-item table, including every deliberate deviation, in
+[`docs/ALIGNMENT_ARDUPILOT_WEBTOOLS.md`](docs/ALIGNMENT_ARDUPILOT_WEBTOOLS.md).
+
+**Step response — output signal was the wrong source (affects `.bin` too).**
+PIDReview builds its test sets from `PIDx.Act` / `RATE.R,P,Y` — the rate the
+controller measured (PIDReview.js:1600/1608; the Readme says "between the
+target and actual signals"). SmartTune preferred `IMU.Gyr` whenever present,
+and its docstring wrongly claimed that matched WebTools. That path also
+interpolated the target onto the gyro time base and re-sampled both onto a
+uniform grid — adding interpolation dynamics to the transfer function being
+measured, using an unfiltered signal. `compute_step_response_for_axis()` now
+defaults to `Act` (`prefer_imu=False`); the gyro path remains as an explicit
+comparison, and the result reports `info.output_signal`.
+⚠️ **This moves ArduPilot step-response metrics** (rise time / overshoot /
+settling) toward the reference implementation — the one intentional numeric
+change in this release.
+
+**Step response — off-by-one in the SNR cutoff bin.** `findIndex(x => x >= 25)`
+returns the matching bin; `searchsorted(..., side="right")` returned the one
+after it, so an FFT bin landing exactly on 25 Hz got one extra bin of
+regularisation. Now `side="left"`.
+
+**Step response — cutoff clamp for low-rate logs** (deliberate deviation).
+With `cutfreq` fixed at 25 Hz, `findIndex` returns `-1` when 25 Hz is beyond
+the spectrum → negative `len_lpf` → `sn` all ones → `H ≈ 0`, i.e. a flat zero
+step response. WebTools only loads 400 Hz+ `.bin` logs so it never reaches that
+branch; a `.tlog` at 1-50 Hz reaches it every time. The cutoff is clamped to
+`0.8 x Nyquist` and flagged as `info.cutfreq_clamped`.
+
+**Telemetry — GCS heartbeats were treated as the vehicle's.** A tlog carries
+heartbeats from both ends of the link; Mission Planner announces itself as
+`MAV_TYPE_GCS`. The parser read autopilot id, frame type and flight mode from
+whichever heartbeat came first, so a GCS-first recording mis-detected the
+vehicle and flapped between the vehicle's mode and the GCS's `custom_mode`.
+Now only vehicle-type heartbeats are used (UAVLogViewer's `validGCSs` rule),
+with `log_source.gcs_heartbeats_ignored` reporting how many were skipped.
+
+**Telemetry — mode maps are keyed by `MAV_TYPE`**, not hardcoded to Copter:
+Copter / Plane / Rover / Sub / Tracker tables copied verbatim from
+`modeMaps.js`, plus UAVLogViewer's `base_mode` bit fallback (4/8/16 →
+AUTO/GUIDED/STABILIZE) for types with no table. `custom_mode` 5 is `LOITER` on
+Copter but `FBWA` on Plane — the old code called both "loiter". Raw mode names
+now match the firmware strings (`ALT_HOLD`, not `ALTHOLD`) and map through the
+same canonical vocabulary as the DataFlash path.
+
+**Telemetry — vehicle clock is the timeline.** UAVLogViewer plots against
+`time_boot_ms`, the flight controller's own clock; the tlog wrapper timestamp
+is the PC's wall clock and carries radio/buffering jitter. Samples now resolve
+to `time_boot_ms` (or a boot-relative `time_usec`, guarded against UNIX-epoch
+values), and wall-clock-only messages (`SYS_STATUS`, `PARAM_VALUE`,
+`STATUSTEXT`) are shifted onto that timeline through the median clock offset.
+`log_source.clock` reports which clock was used.
+
+**Telemetry — one system per recording + real link-loss measurement**, from
+StreamStats: frames are keyed by `srcSystem`/`srcComponent`, so the parser now
+locks onto the first vehicle heartbeat's system id and ignores companion
+computers or a second vehicle (`frames_from_other_systems`, `systems`), and
+counts dropped frames from MAVLink sequence numbers with 8-bit wrap
+(`frames_dropped`, `drop_percent`, plus a note above 5%) instead of relying on
+a wall-clock gap heuristic.
+
+**Telemetry — smaller alignments:** param ids sanitised with UAVLogViewer's
+exact regex (`[^A-Za-z0-9_]` stripped), `STATUSTEXT.severity` kept, `AHRS2`
+accepted as a position fallback (as in UAVLogViewer, and as `AHR2` already is
+in our DataFlash path), `MAV_TYPE` table corrected against their `vehicles`
+map (3 = coaxial, 4 = heli, 19-24 = VTOL, 29 = dodeca), and all-zero magnetometer
+rows treated as "no compass" rather than a measurement.
+
+### Refused on purpose
+
+- A `.tlog` whose `HEARTBEAT` reports a **PX4** autopilot raises `LogFormatError`
+  pointing at the onboard `.ulg` — PX4 telemetry has no rate-controller data and
+  the ULog does.
+- A recording with no analysable vehicle data raises with a precise reason — an
+  empty/truncated file and a GCS-only recording (logging started before the
+  link came up) get different hints.
+
+### Tests
+
+- New `tests/test_tlog_parser.py` (33 cases): structural sniff (accept/reject
+  `.bin`, implausible timestamp), adapter + registry auto-detection, PID
+  reconstruction with unit conversion, zero P/I/D contract, no-target skip with
+  reason, gyro/accel/mag unit conversions, `ATTITUDE` gyro fallback, low-rate FFT
+  warning, generic parameter mirroring, battery/motor/GPS/statustext/metadata,
+  Copter mode mapping, link-gap reporting, missing-parameter note, PX4 refusal,
+  empty-log refusal, and quality-layer integration. Alignment cases pin the
+  behaviours above: vehicle clock as timeline, wall-clock-only messages placed
+  via the offset, GCS-clock fallback, GCS heartbeats ignored (including
+  GCS-first ordering), armed-state timeline, Copter vs Plane mode maps,
+  `base_mode` fallback, epoch `time_usec` rejection, param-id sanitising,
+  AHRS2 fallback, foreign-system exclusion, second-vehicle reporting,
+  sequence-number drop counting, sequence wrap, and the GCS-only refusal.
+
+### Docs
+
+- README: telemetry-log section (comparison table, what is and is not possible,
+  commands), platform table row, auto-detection bytes, security extension list.
+- `skill/SKILL.md` + `skill-mcp/SKILL.md`: a `.tlog` is a **screening** source —
+  agents must repeat `telemetry_notes` and must not present its numbers as
+  tuning-grade.
+- New `docs/ALIGNMENT_ARDUPILOT_WEBTOOLS.md` — the full line-by-line
+  comparison against UAVLogViewer and WebTools, with commit hashes, what
+  matched, what was fixed, and every deliberate deviation (including the
+  `unitScale` vs magnitude-heuristic difference left for a later release).
+- New `docs/TEST_PLAN_v3.4.md`.
+
+---
+
 ## v3.3.1 (2026-08-13) — Search result folding + honest truncation
 
 Field feedback from agent use: a search for "monitor" returned ~46 rows of which

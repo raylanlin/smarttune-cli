@@ -80,6 +80,15 @@ def main():
       6. stune platforms                    # List supported platforms
 
     \b
+    Log formats:
+      ArduPilot   .bin / .log (onboard DataFlash) · .tlog (GCS telemetry)
+      Betaflight  .bbl / .bfl (Blackbox)
+      PX4         .ulg (ULog)
+      A .tlog is a ground-station recording: lower rate, no rate-controller
+      terms, gaps on radio dropouts. SmartTune states those limits in the
+      report rather than treating it like an onboard log.
+
+    \b
     Commands:
       analyze   Comprehensive analysis (PID + FFT + Mag)
       quality   Log quality scoring (data completeness / excitation / sample rate)
@@ -146,7 +155,7 @@ def platforms(output_format: str):
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -389,6 +398,13 @@ def analyze(
             if magfit_result is not None:
                 fmt.format_magfit(magfit_result)
 
+            # Telemetry (.tlog) recordings carry structural limits — state them
+            _notes = (flight_data.extras or {}).get("telemetry_notes") or []
+            if _notes:
+                _console.print("\n[yellow]Telemetry log (.tlog) — analysis limits:[/yellow]")
+                for _note in _notes:
+                    _console.print(f"  [dim]⚠ {_note}[/dim]")
+
             # ── Markdown report ──
             # (was: silently produced nothing when --report md was passed without -o;
             #  now mirrors the HTML path and derives a default filename)
@@ -447,7 +463,7 @@ def analyze(
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -503,7 +519,7 @@ def pid(
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -549,7 +565,7 @@ def fft(log_file: Path, platform_name: str, visual: bool, theme: str, output_for
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -588,7 +604,7 @@ def magfit(log_file: Path, platform_name: str, output_format: str):
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -636,7 +652,7 @@ def sysid(log_file: Path, platform_name: str, axis: str, na: int, nb: int, outpu
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -676,7 +692,7 @@ def hardware(log_file: Path, platform_name: str, output_format: str):
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -834,7 +850,7 @@ def filter_cmd(
     "log_file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Flight log file",
+    help="Flight log file (.bin/.log/.tlog, .bbl/.bfl, .ulg)",
 )
 @click.option(
     "--platform",
@@ -950,6 +966,18 @@ def quality(log_file: Path, platform_name: str, output_file: Optional[Path], out
         lines += ["", "── Validation Issues ────────────────────────────────────"]
         for issue in issues:
             lines.append(f"  ⚠ {issue}")
+
+    telemetry_notes = result.get("telemetry_notes")
+    if telemetry_notes:
+        src = result.get("log_source") or {}
+        lines += [
+            "",
+            "── Telemetry Log (.tlog) Limits ──────────────────────────",
+            f"  Source: MAVLink telemetry, {src.get('message_count', 0)} messages, "
+            f"gyro from {src.get('gyro_source') or 'n/a'}",
+        ]
+        for note in telemetry_notes:
+            lines.append(f"  ⚠ {note}")
 
     lines += [
         "",

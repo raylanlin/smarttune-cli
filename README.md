@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.3.0-blue?logo=github" alt="v3.3.0" /></a>
+  <a href="https://github.com/raylanlin/smarttune-cli/releases"><img src="https://img.shields.io/badge/version-3.4.0-blue?logo=github" alt="v3.3.0" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python" alt="Python 3.9+" /></a>
   <a href="https://github.com/raylanlin/smarttune-cli/actions"><img src="https://img.shields.io/badge/tests-232%20passed-brightgreen" alt="Tests" /></a>
@@ -157,7 +157,7 @@ stray `print` from a third-party log parser can no longer corrupt the stream.
 - No shell execution — library calls only
 - No arbitrary file writes — results are returned inline
 - No parameter mutation — no MAVLink writes, no firmware flashing
-- Path validation — allowed roots, extensions (`.bin`, `.log`, `.bbl`, `.bfl`, `.ulg`), file size limits, symlink resolution
+- Path validation — allowed roots, extensions (`.bin`, `.log`, `.tlog`, `.bbl`, `.bfl`, `.ulg`), file size limits, symlink resolution
 - Configurable via environment variables:
 
 ```bash
@@ -429,9 +429,44 @@ Every subcommand supports `-f json`.
 
 | Platform | Log Format | Parser | Status |
 |----------|-----------|--------|--------|
-| **ArduPilot** | `.bin` / `.log` (DataFlash) | pymavlink | ✅ Full support |
+| **ArduPilot** | `.bin` / `.log` (onboard DataFlash) | pymavlink | ✅ Full support |
+| **ArduPilot** | `.tlog` (GCS telemetry) 🆕 v3.4 | pymavlink | ⚠️ Screening only — see below |
 | **Betaflight** | `.bbl` / `.bfl` (Blackbox) | Pure Python | ✅ Full support |
 | **PX4** | `.ulg` (ULog) | pyulog | ✅ PID / FFT / SysID / Quality (v3.0+) |
+
+### Telemetry logs (`.tlog`) 🆕 v3.4
+
+A `.tlog` is what Mission Planner / MAVProxy / QGroundControl records over the radio link —
+a fundamentally thinner source than the onboard log, and SmartTune treats it that way:
+
+|  | onboard `.bin` | telemetry `.tlog` |
+|---|---|---|
+| Written by | flight controller (SD card) | ground station (PC) |
+| Rate | loop rate, 400 Hz+, lossless | stream rates, 1–50 Hz, lossy |
+| Rate controller | `PIDR`/`PIDP`/`PIDY` with P/I/D terms | not streamed at all |
+| Gyro | IMU at 400 Hz+ | `RAW_IMU`/`ATTITUDE`, 2–50 Hz |
+| Coverage | whole flight | only while the link was up |
+
+```bash
+stune quality -i "2026-09-13 10-00-00.tlog"    # states every limit up front
+stune analyze -i flight.tlog -f json | jq '.telemetry_notes'
+```
+
+What SmartTune does with one:
+
+- **PID** is reconstructed from `ATTITUDE_TARGET` (desired body rates) vs `ATTITUDE` (actual).
+  P/I/D term breakdown does not exist in telemetry, so those series read zero — like the
+  existing legacy-`RATE` fallback. If the vehicle never streamed `ATTITUDE_TARGET`, PID
+  analysis is **skipped with a reason**, not faked.
+- **FFT** is band-limited by the stream rate: a 10 Hz stream can only show 0–5 Hz, far below
+  the 40–120 Hz band where prop and frame resonances live. The report says so.
+- **Parameters** only exist if the GCS downloaded them during the recording.
+- **Radio dropouts**, missing accel stream, and EKF-filtered rate sources are all reported
+  in `telemetry_notes` (JSON) or the "Telemetry Log Limits" block (terminal).
+- A `.tlog` recorded from a **PX4** vehicle is refused with a pointer to the onboard `.ulg`.
+
+Every caveat is scored: telemetry logs cannot reach the top quality bands, and
+`quality.advice` points at the onboard log for tuning work.
 
 ### Auto-Detection
 
@@ -440,6 +475,7 @@ SmartTune identifies your log format from file headers — no `--platform` flag 
 | Bytes | Platform |
 |-------|----------|
 | `0xA3 0x95` | ArduPilot DataFlash |
+| 8-byte timestamp + `0xFD`/`0xFE` | ArduPilot MAVLink telemetry (`.tlog`) |
 | `H Product:Blackbox` | Betaflight Blackbox |
 | ULog magic | PX4 ULog |
 

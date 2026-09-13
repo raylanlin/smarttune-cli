@@ -25,6 +25,19 @@ via `tools/build_param_tables.py`:
 - New tests/test_search_collapse.py (7 cases); TEST_PLAN_v3.3.md §E added
 - Note for deployer: default tables ardupilot.json / px4.json are NOT in this package (size-capped on export) — keep the repo's existing copies; only betaflight.json + ardupilot.copter-4.5.json ship here unchanged
 
+## Pending in this package (v3.4.0, not yet pushed)
+
+- New `smarttune/platform/ardupilot/tlog_parser.py`: MAVLink telemetry (.tlog) parser handled inside the ArduPilot adapter (dispatch on extension — no new platform, all existing analyzer wiring untouched)
+- PID reconstructed from ATTITUDE_TARGET vs ATTITUDE (P/I/D zero-filled, skipped with a stated reason when no target stream); gyro/accel/mag from RAW_IMU/SCALED_IMU*/HIGHRES_IMU with ATTITUDE fallback
+- Honesty layer: `extras["telemetry_notes"]` + `extras["log_source"]` surfaced through quality (scored lower, advice points at the .bin), analyze (terminal block), and JSON/MCP payloads
+- PX4-sourced .tlog refused with a pointer to the onboard .ulg; `.tlog` added to the MCP path validator
+- New tests/test_tlog_parser.py (21 cases), docs/TEST_PLAN_v3.4.md; README + both SKILL.md files updated
+- Aligned with ArduPilot's reference tooling (UAVLogViewer + WebTools StreamStats/PIDReview), full table in docs/ALIGNMENT_ARDUPILOT_WEBTOOLS.md:
+  - step response output signal was IMU.Gyr, reference uses PIDx.Act → default changed (ONLY intentional numeric change; affects .bin too), off-by-one in the SNR cutoff bin fixed, cutoff clamped at low sample rates
+  - tlog: GCS heartbeats no longer mistaken for the vehicle, mode maps keyed by MAV_TYPE (Copter/Plane/Rover/Sub/Tracker + base_mode fallback), vehicle clock (time_boot_ms) as the timeline, per-srcSystem isolation + sequence-number drop counting, param-id sanitising, AHRS2 fallback, STATUSTEXT severity
+- TEST_PLAN §E: everything except PID step response must stay byte-identical vs v3.3.1; §E0 covers the intentional step-response change (cross-check against the PIDReview web tool)
+- Note for deployer: default tables ardupilot.json / px4.json are NOT in this package (export size cap) — keep the repo's existing copies
+
 ## Last sync
 
 date: 2026-08-12T16:05:00Z

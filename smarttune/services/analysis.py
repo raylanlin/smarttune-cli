@@ -223,6 +223,21 @@ def get_log_quality(
                         score -= 5
                 break  # Only check first axis
 
+    # ── 5. Telemetry-log caveats (.tlog) ──────────────────────
+    # A ground-station recording is a fundamentally thinner source than the
+    # onboard log (stream rates instead of loop rate, no rate-controller
+    # terms, gaps on radio dropouts). The parser records what it could and
+    # could not see; surface that in the score and the issue list rather
+    # than letting a 10 Hz telemetry log score like a 400 Hz .bin.
+    log_source = (fd.extras or {}).get("log_source") or {}
+    telemetry_notes = list((fd.extras or {}).get("telemetry_notes") or [])
+    is_telemetry = log_source.get("kind") == "mavlink_telemetry"
+    if is_telemetry:
+        issues.extend(telemetry_notes)
+        score -= 15
+        if not log_source.get("attitude_target_samples"):
+            score -= 15  # no desired-rate signal at all
+
     score = max(0, min(100, score))
 
     # Rating
@@ -236,6 +251,12 @@ def get_log_quality(
         rating, advice = (
             "POOR",
             "Log quality is low; consider re-flying with better logging settings",
+        )
+
+    if is_telemetry:
+        advice = (
+            "Telemetry recording — usable for vibration/health screening. "
+            "For PID tuning, analyse the onboard DataFlash .bin log instead."
         )
 
     file_size_mb = _lp.stat().st_size / (1024 * 1024)
@@ -257,6 +278,8 @@ def get_log_quality(
         "step_counts": step_counts if step_counts else None,
         "rate_consistency": rate_consistency if rate_consistency else None,
         "validation_issues": fd.validate(),
+        "log_source": log_source or None,
+        "telemetry_notes": telemetry_notes or None,
         "quality": {
             "score": score,
             "rating": rating,
@@ -854,5 +877,10 @@ def analyze_log(
         "path_validated": True,
         "parameter_write_performed": False,
     }
+    # Telemetry (.tlog) logs carry structural caveats the report must state
+    _src = (fd.extras or {}).get("log_source") or {}
+    if _src.get("kind") == "mavlink_telemetry":
+        result["log_source"] = _src
+        result["telemetry_notes"] = list((fd.extras or {}).get("telemetry_notes") or [])
     # v3.2.1: every recommendation ships pre-validated against the parameter table
     return _attach_validation(result, adapter)

@@ -82,7 +82,7 @@ _DEFAULT_ALLOWED_ROOTS = [
     Path("/tmp"),
 ]
 
-_ALLOWED_EXTENSIONS = {".bin", ".log", ".bbl", ".bfl", ".ulg"}
+_ALLOWED_EXTENSIONS = {".bin", ".log", ".tlog", ".bbl", ".bfl", ".ulg"}
 
 
 def _get_max_file_mb() -> float:
@@ -511,7 +511,9 @@ else:
         "smarttune_mcp",
         instructions=(
             "SmartTune MCP — Read-only flight log analysis tools for multi-rotor drones. "
-            "Supports ArduPilot (.bin/.log), Betaflight (.bbl/.bfl), and PX4 (.ulg) logs. "
+            "Supports ArduPilot (.bin/.log onboard, .tlog telemetry), Betaflight (.bbl/.bfl), "
+            "and PX4 (.ulg) logs. A .tlog is a ground-station recording: lower rate, no "
+            "rate-controller terms — responses carry telemetry_notes stating the limits.\n"
             "All tools are safe, idempotent, and never write parameters to the flight controller.\n\n"
             "Available tools:\n"
             "  smarttune_list_platforms    — List supported platforms and capabilities\n"
@@ -590,7 +592,7 @@ def smarttune_log_quality(
     (jitter, drop rate). Returns a quality score (0-100) with rating and advice.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto" (default), "ardupilot", "betaflight", or "px4".
     """
     from smarttune.services.analysis import get_log_quality
@@ -617,7 +619,7 @@ def smarttune_analyze_log(
     function. Returns compact results suitable for explaining to users.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto" (default), "ardupilot", "betaflight", or "px4".
         axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
         include_modules: Subset of ["pid", "fft", "magfit", "hardware", "filter", "sysid"]. None = all available.
@@ -706,7 +708,7 @@ def smarttune_analyze_pid(
     specific parameter tuning recommendations.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
@@ -743,7 +745,7 @@ def smarttune_analyze_fft(
     Returns vibration severity rating (EXCELLENT/GOOD/MARGINAL/POOR).
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
@@ -773,7 +775,7 @@ def smarttune_analyze_magfit(
     offset recommendations.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         max_recommendations: Maximum parameter recommendations (1–100, default 20).
     """
@@ -804,7 +806,7 @@ def smarttune_analyze_sysid(
     damping ratio, DC gain, and provides PID bandwidth recommendations.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         axis: Axis to analyze — "all" (default), "roll", "pitch", or "yaw".
         na: ARX model A polynomial order (default 3).
@@ -850,7 +852,7 @@ def smarttune_analyze_filter(
     and filter chain details (auto mode).
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         gyro_filter_hz: Override GYRO_FILTER cutoff frequency (Hz). Switches to manual mode.
         notch_freq_hz: Specify Notch center frequency (Hz). Switches to manual mode.
@@ -882,7 +884,7 @@ def smarttune_analyze_hardware(
     active filter settings, rate PID parameters, battery report, and firmware/board info.
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
     """
     from smarttune.services.analysis import analyze_hardware
@@ -912,7 +914,7 @@ def smarttune_generate_plot(
       - "filter" — Filter Bode plot (magnitude + phase)
 
     Args:
-        log_path: Path to a flight log file (.bin, .log, .bbl, .bfl, .ulg).
+        log_path: Path to a flight log file (.bin, .log, .tlog, .bbl, .bfl, .ulg).
         plot_type: Chart type — "pid" (default), "fft", or "filter".
         platform: Platform override — "auto", "ardupilot", "betaflight", or "px4".
         axis: Axis for PID plot — "all" (default), "roll", "pitch", or "yaw".

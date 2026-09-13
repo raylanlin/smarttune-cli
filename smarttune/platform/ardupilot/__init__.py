@@ -196,7 +196,7 @@ class ArduPilotAdapter(PlatformAdapter):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return [".bin", ".log"]
+        return [".bin", ".log", ".tlog"]
 
     @classmethod
     def detect(cls, path: Path) -> bool:
@@ -209,6 +209,11 @@ class ArduPilotAdapter(PlatformAdapter):
                     return f.read(2) == _AP_MAGIC
             except OSError:
                 return False
+        if suffix == ".tlog":
+            # MAVLink telemetry recording (Mission Planner / MAVProxy / QGC)
+            from smarttune.platform.ardupilot.tlog_parser import looks_like_tlog
+
+            return looks_like_tlog(path)
         if suffix == ".log":
             try:
                 with open(path, "r", errors="ignore") as f:
@@ -219,6 +224,13 @@ class ArduPilotAdapter(PlatformAdapter):
         return False
 
     def parse(self, path: Path) -> FlightData:  # noqa: C901
+        # Telemetry logs are a different wire format (MAVLink frames, not
+        # DataFlash records) and a different data contract — see tlog_parser.
+        if path.suffix.lower() == ".tlog":
+            from smarttune.platform.ardupilot.tlog_parser import parse_tlog
+
+            return parse_tlog(path, _PARAM_MAP_TO_PLATFORM)
+
         from pymavlink import mavutil
         from pymavlink.DFReader import DFReader_binary
 

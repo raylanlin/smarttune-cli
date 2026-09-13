@@ -520,8 +520,11 @@ class PIDReviewer:
             except Exception as exc:
                 _log.debug("Time-domain step response failed for %s: %s", axis, exc)
         else:
-            # C7 修复：传入 IMU 陀螺仪数据，启用 compute_step_response_for_axis
-            # 的 "IMU 优先" 路径（旧实现恒传 None，该路径从未生效）
+            # IMU 陀螺仪数据仍然传入，但各平台自行决定是否采用：
+            #   ArduPilot — 默认用 PID 消息的 Act（与 WebTools PIDReview 对齐，
+            #               v3.4.0 起；需要陀螺时用 prefer_imu=True）
+            #   Betaflight — Blackbox 的 gyroADC 本身就是 actual 信号，照用
+            # 上游参考实现（PIDReview.js:1600/1608）取的是 Act，不是 IMU.Gyr。
             imu_dict = None
             if (
                 flight_data.gyro is not None
