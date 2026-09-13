@@ -122,6 +122,21 @@ _GYRO_FIELD_NAMES = {
     "yaw": ["gyroADC[2]", "gyroADC_2", "gyroData[2]"],
 }
 
+#: Pre-filter gyro (BF 4.x "gyroUnfilt"): the signal the notch/LPF chain sees
+#: BEFORE filtering. Reference tools target notch frequencies from this trace,
+#: not the filtered one. Exposed in extras["gyro_unfiltered"]; FlightData.gyro
+#: stays the filtered gyroADC so existing assessments keep their calibration.
+_GYRO_UNFILT_FIELD_NAMES = {
+    "roll": ["gyroUnfilt[0]", "gyroUnfilt_0"],
+    "pitch": ["gyroUnfilt[1]", "gyroUnfilt_1"],
+    "yaw": ["gyroUnfilt[2]", "gyroUnfilt_2"],
+}
+
+#: Fields the firmware multiplies by blackboxHighResolutionScale (blackbox.c:
+#: 1262/1263/1284/1289) when `blackbox_high_resolution` is on — gyroADC,
+#: gyroUnfilt, rcCommand and setpoint. PID term fields are NOT scaled.
+_HIGH_RES_SCALED_PREFIXES = ("gyroADC", "gyroUnfilt", "gyroData", "rcCommand", "setpoint")
+
 _SETPOINT_FIELD_NAMES = {
     "roll": ["setpoint[0]", "rcCommand[0]"],
     "pitch": ["setpoint[1]", "rcCommand[1]"],
@@ -404,14 +419,34 @@ class BetaflightAdapter(PlatformAdapter):
         dt_s = 1.0 / sample_rate_hz
         timestamps_s = np.arange(n_frames, dtype=np.float64) * dt_s
 
+        # ── blackbox_high_resolution (BF 4.4+) ─────────
+        # The firmware logs gyroADC / gyroUnfilt / rcCommand / setpoint
+        # multiplied by 10 when this is enabled (blackbox.c:2313 sets
+        # blackboxHighResolutionScale = 10.0f), trading range for precision.
+        # blackbox-log-viewer divides by the same factor before display.
+        # Without this correction those signals read 10x too large — and the
+        # outlier sanitiser then "repairs" every sample above ~220 deg/s,
+        # destroying the trace it was meant to protect.
+        hr_flag = str(header.properties.get("blackbox_high_resolution", "0")).strip()
+        try:
+            high_resolution = int(float(hr_flag)) != 0
+        except ValueError:
+            high_resolution = False
+        hr_scale = 10.0 if high_resolution else 1.0
+        if high_resolution:
+            logger.info("Blackbox high-resolution logging detected: descaling by 10")
+
         # ── Helper to get a column as float64 ──────────
-        def _col_f64(name: str) -> Optional[np.ndarray]:
+        def _col_f64(name: str, apply_high_res: bool = True) -> Optional[np.ndarray]:
             arr = merged_columns.get(  # noqa: F821  # closure over parse()'s local; del'd only after use
                 name
             )
-            if arr is not None:
-                return arr.astype(np.float64)
-            return None
+            if arr is None:
+                return None
+            out = arr.astype(np.float64)
+            if apply_high_res and hr_scale != 1.0 and name.startswith(_HIGH_RES_SCALED_PREFIXES):
+                out = out / hr_scale
+            return out
 
         # ── 提取 PID 信号 ──────────────────────────
         pid_data: Dict[str, AxisPIDSignal] = {}
@@ -470,6 +505,17 @@ class BetaflightAdapter(PlatformAdapter):
             gz = _sanitize_signal(_col_f64(gyro_z_name), max_abs=2000.0)
             gyro = np.column_stack([gx, gy, gz])
             del gx, gy, gz  # free intermediates
+
+        # ── 提取未滤波陀螺（pre-filter，供陷波定位使用）──
+        gyro_unfilt = None
+        ug_names = [
+            _resolve_field_name(available_fields, _GYRO_UNFILT_FIELD_NAMES[ax])
+            for ax in ("roll", "pitch", "yaw")
+        ]
+        if all(ug_names):
+            gyro_unfilt = np.column_stack(
+                [_sanitize_signal(_col_f64(n), max_abs=2000.0) for n in ug_names]
+            )
 
         # ── 提取加速度 ─────────────────────────────
         acc_x_name = _resolve_field_name(available_fields, _ACCEL_FIELDS["x"])
@@ -551,8 +597,19 @@ class BetaflightAdapter(PlatformAdapter):
                 "i_frame_count": i_frame_count,
                 "p_frame_count": p_frame_count,
                 "event_count": len(all_events),
+                "blackbox_info": {
+                    "high_resolution": high_resolution,
+                    "high_resolution_scale": hr_scale,
+                    "gyro_source": "gyroADC (filtered)",
+                    "has_unfiltered_gyro": gyro_unfilt is not None,
+                    "gyro_scale_header": header.properties.get("gyro_scale", ""),
+                },
             },
         )
+
+        if gyro_unfilt is not None:
+            # Pre-filter trace for notch targeting (see _GYRO_UNFILT_FIELD_NAMES)
+            flight_data.extras["gyro_unfiltered"] = gyro_unfilt
 
         if motor_output is not None:
             n_motors = motor_output.shape[1]

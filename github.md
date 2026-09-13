@@ -38,6 +38,17 @@ via `tools/build_param_tables.py`:
 - TEST_PLAN §E: everything except PID step response must stay byte-identical vs v3.3.1; §E0 covers the intentional step-response change (cross-check against the PIDReview web tool)
 - Note for deployer: default tables ardupilot.json / px4.json are NOT in this package (export size cap) — keep the repo's existing copies
 
+## Pending in this package (v3.5.0, not yet pushed)
+
+- Betaflight aligned against the firmware + blackbox-log-viewer + PID-Analyzer; full table in docs/ALIGNMENT_BETAFLIGHT.md
+  - FIXED (data corruption): `blackbox_high_resolution` (BF 4.4+, x10 on gyroADC/gyroUnfilt/rcCommand/setpoint) was ignored — signals read 10x high and the outlier sanitiser then interpolated away everything above ~220 deg/s real
+  - CHANGED (numbers move): BF step response had NO window function; PID-Analyzer uses np.hanning(flen). BF now delegates to the same verified kernel as ArduPilot with BF's [20, 500] deg/s gate (= PID-Analyzer low-input response)
+  - VERIFIED CORRECT: gyro needs no `gyro_scale` — firmware writes 1.0f because gyroADC is already deg/s
+  - ADDED: extras["gyro_unfiltered"] (pre-filter trace for notch targeting), extras["blackbox_info"]
+- New tests/test_bf_alignment.py (14 cases), docs/TEST_PLAN_v3.5.md
+- TEST_PLAN §D: ArduPilot / PX4 / tlog must stay byte-identical vs v3.4.0 (shared-kernel change is opt-in only)
+- Note for deployer: default param tables ardupilot.json / px4.json are NOT in this package (export size cap) — keep the repo's existing copies
+
 ## Last sync
 
 date: 2026-08-12T16:05:00Z

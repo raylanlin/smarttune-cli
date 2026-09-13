@@ -1,3 +1,97 @@
+## v3.5.0 (2026-09-13) — Betaflight aligned with its own tooling
+
+Same treatment ArduPilot got in v3.4.0, now for Betaflight: cross-checked the
+BF path against the **firmware itself** (`src/main/blackbox/blackbox.c`) plus
+`betaflight/blackbox-log-viewer` and `Plasmatree/PID-Analyzer`. Full
+item-by-item table in
+[`docs/ALIGNMENT_BETAFLIGHT.md`](docs/ALIGNMENT_BETAFLIGHT.md).
+
+### Fixed — `blackbox_high_resolution` was ignored (data corruption)
+
+BF 4.4+ has a `blackbox_high_resolution` option that logs gyro and setpoint
+with an extra digit of precision by multiplying them by 10
+(`blackbox.c:2313`: `blackboxHighResolutionScale = high_resolution ? 10.0f : 1.0f`).
+It applies to `gyroADC`, `gyroUnfilt`, `rcCommand` and `setpoint`
+(`blackbox.c:1262-1289`); PID term fields are not scaled. The flag is in the
+log header, and blackbox-log-viewer divides by it before display.
+
+SmartTune ignored it, so on any high-resolution log:
+
+- gyro / setpoint / rcCommand read **10x too large**, and
+- the outlier sanitiser — bounded by `rate_limits x 1.1` (~2198) — then treated
+  every sample above ~220 deg/s **real** as corruption and interpolated it
+  away. The harder the flying, the more of the trace was silently replaced.
+
+Everything downstream (vibration level, step response, filter and PID
+recommendations) followed the corrupted signal. The header flag is now parsed
+and the four affected field families are descaled; state is reported in
+`extras["blackbox_info"]`.
+
+### Changed — step response realigned to PID-Analyzer
+
+The BF step response previously followed `PTstepcalc.m`'s *published
+description* (PIDtoolbox; the repo is delisted, so nothing could be verified):
+2-second segments, constant-λ regularisation, segment/4 spacing — and **no
+window function at all**. PID-Analyzer, the open and verifiable ancestor of
+this algorithm family (and of the WebTools implementation we already match for
+ArduPilot), uses `np.hanning(self.flen)` (PID-Analyzer.py:64). An unwindowed
+2-second segment leaks spectrally into the deconvolution and biases the
+transfer function being estimated.
+
+Betaflight now delegates to the same verified kernel as ArduPilot
+(Hanning window, 1 s frame = `framelen`, spacing `flen/16` = `superpos 16`,
+Gaussian-CDF SNR regularisation at `cutfreq` 25 Hz, cumsum over `resplen`
+0.5 s), supplying only BF's input gating: peaks in [20, 500] deg/s, which is
+exactly PID-Analyzer's **low-input** response (`low_high_mask(max_in, 500)`).
+⚠️ **This moves Betaflight step-response numbers**, toward the reference.
+`info.method` is now `pid_analyzer_wiener`, and `info.steady_state` /
+`steady_state_ok` report whether the deconvolution converged instead of hiding
+a bad curve.
+
+`compute_step_response_for_axis()` also stops resampling through the IMU path
+by default (`prefer_imu=False`): for Betaflight `Actual` **is** `gyroADC`, so
+the old default interpolated one signal onto its own timebase for nothing.
+
+### Checked — gyro scaling was already correct
+
+The going-in suspicion was a missing `gyro_scale`. The viewer does apply one
+(`flightlog.js:1468`), but the firmware writes `gyro_scale = 1.0f`
+(`blackbox.c:1513`) because `gyroADC` comes from `gyro.gyroADCf[]`, already in
+deg/s — so reading it raw is right and the viewer's formula collapses to
+identity. The header value is now recorded
+(`blackbox_info.gyro_scale_header`) so a legacy log where it is *not* 1.0 is
+visible rather than silent.
+
+### Added
+
+- `extras["gyro_unfiltered"]` — the pre-filter `gyroUnfilt` trace (descaled),
+  which is what notch targeting should be derived from. `FlightData.gyro` stays
+  the filtered `gyroADC` so existing vibration thresholds keep their
+  calibration; a `--prefilter` notch mode is the planned follow-up.
+- `extras["blackbox_info"]`: `high_resolution`, `high_resolution_scale`,
+  `gyro_source`, `has_unfiltered_gyro`, `gyro_scale_header`.
+- `max_target_amplitude` on the shared step-response kernel (opt-in; ArduPilot
+  keeps WebTools' no-upper-gate behaviour).
+
+### Tests
+
+- New `tests/test_bf_alignment.py` (14 cases): high-resolution descaling of
+  gyro/setpoint, flag off leaves values alone, a 1500 deg/s manoeuvre no longer
+  clipped by the sanitiser, PID terms *not* descaled, unfiltered gyro exposed
+  and descaled, missing-`gyroUnfilt` reporting, `gyro_scale` header recorded,
+  step response using the windowed kernel, high-input (>500 deg/s) and
+  low-amplitude (<20 deg/s) window exclusion, `gyro_adc` as the default output
+  signal, and that the new upper gate stays opt-in for ArduPilot.
+
+### Docs
+
+- New `docs/ALIGNMENT_BETAFLIGHT.md` (sources with commit hashes, firmware line
+  references, what was wrong, what was verified correct, every deliberate
+  deviation, and how to cross-check a real `.bbl` against both reference tools).
+- New `docs/TEST_PLAN_v3.5.md`.
+
+---
+
 ## v3.4.0 (2026-09-13) — MAVLink telemetry log (.tlog) support
 
 Ground-station recordings (Mission Planner / MAVProxy / QGroundControl) are now a

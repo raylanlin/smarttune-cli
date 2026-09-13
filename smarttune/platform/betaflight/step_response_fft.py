@@ -1,49 +1,89 @@
 """
-阶跃响应估计 — 对齐 Betaflight 社区 PID Toolbox（bw1129/PIDtoolbox, PTstepcalc.m）。
+阶跃响应估计（Betaflight）— 对齐 Plasmatree PID-Analyzer。
 
 本模块在 pid_reviewer.py 中按 platform 动态分派：
   smarttune.platform.betaflight.step_response_fft
 
-与 ArduPilot 版（platform/ardupilot/step_response_fft.py，对齐 WebTools
-PIDReview.js：Hanning 窗 + 93.75% 重叠 + 高斯 CDF 固定正则化）是两套
-不同的社区参考实现，分别忠实对齐，互不混用。
+参考实现的选择
+--------------
+BF 社区有两套同源实现：
 
-PTstepcalc.m 对齐要点
----------------------
-1. 分段：2 秒段（segment_length = sample_rate × 2），不加窗（无 Hanning）
-2. 段筛选：max(|SP|) ≥ minInput（20 deg/s）且 ≤ maxInput（500 deg/s）
-3. 反卷积：对 SP/GY 段做零填充 FFT，
-       G = (fft(GY) · conj(fft(SP))) / (fft(SP) · conj(fft(SP)) + λ)
-   λ 为相对小量正则化（λ = 1e-4 × max(Pxx)，量级无关）
-4. 阶跃响应：cumsum(real(ifft(G))) 取前 500 ms
-5. 段级质量控制：稳态均值（t ∈ [200, 500] ms）落在 (0.5, 3.0) 内才保留
-   （SP 与 GY 同单位 deg/s，理想稳态 = 1.0；越界视为反卷积失败段）
-6. 跨段平均：mean
+* **Plasmatree/PID-Analyzer**（Python，开源可核）—— 这一族算法的源头；
+  ArduPilot WebTools 的 PIDReview step response 就是从它来的。
+* **bw1129/PIDtoolbox**（MATLAB，`PTstepcalc.m`）—— 社区最常用的 GUI，
+  但仓库已下架，无法逐行核对。
 
-已确认对齐 PTstepcalc.m 的部分：2s 段长 / 500ms 响应窗 / minInput=20 /
-常数正则化 Wiener 反卷积 / cumsum / 稳态 QC / 跨段平均。
-近似处理（上游精确常数待金标准对拍验证）：段步长（本实现 segment/4）、
-QC 带 (0.5, 3.0)、零填充长度（100 点）。
+v3.5.0 之前本模块按 PTstepcalc.m 的**公开描述**重写过一版（2 秒段、
+不加窗、常数 λ 正则化、段步长 segment/4）。逐行核对 PID-Analyzer 源码后
+发现那版有一个实质缺陷：**完全不加窗**。PID-Analyzer.py:64 明确用
+``np.hanning(self.flen)``，WebTools 同样用 Hanning —— 不加窗的 2 秒段
+在反卷积前会带入频谱泄漏，直接污染传递函数估计。
+
+因此现在统一走已核验的共享内核（``platform/ardupilot/step_response_fft``
+的 ``estimate_step_response``，对齐 WebTools PIDReview.js 逐行），只保留
+BF 侧特有的输入门控。
+
+对齐结果（PID-Analyzer.py 行号）
+--------------------------------
+  framelen = 1.0 s                    :32   ✅ 共享内核默认 1 秒窗
+  resplen  = 0.5 s                    :33   ✅
+  cutfreq  = 25 Hz                    :34   ✅
+  superpos = 16 → shift = flen/16     :36,201 ✅ 共享内核 spacing = N/16
+  np.hanning(flen)                    :64   ✅（旧实现缺失，已修）
+  Wiener 反卷积 + cumsum              :212-232 ✅
+  threshold = 500 deg/s               :37   ✅ 见下
+  跨窗平均                             :227+ ✅
+
+输入门控（与 PID-Analyzer 的 low/high 拆分等价）
+------------------------------------------------
+PID-Analyzer 用 ``low_high_mask(max_in, 500)`` 把响应拆成
+"≤500 deg/s" 和 ">500 deg/s" 两条曲线分别平均，而**不是**丢弃。
+SmartTune 只产出一条曲线，取的是调参实际看的那条 —— low-input
+（峰值 ≤ 500 deg/s），实现方式是给共享内核传 ``max_target_amplitude=500``。
+下限 20 deg/s 与 WebTools 的 ``TarMax < 20`` 门控一致。
+
+有意偏离
+--------
+* **窗口长度取 2 的幂**（共享内核沿用 WebTools 的 fft.js 约束），
+  PID-Analyzer 直接用 1 秒对应的样本数。频率分辨率略有差异。
+* **正则化形式**：PID-Analyzer 用 cutfreq 处的硬掩码
+  （``to_mask(clip(|freq|, cutfreq-1e-9, cutfreq))``，:219），
+  共享内核用 WebTools 的高斯 CDF 平滑掩码。两者都是 25 Hz 处的
+  SNR 正则化，后者过渡更平缓。
+* 额外的窗口数据质量预检（NaN / >1500 deg/s / 静止段 / 超调 >300%），
+  上游无此步，计入 ``info.skipped_quality``。
+
+数据源
+------
+- input  = setpoint[axis]（BF Blackbox 的 SP）
+- output = gyroADC[axis]（滤波后陀螺，即控制环的反馈信号）
+  PID-Analyzer 同样用 gyro 作为 output（:63 stacks 的 'gyro'）。
+  注意：``gyroUnfilt``（未滤波陀螺）适合做陷波定位，不适合做闭环阶跃响应。
 
 References
 ----------
-- https://github.com/bw1129/PIDtoolbox  (PTstepcalc.m，仓库已下架；
-  本实现依据其公开算法描述及 WebTools PIDReview.js 源码注释中对
-  PID-Analyzer/PIDtoolbox 同源算法的引用编写)
+- https://github.com/Plasmatree/PID-Analyzer  (PID-Analyzer.py)
+- https://github.com/bw1129/PIDtoolbox  (PTstepcalc.m，仓库已下架)
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
+
 import numpy as np
 
-# PTstepcalc.m 常数
-_MIN_INPUT_DEG_S = 20.0  # minInput — 段内 SP 峰值下限
-_MAX_INPUT_DEG_S = 500.0  # maxInput — 段内 SP 峰值上限
-_SEGMENT_DURATION_S = 2.0  # 2 秒分析段
-_RESPONSE_DURATION_S = 0.5  # 500 ms 阶跃响应窗
-_PAD_SAMPLES = 100  # FFT 前零填充
-_QC_STEADY_LO = 0.5  # 稳态 QC 下限（理想值 1.0）
-_QC_STEADY_HI = 3.0  # 稳态 QC 上限
-_REG_FACTOR = 1e-4  # Wiener 正则化 λ = _REG_FACTOR × max(Pxx)
+from smarttune.platform.ardupilot.step_response_fft import (
+    estimate_step_response as _shared_estimate,
+)
+
+# PID-Analyzer 常数（PID-Analyzer.py:32-37）
+_FRAME_DURATION_S = 1.0  # framelen
+_RESPONSE_DURATION_S = 0.5  # resplen
+_CUTFREQ_HZ = 25.0  # cutfreq
+_HIGH_INPUT_THRESHOLD = 500.0  # threshold — low/high input 分界
+_MIN_INPUT_DEG_S = 20.0  # 下限门控（与 WebTools TarMax 一致）
+
+# 稳态合理性检查（SmartTune 附加；SP 与 GY 同单位，理想稳态 = 1.0）
+_QC_STEADY_LO = 0.5
+_QC_STEADY_HI = 3.0
 
 
 def estimate_step_response(
@@ -53,148 +93,81 @@ def estimate_step_response(
     window_size: Optional[int] = None,
     step_duration_s: float = _RESPONSE_DURATION_S,
     min_target_amplitude: float = _MIN_INPUT_DEG_S,
-    max_target_amplitude: float = _MAX_INPUT_DEG_S,
+    max_target_amplitude: float = _HIGH_INPUT_THRESHOLD,
 ) -> Dict[str, Any]:
     """
-    估计阶跃响应（对齐 PID Toolbox PTstepcalc.m）。
+    估计阶跃响应（PID-Analyzer 口径，走共享 Hanning/Wiener 内核）。
 
     Parameters
     ----------
     target : np.ndarray
         Setpoint（SP）序列，deg/s。
     actual : np.ndarray
-        滤波后陀螺仪（GY / gyroADC）序列，deg/s。
+        滤波后陀螺仪（gyroADC）序列，deg/s。
     sample_rate : float
         采样率（Hz）。
     window_size : int, optional
-        覆盖默认 2 秒段长（点数）。仅用于测试；常规调用勿传。
+        覆盖默认 1 秒窗（点数）。仅用于测试。
     step_duration_s : float
-        阶跃响应窗时长（秒，默认 0.5 = PTB 的 500 ms）。
+        阶跃响应窗时长（秒，默认 0.5 = PID-Analyzer resplen）。
     min_target_amplitude : float
-        段内 SP 峰值下限（PTB minInput，默认 20 deg/s）。
+        窗内 SP 峰值下限（默认 20 deg/s）。
     max_target_amplitude : float
-        段内 SP 峰值上限（PTB maxInput，默认 500 deg/s）。
+        窗内 SP 峰值上限（默认 500 deg/s = PID-Analyzer threshold，
+        即只取 low-input 响应）。
 
     Returns
     -------
     Dict with keys: time, step_response, valid_windows, total_windows,
     skipped_quality, window_size, sample_rate, method
     """
-    n = len(target)
+    result = _shared_estimate(
+        target=target,
+        actual=actual,
+        sample_rate=sample_rate,
+        window_size=window_size,
+        step_duration_s=step_duration_s,
+        min_target_amplitude=min_target_amplitude,
+        cutfreq=_CUTFREQ_HZ,
+        max_target_amplitude=max_target_amplitude,
+    )
+    result["method"] = "pid_analyzer_wiener"
+    result["input_window_deg_s"] = [min_target_amplitude, max_target_amplitude]
 
-    seg_len = int(round(sample_rate * _SEGMENT_DURATION_S))
-    if window_size is not None:
-        seg_len = int(window_size)
-    seg_len = max(seg_len, 8)
-
-    wnd = int(round(sample_rate * step_duration_s))
-    wnd = max(min(wnd, seg_len), 2)
-    time_arr = np.arange(wnd) / sample_rate
-
-    if n < seg_len:
-        return {
-            "time": np.array([0.0]),
-            "step_response": np.array([0.0]),
-            "error": "数据太短",
-            "valid_windows": 0,
-            "total_windows": 0,
-        }
-
-    # 段步长：segment/4（75% 重叠）。PTB 上游的精确步长以
-    # PTstepcalc.m 为准 — 只影响平均段数，不影响单段数学。
-    seg_step = max(seg_len // 4, 1)
-    num_segments = (n - seg_len) // seg_step + 1
-
-    # 稳态 QC 区间掩码（t ∈ [200, 500] ms）
-    qc_mask = (time_arr >= 0.2) & (time_arr <= step_duration_s)
-    has_qc = bool(np.any(qc_mask))
-
-    all_steps: List[np.ndarray] = []
-    skipped_quality = 0
-
-    for i in range(num_segments):
-        start = i * seg_step
-        end = start + seg_len
-        sp = target[start:end]
-        gy = actual[start:end]
-
-        # ── SmartTune 附加数据预检（PTB 之外的脏数据防御）──────
-        if np.any(~np.isfinite(sp)) or np.any(~np.isfinite(gy)):
-            skipped_quality += 1
-            continue
-        if float(np.max(np.abs(gy))) > 1500.0:  # deg/s，物理极端值
-            skipped_quality += 1
-            continue
-
-        # ── PTB 段筛选：minInput ≤ max(|SP|) ≤ maxInput ─────────
-        sp_max = float(np.max(np.abs(sp)))
-        if sp_max < min_target_amplitude or sp_max > max_target_amplitude:
-            continue
-
-        # ── 零填充 FFT + 常数正则化 Wiener 反卷积（PTB 核心）────
-        a = np.concatenate([sp, np.zeros(_PAD_SAMPLES)])
-        b = np.concatenate([gy, np.zeros(_PAD_SAMPLES)])
-        fa = np.fft.fft(a)
-        fb = np.fft.fft(b)
-
-        pxx = (fa * np.conj(fa)).real  # 自谱，纯实数
-        lam = _REG_FACTOR * float(np.max(pxx)) if pxx.size else 1e-9
-        lam = max(lam, 1e-30)
-
-        G = (fb * np.conj(fa)) / (pxx + lam)
-
-        impulse = np.fft.ifft(G).real
-        step = np.cumsum(impulse[:wnd])
-
-        # ── PTB 段级 QC：稳态均值必须接近 1 ─────────────────────
-        if has_qc:
+    # 稳态合理性：SP 与 GY 同单位，收敛值应接近 1.0。偏离过大说明反卷积
+    # 没收敛（数据太脏或激励不足），标注而不是静默给出一条错曲线。
+    step = result.get("step_response")
+    time_arr = result.get("time")
+    if isinstance(step, np.ndarray) and isinstance(time_arr, np.ndarray) and step.size:
+        qc_mask = (time_arr >= 0.2) & (time_arr <= step_duration_s)
+        if bool(np.any(qc_mask)):
             steady = float(np.mean(step[qc_mask]))
-            if not (_QC_STEADY_LO < steady < _QC_STEADY_HI):
-                skipped_quality += 1
-                continue
-
-        all_steps.append(step)
-
-    if not all_steps:
-        return {
-            "time": time_arr,
-            "step_response": np.zeros(wnd),
-            "error": "无有效窗口",
-            "valid_windows": 0,
-            "total_windows": num_segments,
-        }
-
-    step_out = np.mean(np.array(all_steps), axis=0)
-
-    return {
-        "time": time_arr,
-        "step_response": step_out,
-        "valid_windows": len(all_steps),
-        "total_windows": num_segments,
-        "skipped_quality": skipped_quality,
-        "window_size": seg_len,
-        "sample_rate": sample_rate,
-        "method": "pidtoolbox_ptstepcalc",
-    }
+            result["steady_state"] = round(steady, 3)
+            result["steady_state_ok"] = bool(_QC_STEADY_LO < steady < _QC_STEADY_HI)
+    return result
 
 
 def compute_step_response_for_axis(
     pid_data: Dict[str, np.ndarray],
     axis: str = "roll",
     imu_data: Optional[Dict[str, np.ndarray]] = None,
+    prefer_imu: bool = False,
 ) -> Dict[str, Any]:
     """
     为指定轴计算阶跃响应。
 
-    Betaflight Blackbox 的 Actual 即 gyroADC（滤波后陀螺仪），与 PTB 的
-    GY 输入一致；imu_data 路径仅在 Actual 来自其他低采样率源时启用
-    （提供更高采样率的陀螺仪 + 时间均匀化重采样）。
+    Betaflight Blackbox 的 ``Actual`` **就是** gyroADC（滤波后陀螺），与
+    PID-Analyzer 的 output 同源，所以默认不走 imu_data 路径 —— 那条路径
+    会把同一份数据插值重采样一遍，白白引入插值动态。
+    ``prefer_imu=True`` 仅在 ``Actual`` 来自其他低采样率源时有意义。
+    （v3.5.0 前默认走 IMU 路径，对 BF 是纯粹的冗余重采样。）
     """
     desired = pid_data.get("Desired", np.array([]))
     actual_rate = pid_data.get("Actual", np.array([]))
     time_rate = pid_data.get("time", np.array([]))
 
-    use_imu = imu_data is not None and len(imu_data.get("GyrX", [])) > 0
+    use_imu = prefer_imu and imu_data is not None and len(imu_data.get("GyrX", [])) > 0
+    source = "imu_gyro" if use_imu else "gyro_adc"
 
     if use_imu:
         axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}.get(axis.lower(), 0)
@@ -249,9 +222,8 @@ def compute_step_response_for_axis(
         target=desired,
         actual=actual,
         sample_rate=sample_rate,
-        # PTB minInput = 20 deg/s（不再用旧实现的 3.0 妥协值；
-        # 段太少时宁可报告 valid_windows=0 也不引入弱激励噪声段）
         min_target_amplitude=_MIN_INPUT_DEG_S,
+        max_target_amplitude=_HIGH_INPUT_THRESHOLD,
         step_duration_s=_RESPONSE_DURATION_S,
     )
 
@@ -262,5 +234,8 @@ def compute_step_response_for_axis(
         "axis": axis,
         "time_s": time_out.tolist(),
         "step_response": step_resp.tolist(),
-        "info": {k: v for k, v in result.items() if k not in ("time", "step_response")},
+        "info": {
+            "output_signal": source,
+            **{k: v for k, v in result.items() if k not in ("time", "step_response")},
+        },
     }

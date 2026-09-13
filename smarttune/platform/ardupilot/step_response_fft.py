@@ -131,6 +131,7 @@ def estimate_step_response(
     step_duration_s: float = 0.5,
     min_target_amplitude: float = 20.0,  # 20 deg/s（对齐 WebTools 阈值）
     cutfreq: float = 25.0,
+    max_target_amplitude: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     估计阶跃响应（复现 WebTools redraw_step 核心算法）。
@@ -152,6 +153,10 @@ def estimate_step_response(
         数据单位为 deg/s（BF gyroADC / AP RATE 解析后均为 deg/s）。
     cutfreq : float
         SNR 正则化截止频率（Hz，默认 25）。
+    max_target_amplitude : float, optional
+        窗口目标幅值上限。WebTools 无此门控；PID-Analyzer 按 500 deg/s
+        把响应拆成 low/high 两组分别平均（不丢弃）。传入时只保留
+        幅值 ≤ 该值的窗口，等价于 PID-Analyzer 的 low-input 响应。
 
     Returns
     -------
@@ -291,6 +296,9 @@ def estimate_step_response(
         # 幅值阈值（与 WebTools TarMax < 20.0 一致）
         tar_max = np.max(np.abs(tar_win))
         if tar_max < min_target_amplitude:
+            continue
+        # 上限门控（PID-Analyzer low-input 响应；不传则无上限 = WebTools 行为）
+        if max_target_amplitude is not None and tar_max > max_target_amplitude:
             continue
 
         # FFT（fft.js realTransform → rfft）
