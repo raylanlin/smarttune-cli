@@ -107,9 +107,7 @@ def _heartbeat(boot, autopilot=3, custom_mode=0, mav_type=2, base_mode=0b1000000
 
 def _gcs_heartbeat(boot, custom_mode=99):
     """Mission Planner's own heartbeat — MAV_TYPE_GCS, invalid autopilot."""
-    return _Msg(
-        "HEARTBEAT", _wall(boot), autopilot=8, type=6, custom_mode=custom_mode, base_mode=0
-    )
+    return _Msg("HEARTBEAT", _wall(boot), autopilot=8, type=6, custom_mode=custom_mode, base_mode=0)
 
 
 def _attitude(boot, rollspeed=0.5, pitchspeed=-0.25, yawspeed=0.1):

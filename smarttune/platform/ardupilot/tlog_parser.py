@@ -208,7 +208,14 @@ _MODE_MAP_ROVER = {
     15: "GUIDED",
     16: "INITIALISING",
 }
-_MODE_MAP_TRACKER = {0: "MANUAL", 1: "STOP", 2: "SCAN", 3: "SERVO_TEST", 10: "AUTO", 16: "INITIALISING"}
+_MODE_MAP_TRACKER = {
+    0: "MANUAL",
+    1: "STOP",
+    2: "SCAN",
+    3: "SERVO_TEST",
+    10: "AUTO",
+    16: "INITIALISING",
+}
 _MODE_MAP_SUB = {
     0: "STABILIZE",
     1: "ACRO",
@@ -941,9 +948,7 @@ def parse_tlog(path: Path, param_map: Optional[Dict[str, str]] = None) -> Flight
                 "the recording is missing data the vehicle did send."
             )
     other_vehicles = [
-        sid
-        for sid, meta in systems.items()
-        if meta.get("is_vehicle") and sid != vehicle_sysid
+        sid for sid, meta in systems.items() if meta.get("is_vehicle") and sid != vehicle_sysid
     ]
     if other_vehicles:
         notes.append(
